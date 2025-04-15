@@ -32,7 +32,7 @@ class ExcelHelper:
     def read_sheet_data(excel_file, sheet_name):
         """Membaca data dari sheet tertentu"""
         try:
-            df = pd.read_excel(excel_file, sheet_name=sheet_name)
+            df = pd.read_excel(excel_file, sheet_name=sheet_name, header=None)
             return df, None
         except Exception as e:
             return None, f"Error membaca sheet {sheet_name}: {str(e)}"

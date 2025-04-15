@@ -267,52 +267,51 @@ class BDUGroupView(QMainWindow):
                 self.loading_label.setText(f"Error: File SET_BDU.xlsx not found in the data directory.")
                 self.loading_label.setStyleSheet("color: #E74C3C; margin: 20px;")
                 return
-            
+
             # Clear existing tabs
             self.tab_widget.clear()
             self.sheet_tabs = {}
             self.data_fields = {}
-            
+
             # Hide loading message when tabs exist
             self.loading_label.setVisible(True)
-            
+
             # Read Excel file
             xl = pd.ExcelFile(self.excel_path)
             sheet_names = xl.sheet_names
-            
-            # Display all sheets (both DIP and DATA)
-            # Sort sheets to ensure DIP sheets come first, then DATA sheets
-            sorted_sheets = sorted(sheet_names)
-            
-            if len(sorted_sheets) == 0:
+
+            # Use sheet_names directly to preserve the order from Excel file
+            # Instead of: sorted_sheets = sorted(sheet_names)
+
+            if len(sheet_names) == 0:
                 self.loading_label.setText("No sheets found in SET_BDU.xlsx.")
                 return
-            
+
             # Hide loading label as we have data
             self.loading_label.setVisible(False)
-            
+
             # Create a tab for each sheet
-            for sheet_name in sorted_sheets:
+            for sheet_name in sheet_names:
                 # Get display name (remove DIP_ or DATA_ prefix)
                 display_name = sheet_name
                 if sheet_name.startswith("DIP_"):
                     display_name = sheet_name[4:]  # Remove "DIP_"
                 elif sheet_name.startswith("DATA_"):
                     display_name = sheet_name[5:]  # Remove "DATA_"
-                
+
                 try:
-                    df = pd.read_excel(self.excel_path, sheet_name=sheet_name)
-                    
+                    df = pd.read_excel(self.excel_path, sheet_name=sheet_name, header=None)
+
                     scroll_area = QScrollArea()
                     scroll_area.setWidgetResizable(True)
-                    
+
                     sheet_widget = QWidget()
                     sheet_layout = QVBoxLayout(sheet_widget)
                     sheet_layout.setContentsMargins(15, 15, 15, 15)
-                    
+
                     # Process the sheet data
                     self.process_sheet_data(df, sheet_name, sheet_layout)
-                    
+
                     scroll_area.setWidget(sheet_widget)
                     self.tab_widget.addTab(scroll_area, display_name)
                     self.sheet_tabs[sheet_name] = sheet_widget
@@ -321,13 +320,13 @@ class BDUGroupView(QMainWindow):
                     # Create an error tab for this sheet
                     error_widget = QWidget()
                     error_layout = QVBoxLayout(error_widget)
-                    
+
                     error_label = QLabel(f"Error loading {sheet_name}: {str(e)}")
                     error_label.setStyleSheet("color: #E74C3C;")
                     error_layout.addWidget(error_label)
-                    
+
                     self.tab_widget.addTab(error_widget, display_name)
-            
+
         except Exception as e:
             self.loading_label.setText(f"Error loading data: {str(e)}")
             self.loading_label.setStyleSheet("color: #E74C3C; margin: 20px;")
@@ -340,16 +339,16 @@ class BDUGroupView(QMainWindow):
         if sheet_name.startswith("DATA_"):
             self.create_data_table(df, layout)
             return
-        
+
         # For DIP sheets or other sheets, process as forms
         # Initialize variables
         current_section = None
         section_layout = None
         header_layout = None  # For bh_ headers
-        
+
         # Field identification
         field_count = 0
-        
+
         # Check if the dataframe is empty
         if df.empty:
             empty_label = QLabel("No data found in this sheet.")
@@ -357,7 +356,7 @@ class BDUGroupView(QMainWindow):
             empty_label.setStyleSheet("color: #666; margin: 20px;")
             layout.addWidget(empty_label)
             return
-        
+
         # Process each row
         for index, row in df.iterrows():
             # Skip empty rows
@@ -366,88 +365,78 @@ class BDUGroupView(QMainWindow):
             
             # Get the first column to determine the type
             first_col = row.iloc[0] if not pd.isna(row.iloc[0]) else ""
-            
+
             # Convert to string for startswith checks
             if not isinstance(first_col, str):
                 try:
                     first_col = str(first_col)
                 except:
                     continue  # Skip if can't convert to string
-            
+                
             # Check if it's a section header (sub_)
             if first_col.startswith('sub_'):
                 # Create a new section
                 section_title = first_col[4:].strip()  # Remove 'sub_' prefix
-                
-                # Create section frame
-                section_frame = QFrame()
-                section_frame.setFrameShape(QFrame.StyledPanel)
+
+                # Create section frame - removed border
+                section_frame = QWidget()  # Changed from QFrame to QWidget
                 section_frame.setStyleSheet("""
-                    QFrame {
-                        background-color: white;
-                        border-radius: 8px;
-                        border: 1px solid #E0E0E0;
-                    }
+                    background-color: white;
                 """)
-                
+
                 section_layout = QVBoxLayout(section_frame)
                 section_layout.setContentsMargins(15, 15, 15, 15)
                 section_layout.setSpacing(15)
-                
+
                 # Add section title
                 title_label = QLabel(section_title)
                 title_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
                 title_label.setStyleSheet(f"color: {PRIMARY_COLOR}; background-color: transparent;")
-                
+
                 section_layout.addWidget(title_label)
-                
+
                 # Add section to main layout
                 layout.addWidget(section_frame)
                 layout.addSpacing(20)
-                
+
                 current_section = section_title
                 field_count = 0
-                
+
                 continue
             
             # Check if it's a big header (bh_)
             if first_col.startswith('bh_'):
                 if section_layout is None:
                     # If no section is defined yet, create a default one
-                    section_frame = QFrame()
-                    section_frame.setFrameShape(QFrame.StyledPanel)
+                    section_frame = QWidget()  # Changed from QFrame to QWidget
                     section_frame.setStyleSheet("""
-                        QFrame {
-                            background-color: white;
-                            border-radius: 8px;
-                            border: 1px solid #E0E0E0;
-                        }
+                        background-color: white;
                     """)
-                    
+
                     section_layout = QVBoxLayout(section_frame)
                     section_layout.setContentsMargins(15, 15, 15, 15)
                     section_layout.setSpacing(15)
-                    
+
                     # Add to main layout
                     layout.addWidget(section_frame)
                     current_section = "Default"
-                
+
                 # Create big header
                 header_text = first_col[3:].strip()  # Remove 'bh_' prefix
-                
+
                 big_header = QLabel(header_text)
                 big_header.setFont(QFont("Segoe UI", 14, QFont.Bold))
                 big_header.setStyleSheet(f"color: {PRIMARY_COLOR}; margin-top: 10px;")
-                
+
                 section_layout.addWidget(big_header)
-                
+
                 # Create a horizontal line below the header
                 line = QFrame()
                 line.setFrameShape(QFrame.HLine)
                 line.setFrameShadow(QFrame.Sunken)
                 line.setStyleSheet(f"background-color: {PRIMARY_COLOR}; margin-bottom: 10px;")
                 line.setFixedHeight(2)
-                
+
                 section_layout.addWidget(line)
                 continue
             
@@ -455,31 +444,26 @@ class BDUGroupView(QMainWindow):
             if first_col.startswith('fh_'):
                 if section_layout is None:
                     # If no section is defined yet, create a default one
-                    section_frame = QFrame()
-                    section_frame.setFrameShape(QFrame.StyledPanel)
+                    section_frame = QWidget()  # Changed from QFrame to QWidget
                     section_frame.setStyleSheet("""
-                        QFrame {
-                            background-color: white;
-                            border-radius: 8px;
-                            border: 1px solid #E0E0E0;
-                        }
+                        background-color: white;
                     """)
-                    
+
                     section_layout = QVBoxLayout(section_frame)
                     section_layout.setContentsMargins(15, 15, 15, 15)
                     section_layout.setSpacing(15)
-                    
+
                     # Add to main layout
                     layout.addWidget(section_frame)
                     current_section = "Default"
-                
+
                 # Create field header
                 field_header = first_col[3:].strip()  # Remove 'fh_' prefix
-                
+
                 header_label = QLabel(field_header)
                 header_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
                 header_label.setStyleSheet("color: #555; margin-top: 5px;")
-                
+
                 section_layout.addWidget(header_label)
                 continue
             
@@ -487,70 +471,66 @@ class BDUGroupView(QMainWindow):
             if first_col.startswith('f_'):
                 if section_layout is None:
                     # If no section is defined yet, create a default one
-                    section_frame = QFrame()
-                    section_frame.setFrameShape(QFrame.StyledPanel)
+                    section_frame = QWidget()  # Changed from QFrame to QWidget
                     section_frame.setStyleSheet("""
-                        QFrame {
-                            background-color: white;
-                            border-radius: 8px;
-                            border: 1px solid #E0E0E0;
-                        }
+                        background-color: white;
                     """)
-                    
+
                     section_layout = QVBoxLayout(section_frame)
                     section_layout.setContentsMargins(15, 15, 15, 15)
                     section_layout.setSpacing(15)
-                    
+
                     # Add to main layout
                     layout.addWidget(section_frame)
                     current_section = "Default"
-                
+
                 field_name = first_col[2:].strip()  # Remove 'f_' prefix
                 field_key = f"{sheet_name}_{current_section}_{field_count}"
                 field_count += 1
-                
-                # Create field row
+
+                # Create field row with transparent background
                 field_widget = QWidget()
+                field_widget.setStyleSheet("background-color: transparent;")
                 field_layout = QHBoxLayout(field_widget)
                 field_layout.setContentsMargins(5, 5, 5, 5)
-                
-                # Field label
+
+                # Field label - completely transparent with no background
                 label = QLabel(field_name)
                 label.setFont(QFont("Segoe UI", 11))
-                label.setStyleSheet("color: #333;")
+                label.setStyleSheet("color: #333; background-color: transparent;")
                 label.setMinimumWidth(250)
-                
+
                 field_layout.addWidget(label)
-                
+
                 # Process field type based on the second column
                 field_type = "text"  # Default type
                 options = []
                 default_value = ""
-                
+
                 # Check for second column (type or options)
                 if len(row) > 1 and not pd.isna(row.iloc[1]):
                     second_col = str(row.iloc[1]).strip()
-                    
+
                     # Check if it's a dropdown type
                     if "dropdown" in second_col.lower():
                         field_type = "dropdown"
-                        
+
                         # Extract options if they exist
                         if len(row) > 2 and not pd.isna(row.iloc[2]):
                             options_str = str(row.iloc[2]).strip()
                             options = [opt.strip() for opt in options_str.split(',')]
-                    
+
                     # Check if it's a date type
                     elif "date" in second_col.lower():
                         field_type = "date"
-                    
+
                     # Check if it's a number type
                     elif "number" in second_col.lower() or "numeric" in second_col.lower():
                         field_type = "number"
-                
+
                 # Create input field based on type
                 input_field = None
-                
+
                 if field_type == "dropdown":
                     input_field = QComboBox()
                     input_field.addItems(options)
@@ -628,7 +608,7 @@ class BDUGroupView(QMainWindow):
                             border: 1px solid #3498DB;
                         }
                     """)
-                
+
                 # Set default value if available
                 if len(row) > 3 and not pd.isna(row.iloc[3]):
                     default_value = str(row.iloc[3]).strip()
@@ -643,20 +623,20 @@ class BDUGroupView(QMainWindow):
                             pass  # If date parsing fails, use current date
                     elif field_type != "dropdown":
                         input_field.setText(default_value)
-                
+
                 # Save the field reference for later use
                 self.data_fields[field_key] = input_field
-                
+
                 field_layout.addWidget(input_field)
                 section_layout.addWidget(field_widget)
-                
+
                 continue
-                
+
         # Add a save button for the sheet at the end (only for DIP sheets)
         if section_layout and sheet_name.startswith("DIP_"):
             # Add spacer
             section_layout.addSpacing(10)
-            
+
             # Save button
             save_btn = QPushButton("Save Changes")
             save_btn.setFont(QFont("Segoe UI", 11, QFont.Bold))
@@ -674,20 +654,20 @@ class BDUGroupView(QMainWindow):
                 }}
             """)
             save_btn.clicked.connect(lambda: self.save_sheet_data(sheet_name))
-            
+
             button_layout = QHBoxLayout()
             button_layout.addStretch()
             button_layout.addWidget(save_btn)
-            
+
             section_layout.addLayout(button_layout)
-        
+
         # If no content was added, add a default message
         if not layout.count():
             no_data_label = QLabel("No form fields found in this sheet.")
             no_data_label.setAlignment(Qt.AlignCenter)
             no_data_label.setStyleSheet("color: #666; margin: 20px;")
             layout.addWidget(no_data_label)
-    
+
     def create_data_table(self, df, layout):
         """Create a table view for DATA sheets"""
         # Create a table widget
