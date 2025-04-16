@@ -366,7 +366,7 @@ class BDUGroupView(QMainWindow):
             # Get the first column to determine the type
             first_col = row.iloc[0] if not pd.isna(row.iloc[0]) else ""
 
-            # Convert to string for startswith checks
+            # Convert to string for startswith checks, but only if we're not in a DATA_ sheet
             if not isinstance(first_col, str):
                 try:
                     first_col = str(first_col)
@@ -374,7 +374,7 @@ class BDUGroupView(QMainWindow):
                     continue  # Skip if can't convert to string
                 
             # Check if it's a section header (sub_)
-            if first_col.startswith('sub_'):
+            if isinstance(first_col, str) and first_col.startswith('sub_'):
                 # Create a new section
                 section_title = first_col[4:].strip()  # Remove 'sub_' prefix
 
@@ -677,10 +677,11 @@ class BDUGroupView(QMainWindow):
         table.setRowCount(len(df))
         table.setColumnCount(len(df.columns))
         
-        # Set headers
-        table.setHorizontalHeaderLabels(df.columns.tolist())
+        # Set headers - convert all column headers to strings
+        headers = [str(col) for col in df.columns.tolist()]
+        table.setHorizontalHeaderLabels(headers)
         
-        # Fill data
+        # Fill data - convert all values to strings to avoid type issues
         for row_idx, row in df.iterrows():
             for col_idx, value in enumerate(row):
                 if pd.isna(value):
