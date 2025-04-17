@@ -333,6 +333,61 @@ class BDUGroupView(QMainWindow):
             self.loading_label.setVisible(True)
             print(f"Error loading Excel data: {str(e)}")
     
+    def get_validation_values(self, excel_path, sheet_name, cell_address):
+        """Mengambil nilai dari data validation di sebuah sel Excel"""
+        from openpyxl import load_workbook
+        
+        try:
+            # Pastikan untuk memuat dengan data_only=False agar kita bisa mengakses validasi
+            workbook = load_workbook(excel_path, data_only=False)
+            
+            if sheet_name not in workbook.sheetnames:
+                return []
+                
+            sheet = workbook[sheet_name]
+            
+            # Periksa apakah cell address valid
+            try:
+                cell = sheet[cell_address]
+            except:
+                return []
+            
+            # Cek data validation secara eksplisit
+            dv = sheet.data_validations.dataValidation
+            for validation in dv:
+                for coord in validation.sqref.ranges:
+                    if cell.coordinate in str(coord):
+                        # Ditemukan validasi untuk sel ini
+                        if validation.type == "list":
+                            formula = validation.formula1
+                            
+                            # Jika formula menggunakan referensi
+                            if formula.startswith('='):
+                                # Implementasi sama seperti sebelumnya...
+                                pass
+                            else:
+                                # Untuk list langsung seperti "A,B,C"
+                                if formula.startswith('"') and formula.endswith('"'):
+                                    formula = formula[1:-1]
+                                return [val.strip() for val in formula.split(',')]
+            
+            # Fallback: Coba cara lain untuk mendapatkan validation list
+            try:
+                # Untuk beberapa versi openpyxl, langsung coba akses data_validation
+                if hasattr(cell, 'data_validation') and cell.data_validation and hasattr(cell.data_validation, 'type'):
+                    if cell.data_validation.type == 'list':
+                        formula = cell.data_validation.formula1
+                        if formula.startswith('"') and formula.endswith('"'):
+                            formula = formula[1:-1]
+                        return [val.strip() for val in formula.split(',')]
+            except:
+                pass
+                
+            return []
+        except Exception as e:
+            print(f"Error saat membaca data validation: {str(e)}")
+            return []
+    
     def process_sheet_data(self, df, sheet_name, layout):
         """Process the data from a sheet and create UI elements"""
         # Check if the sheet is a DATA sheet (just display as a table)
@@ -344,7 +399,8 @@ class BDUGroupView(QMainWindow):
         # Initialize variables
         current_section = None
         section_layout = None
-        header_layout = None  # For bh_ headers
+        current_header_labels = []  # For storing column headers from ch_
+        has_column_headers = False
 
         # Field identification
         field_count = 0
@@ -401,50 +457,19 @@ class BDUGroupView(QMainWindow):
 
                 current_section = section_title
                 field_count = 0
+                # Reset column headers when entering a new section
+                current_header_labels = []
+                has_column_headers = False
 
                 continue
             
-            # Check if it's a big header (bh_)
-            if first_col.startswith('bh_'):
-                if section_layout is None:
-                    # If no section is defined yet, create a default one
-                    section_frame = QWidget()  # Changed from QFrame to QWidget
-                    section_frame.setStyleSheet("""
-                        background-color: white;
-                    """)
+            # Di dalam method process_sheet_data, perbarui bagian yang menangani field header (fh_) dan column header (ch_)
 
-                    section_layout = QVBoxLayout(section_frame)
-                    section_layout.setContentsMargins(15, 15, 15, 15)
-                    section_layout.setSpacing(15)
-
-                    # Add to main layout
-                    layout.addWidget(section_frame)
-                    current_section = "Default"
-
-                # Create big header
-                header_text = first_col[3:].strip()  # Remove 'bh_' prefix
-
-                big_header = QLabel(header_text)
-                big_header.setFont(QFont("Segoe UI", 14, QFont.Bold))
-                big_header.setStyleSheet(f"color: {PRIMARY_COLOR}; margin-top: 10px;")
-
-                section_layout.addWidget(big_header)
-
-                # Create a horizontal line below the header
-                line = QFrame()
-                line.setFrameShape(QFrame.HLine)
-                line.setFrameShadow(QFrame.Sunken)
-                line.setStyleSheet(f"background-color: {PRIMARY_COLOR}; margin-bottom: 10px;")
-                line.setFixedHeight(2)
-
-                section_layout.addWidget(line)
-                continue
-            
             # Check if it's a field header (fh_)
             if first_col.startswith('fh_'):
                 if section_layout is None:
                     # If no section is defined yet, create a default one
-                    section_frame = QWidget()  # Changed from QFrame to QWidget
+                    section_frame = QWidget()
                     section_frame.setStyleSheet("""
                         background-color: white;
                     """)
@@ -459,19 +484,112 @@ class BDUGroupView(QMainWindow):
 
                 # Create field header
                 field_header = first_col[3:].strip()  # Remove 'fh_' prefix
+                
+                # Periksa apakah ada column header di samping field header
+                has_column_headers_in_row = False
+                column_headers_in_row = []
+                
+                for col_idx in range(1, df.shape[1]):
+                    if col_idx < len(row) and not pd.isna(row[col_idx]):
+                        col_value = str(row[col_idx]).strip()
+                        if col_value.startswith('ch_'):
+                            has_column_headers_in_row = True
+                            header_text = col_value[3:].strip()  # Remove 'ch_' prefix
+                            column_headers_in_row.append(header_text)
+                
+                if has_column_headers_in_row:
+                    # Buat header row dengan multiple column
+                    header_widget = QWidget()
+                    header_widget.setStyleSheet("background-color: transparent;")
+                    header_layout = QHBoxLayout(header_widget)
+                    header_layout.setContentsMargins(5, 5, 5, 5)
+                    
+                    # Field header label
+                    header_label = QLabel(field_header)
+                    header_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
+                    header_label.setStyleSheet("color: #555; margin-top: 5px;")
+                    header_label.setMinimumWidth(350)
+                    
+                    header_layout.addWidget(header_label)
+                    
+                    # Add column header labels
+                    for col_header in column_headers_in_row:
+                        col_header_label = QLabel(col_header)
+                        col_header_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
+                        col_header_label.setStyleSheet("color: #555; margin-top: 5px;")
+                        
+                        # Set size policy untuk memastikan lebar yang konsisten
+                        size_policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                        col_header_label.setSizePolicy(size_policy)
+                        
+                        header_layout.addWidget(col_header_label)
+                    
+                    section_layout.addWidget(header_widget)
+                    
+                    # Simpan column headers untuk field multiple berikutnya
+                    current_header_labels = column_headers_in_row
+                    has_column_headers = True
+                else:
+                    # Tampilan header biasa jika tidak ada column header
+                    header_label = QLabel(field_header)
+                    header_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
+                    header_label.setStyleSheet("color: #555; margin-top: 5px;")
+                    
+                    section_layout.addWidget(header_label)
+                    
+                    # Reset column headers jika tidak ada di row ini
+                    current_header_labels = []
+                    has_column_headers = False
+                
+                continue
 
-                header_label = QLabel(field_header)
-                header_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
-                header_label.setStyleSheet("color: #555; margin-top: 5px;")
-
-                section_layout.addWidget(header_label)
+            # Check if it's a column header row (first cell starts with ch_)
+            elif first_col.startswith('ch_'):
+                has_column_headers = True
+                current_header_labels = []
+                
+                # Process header row and collect all ch_ columns
+                for col_idx in range(df.shape[1]):
+                    if col_idx < len(row) and not pd.isna(row[col_idx]):
+                        col_value = str(row[col_idx]).strip()
+                        if col_value.startswith('ch_'):
+                            header_text = col_value[3:].strip()  # Remove 'ch_' prefix
+                            current_header_labels.append(header_text)
+                
+                # Jika ini adalah row column header yang berdiri sendiri (tidak di samping fh_)
+                # dan kita memiliki section layout, buat header row
+                if section_layout is not None and len(current_header_labels) > 0:
+                    header_widget = QWidget()
+                    header_widget.setStyleSheet("background-color: transparent;")
+                    header_layout = QHBoxLayout(header_widget)
+                    header_layout.setContentsMargins(5, 5, 5, 5)
+                    
+                    # Tambahkan spacer untuk menyelaraskan dengan field label
+                    spacer_label = QLabel("")
+                    spacer_label.setMinimumWidth(350)
+                    header_layout.addWidget(spacer_label)
+                    
+                    # Add column header labels
+                    for col_header in current_header_labels:
+                        col_header_label = QLabel(col_header)
+                        col_header_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
+                        col_header_label.setStyleSheet("color: #555; margin-top: 5px;")
+                        
+                        # Set size policy untuk memastikan lebar yang konsisten
+                        size_policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                        col_header_label.setSizePolicy(size_policy)
+                        
+                        header_layout.addWidget(col_header_label)
+                    
+                    section_layout.addWidget(header_widget)
+                
                 continue
             
             # Check if it's a field (f_)
             if first_col.startswith('f_'):
                 if section_layout is None:
                     # If no section is defined yet, create a default one
-                    section_frame = QWidget()  # Changed from QFrame to QWidget
+                    section_frame = QWidget()
                     section_frame.setStyleSheet("""
                         background-color: white;
                     """)
@@ -498,7 +616,7 @@ class BDUGroupView(QMainWindow):
                 label = QLabel(field_name)
                 label.setFont(QFont("Segoe UI", 11))
                 label.setStyleSheet("color: #333; background-color: transparent;")
-                label.setMinimumWidth(250)
+                label.setMinimumWidth(350)
 
                 field_layout.addWidget(label)
 
@@ -610,8 +728,8 @@ class BDUGroupView(QMainWindow):
                     """)
 
                 # Set default value if available
-                if len(row) > 3 and not pd.isna(row.iloc[3]):
-                    default_value = str(row.iloc[3]).strip()
+                if len(row) > 1 and not pd.isna(row.iloc[1]):
+                    default_value = str(row.iloc[1]).strip()
                     if field_type == "dropdown" and default_value in options:
                         input_field.setCurrentText(default_value)
                     elif field_type == "date":
@@ -630,6 +748,218 @@ class BDUGroupView(QMainWindow):
                 field_layout.addWidget(input_field)
                 section_layout.addWidget(field_widget)
 
+                continue
+            
+            # Check if it's a field dropdown (fd_)
+            if first_col.startswith('fd_'):
+                if section_layout is None:
+                    # If no section is defined yet, create a default one
+                    section_frame = QWidget()
+                    section_frame.setStyleSheet("""
+                        background-color: white;
+                    """)
+
+                    section_layout = QVBoxLayout(section_frame)
+                    section_layout.setContentsMargins(15, 15, 15, 15)
+                    section_layout.setSpacing(15)
+
+                    # Add to main layout
+                    layout.addWidget(section_frame)
+                    current_section = "Default"
+
+                field_name = first_col[3:].strip()  # Remove 'fd_' prefix
+                field_key = f"{sheet_name}_{current_section}_{field_count}"
+                field_count += 1
+
+                # Create field row with transparent background
+                field_widget = QWidget()
+                field_widget.setStyleSheet("background-color: transparent;")
+                field_layout = QHBoxLayout(field_widget)
+                field_layout.setContentsMargins(5, 5, 5, 5)
+
+                # Field label - completely transparent with no background
+                label = QLabel(field_name)
+                label.setFont(QFont("Segoe UI", 11))
+                label.setStyleSheet("color: #333; background-color: transparent;")
+                label.setMinimumWidth(350)
+
+                field_layout.addWidget(label)
+
+                # Create dropdown combo box
+                input_field = QComboBox()
+                input_field.setFont(QFont("Segoe UI", 11))
+                
+                # Atur properti size policy agar dropdown dapat diperluas sesuai layout
+                size_policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                input_field.setSizePolicy(size_policy)
+                
+                input_field.setStyleSheet("""
+                    QComboBox {
+                        padding: 5px;
+                        border: 1px solid #ccc;
+                        border-radius: 4px;
+                        background-color: white;
+                        min-height: 28px;
+                    }
+                    QComboBox:hover {
+                        border: 1px solid #3498DB;
+                    }
+                    QComboBox::drop-down {
+                        subcontrol-origin: padding;
+                        subcontrol-position: top right;
+                        width: 20px;
+                        border-left-width: 1px;
+                        border-left-color: #ccc;
+                        border-left-style: solid;
+                        border-top-right-radius: 4px;
+                        border-bottom-right-radius: 4px;
+                    }
+                """)
+                
+                # Coba ambil options dari data validation jika row dan column index diketahui
+                options = []
+                # Jika Excel menyimpan posisi sel
+                row_index = index + 1  # +1 karena Excel mulai dari 1
+                col_index = 2  # Asumsi kolom B untuk nilai dropdown
+                cell_address = f"{chr(ord('A') + col_index-1)}{row_index}"
+                
+                # Coba ambil dari data validation
+                validation_options = self.get_validation_values(self.excel_path, sheet_name, cell_address)
+                
+                if validation_options:
+                    options = validation_options
+                else:
+                    # Fallback ke metode lama jika data validation tidak ditemukan
+                    if len(row) > 1 and not pd.isna(row.iloc[1]):
+                        options_str = str(row.iloc[1]).strip()
+                        options = [opt.strip() for opt in options_str.split(',')]
+                
+                # Add options and set default if available
+                input_field.addItems(options)
+                if len(options) > 0:
+                    input_field.setCurrentText(options[0])
+                        
+                # Save the field reference for later use
+                self.data_fields[field_key] = input_field
+
+                field_layout.addWidget(input_field)
+                section_layout.addWidget(field_widget)
+
+                continue
+                
+            # Check if it's a field multiple (fm_)
+            if first_col.startswith('fm_'):
+                if section_layout is None:
+                    # If no section is defined yet, create a default one
+                    section_frame = QWidget()
+                    section_frame.setStyleSheet("""
+                        background-color: white;
+                    """)
+
+                    section_layout = QVBoxLayout(section_frame)
+                    section_layout.setContentsMargins(15, 15, 15, 15)
+                    section_layout.setSpacing(15)
+
+                    # Add to main layout
+                    layout.addWidget(section_frame)
+                    current_section = "Default"
+
+                field_name = first_col[3:].strip()  # Remove 'fm_' prefix
+                
+                # Create field row with transparent background
+                field_widget = QWidget()
+                field_widget.setStyleSheet("background-color: transparent;")
+                field_layout = QHBoxLayout(field_widget)
+                field_layout.setContentsMargins(5, 5, 5, 5)
+
+                # Field label - completely transparent with no background
+                label = QLabel(field_name)
+                label.setFont(QFont("Segoe UI", 11))
+                label.setStyleSheet("color: #333; background-color: transparent;")
+                label.setMinimumWidth(350)
+
+                field_layout.addWidget(label)
+                
+                # Add input fields based on column headers or default to 2 columns
+                if has_column_headers and len(current_header_labels) > 0:
+                    # Create input fields for each column header
+                    for i, header in enumerate(current_header_labels):
+                        field_key = f"{sheet_name}_{current_section}_{field_name}_{i}"
+                        field_count += 1
+                        
+                        # Create input field 
+                        input_field = QLineEdit()
+                        input_field.setFont(QFont("Segoe UI", 11))
+                        
+                        # Tambahkan nama field ke placeholder
+                        input_field.setPlaceholderText(f"Enter {header} {field_name}")
+                        
+                        input_field.setStyleSheet("""
+                            QLineEdit {
+                                padding: 5px;
+                                border: 1px solid #ccc;
+                                border-radius: 4px;
+                                background-color: white;
+                                min-height: 28px;
+                            }
+                            QLineEdit:hover {
+                                border: 1px solid #3498DB;
+                            }
+                        """)
+                        
+                        # Set size policy untuk memastikan lebar yang konsisten
+                        size_policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                        input_field.setSizePolicy(size_policy)
+                        
+                        # Set default value if available
+                        if i+1 < len(row) and not pd.isna(row.iloc[i+1]):
+                            input_field.setText(str(row.iloc[i+1]).strip())
+                        
+                        # Save the field reference for later use
+                        self.data_fields[field_key] = input_field
+                        
+                        field_layout.addWidget(input_field)
+                else:
+                    # Default to 2 columns if no column headers
+                    column_names = ["Name", "Phone No/Email"]
+                    for i in range(2):
+                        field_key = f"{sheet_name}_{current_section}_{field_name}_{i}"
+                        field_count += 1
+                        
+                        # Create input field 
+                        input_field = QLineEdit()
+                        input_field.setFont(QFont("Segoe UI", 11))
+                        
+                        # Tambahkan nama field ke placeholder
+                        input_field.setPlaceholderText(f"Enter {column_names[i]} {field_name}")
+                        
+                        input_field.setStyleSheet("""
+                            QLineEdit {
+                                padding: 5px;
+                                border: 1px solid #ccc;
+                                border-radius: 4px;
+                                background-color: white;
+                                min-height: 28px;
+                            }
+                            QLineEdit:hover {
+                                border: 1px solid #3498DB;
+                            }
+                        """)
+                        
+                        # Set size policy untuk memastikan lebar yang konsisten
+                        size_policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                        input_field.setSizePolicy(size_policy)
+                        
+                        # Set default value if available
+                        if i+1 < len(row) and not pd.isna(row.iloc[i+1]):
+                            input_field.setText(str(row.iloc[i+1]).strip())
+                        
+                        # Save the field reference for later use
+                        self.data_fields[field_key] = input_field
+                        
+                        field_layout.addWidget(input_field)
+
+                section_layout.addWidget(field_widget)
                 continue
 
         # Add a save button for the sheet at the end (only for DIP sheets)
@@ -667,7 +997,7 @@ class BDUGroupView(QMainWindow):
             no_data_label.setAlignment(Qt.AlignCenter)
             no_data_label.setStyleSheet("color: #666; margin: 20px;")
             layout.addWidget(no_data_label)
-
+    
     def create_data_table(self, df, layout):
         """Create a table view for DATA sheets"""
         # Create a table widget
@@ -747,3 +1077,159 @@ class BDUGroupView(QMainWindow):
         export_layout.addWidget(export_btn)
         
         layout.addLayout(export_layout)
+        
+    def save_sheet_data(self, sheet_name):
+        """Simpan data dari suatu sheet ke file Excel"""
+        try:
+            # Validasi file Excel masih ada
+            if not os.path.exists(self.excel_path):
+                QMessageBox.critical(self, "Error", f"File Excel tidak ditemukan: {self.excel_path}")
+                return
+            
+            # Baca file Excel asli untuk mendapatkan struktur
+            excel_data = pd.read_excel(self.excel_path, sheet_name=sheet_name, header=None)
+            
+            # Buat dictionary untuk menyimpan data yang akan disimpan
+            data_to_save = {}
+            
+            # Kumpulkan semua data dari fields
+            for field_key, field_input in self.data_fields.items():
+                # Periksa apakah field ini termasuk dalam sheet yang disimpan
+                if not field_key.startswith(f"{sheet_name}_"):
+                    continue
+                
+                # Parse field key untuk mendapatkan informasi
+                parts = field_key.split('_')
+                
+                # Ambil nilai dari input field
+                if isinstance(field_input, QLineEdit):
+                    value = field_input.text()
+                elif isinstance(field_input, QComboBox):
+                    value = field_input.currentText()
+                elif isinstance(field_input, QDateEdit):
+                    value = field_input.date().toString("yyyy-MM-dd")
+                else:
+                    value = ""
+                
+                # Untuk field multiple (fm_), kita perlu menyimpan data khusus
+                # Format: sheet_name_section_field_name_column_index
+                if len(parts) > 4 and "_".join(parts[3:-1]) in field_key:
+                    section = parts[1]
+                    field_name = "_".join(parts[3:-1])  # Gabungkan semua bagian nama field
+                    column_index = int(parts[-1])
+                    
+                    # Buat key untuk field multiple
+                    fm_key = f"{section}_{field_name}"
+                    
+                    # Initialize array jika belum ada
+                    if fm_key not in data_to_save:
+                        data_to_save[fm_key] = [None, None]
+                    
+                    # Simpan value ke array sesuai column_index
+                    data_to_save[fm_key][column_index] = value
+                else:
+                    # Untuk field biasa
+                    section = parts[1]
+                    field_name = parts[2]
+                    data_to_save[f"{section}_{field_name}"] = value
+            
+            # Buat workbook baru dengan openpyxl
+            from openpyxl import load_workbook
+            
+            # Load workbook yang ada
+            workbook = load_workbook(self.excel_path)
+            
+            # Ambil sheet yang akan diupdate
+            if sheet_name in workbook.sheetnames:
+                sheet = workbook[sheet_name]
+                
+                # Proses setiap baris di sheet
+                row_idx = 0
+                for _, row in excel_data.iterrows():
+                    row_idx += 1
+                    
+                    # Skip baris kosong
+                    if pd.isna(row).all():
+                        continue
+                    
+                    # Ambil kolom pertama untuk menentukan tipe
+                    first_col = row.iloc[0] if not pd.isna(row.iloc[0]) else ""
+                    if not isinstance(first_col, str):
+                        try:
+                            first_col = str(first_col)
+                        except:
+                            continue
+                    
+                    # Proses berdasarkan tipe prefix
+                    if first_col.startswith('sub_') or first_col.startswith('fh_') or first_col.startswith('ch_'):
+                        # Jangan ubah baris header
+                        continue
+                    
+                    # Proses field biasa (f_)
+                    if first_col.startswith('f_'):
+                        field_name = first_col[2:].strip()
+                        current_section = self._get_section_for_row(excel_data, row_idx)
+                        
+                        # Cari nilai di data_to_save
+                        key = f"{current_section}_{field_name}"
+                        if key in data_to_save:
+                            # Update nilai di cell kedua
+                            sheet.cell(row=row_idx, column=2).value = data_to_save[key]
+                    
+                    # Proses field dropdown (fd_)
+                    elif first_col.startswith('fd_'):
+                        field_name = first_col[3:].strip()
+                        current_section = self._get_section_for_row(excel_data, row_idx)
+                        
+                        # Cari nilai di data_to_save
+                        key = f"{current_section}_{field_name}"
+                        if key in data_to_save:
+                            # Update nilai di cell kedua
+                            sheet.cell(row=row_idx, column=2).value = data_to_save[key]
+                    
+                    # Proses field multiple (fm_)
+                    elif first_col.startswith('fm_'):
+                        field_name = first_col[3:].strip()
+                        current_section = self._get_section_for_row(excel_data, row_idx)
+                        
+                        # Cari nilai di data_to_save
+                        key = f"{current_section}_{field_name}"
+                        if key in data_to_save:
+                            # Update nilai di cell kedua dan ketiga
+                            values = data_to_save[key]
+                            if values[0] is not None:
+                                sheet.cell(row=row_idx, column=2).value = values[0]
+                            if values[1] is not None and len(values) > 1:
+                                sheet.cell(row=row_idx, column=3).value = values[1]
+                
+                # Simpan workbook
+                workbook.save(self.excel_path)
+                
+                # Tampilkan pesan sukses
+                QMessageBox.information(self, "Sukses", f"Data dalam sheet {sheet_name} berhasil disimpan!")
+                
+                # Reload data
+                self.load_excel_data()
+            else:
+                QMessageBox.warning(self, "Peringatan", f"Sheet {sheet_name} tidak ditemukan dalam file Excel.")
+        
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Gagal menyimpan data: {str(e)}")
+            print(f"Error saving sheet data: {str(e)}")
+        
+    def _get_section_for_row(self, df, row_idx):
+        """Helper untuk mendapatkan section dari baris tertentu"""
+        current_section = "Default"
+        
+        # Cari section terdekat sebelum row_idx
+        for i in range(row_idx):
+            if i >= len(df):
+                break
+                
+            row = df.iloc[i]
+            first_col = row.iloc[0] if not pd.isna(row.iloc[0]) else ""
+            
+            if isinstance(first_col, str) and first_col.startswith('sub_'):
+                current_section = first_col[4:].strip()
+        
+        return current_section

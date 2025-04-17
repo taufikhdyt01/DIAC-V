@@ -66,7 +66,7 @@ class ExcelHelper:
     
     @staticmethod
     def parse_sheet_structure(df):
-        """Parse struktur sheet untuk mendapatkan struktur data"""
+        """Parse struktur sheet untuk mendapatkan struktur data dengan format baru"""
         structure = {
             'sections': [],
             'fields': []
@@ -74,6 +74,8 @@ class ExcelHelper:
         
         current_section = None
         field_id = 0
+        current_column_headers = []
+        has_column_headers = False
         
         # Proses setiap baris
         for idx, row in df.iterrows():
@@ -93,6 +95,9 @@ class ExcelHelper:
                     'fields': []
                 }
                 structure['sections'].append(current_section)
+                # Reset column headers when entering a new section
+                current_column_headers = []
+                has_column_headers = False
                 continue
             
             # Periksa apakah ini field header (fh_)
@@ -102,6 +107,23 @@ class ExcelHelper:
                 
                 field_header = first_col[3:].strip()  # Hapus prefix 'fh_'
                 current_section['current_header'] = field_header
+                # Reset column headers when adding a new field header
+                current_column_headers = []
+                has_column_headers = False
+                continue
+            
+            # Periksa apakah ini column header (ch_)
+            if isinstance(first_col, str) and first_col.startswith('ch_'):
+                has_column_headers = True
+                current_column_headers = []
+                
+                # Process header row and collect all ch_ columns
+                for col_idx in range(df.shape[1]):
+                    if col_idx < len(row) and not pd.isna(row[col_idx]):
+                        col_value = str(row[col_idx]).strip()
+                        if col_value.startswith('ch_'):
+                            header_text = col_value[3:].strip()  # Remove 'ch_' prefix
+                            current_column_headers.append(header_text)
                 continue
             
             # Periksa apakah ini field (f_)
@@ -141,5 +163,83 @@ class ExcelHelper:
                 
                 current_section['fields'].append(field_id)
                 structure['fields'].append(field)
+                continue
+            
+            # Periksa apakah ini field dropdown (fd_)
+            if isinstance(first_col, str) and first_col.startswith('fd_'):
+                if current_section is None:
+                    continue
+                
+                field_name = first_col[3:].strip()  # Hapus prefix 'fd_'
+                field_id += 1
+                
+                options = []
+                # Get dropdown options from next column
+                if len(row) > 1 and not pd.isna(row.iloc[1]):
+                    options_str = str(row.iloc[1]).strip()
+                    options = [opt.strip() for opt in options_str.split(',')]
+                
+                # Buat field
+                field = {
+                    'id': field_id,
+                    'name': field_name,
+                    'type': 'dropdown',
+                    'options': options,
+                    'section_id': current_section['id'],
+                    'header': current_section.get('current_header', '')
+                }
+                
+                current_section['fields'].append(field_id)
+                structure['fields'].append(field)
+                continue
+            
+            # Periksa apakah ini field multiple (fm_)
+            if isinstance(first_col, str) and first_col.startswith('fm_'):
+                if current_section is None:
+                    continue
+                
+                field_name = first_col[3:].strip()  # Hapus prefix 'fm_'
+                
+                # Jika ada column headers, buat satu field untuk setiap header
+                if has_column_headers and len(current_column_headers) > 0:
+                    for i, header in enumerate(current_column_headers):
+                        field_id += 1
+                        
+                        # Buat field untuk kolom ini
+                        field = {
+                            'id': field_id,
+                            'name': f"{field_name} - {header}",
+                            'type': 'text',
+                            'options': [],
+                            'section_id': current_section['id'],
+                            'header': current_section.get('current_header', ''),
+                            'parent_field': field_name,
+                            'column_index': i
+                        }
+                        
+                        current_section['fields'].append(field_id)
+                        structure['fields'].append(field)
+                else:
+                    # Default 2 kolom jika tidak ada column headers
+                    field_names = ["Name", "Contact"]
+                    for i in range(2):
+                        field_id += 1
+                        
+                        # Buat field untuk kolom ini
+                        field = {
+                            'id': field_id,
+                            'name': f"{field_name} - {field_names[i]}",
+                            'type': 'text',
+                            'options': [],
+                            'section_id': current_section['id'],
+                            'header': current_section.get('current_header', ''),
+                            'parent_field': field_name,
+                            'column_index': i
+                        }
+                        
+                        current_section['fields'].append(field_id)
+                        structure['fields'].append(field)
+                
+                continue
                 
         return structure
