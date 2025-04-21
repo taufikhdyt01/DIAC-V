@@ -26,7 +26,7 @@ DIAC-V adalah software ERP (Enterprise Resource Planning) berbasis Python untuk 
 ## Instalasi
 
 1. Clone atau download repositori ini
-2. Buat virtual environment (opsional tapi direkomendasikan):
+2. Buat virtual environment:
    ```
    python -m venv venv
    ```
@@ -54,7 +54,7 @@ DIAC-V adalah software ERP (Enterprise Resource Planning) berbasis Python untuk 
 3. Login dengan kredensial berikut:
    - Username: `admin`
    - Password: `admin123`
-   - Atau gunakan kredensial departemen seperti `john_ade/password123`
+   - Atau gunakan kredensial departemen seperti `mary_bdu/password123`
 4. Setelah login, dashboard akan menampilkan semua departemen
 5. Klik pada kartu departemen untuk mengakses modul-modul di departemen tersebut
 
