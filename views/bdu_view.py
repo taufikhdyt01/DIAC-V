@@ -387,12 +387,78 @@ class BDUGroupView(QMainWindow):
         except Exception as e:
             print(f"Error saat membaca data validation: {str(e)}")
             return []
+        
+    def process_excel_images(self, sheet_name, layout):
+        """Extract and display images from Excel sheet"""
+        try:
+            from openpyxl import load_workbook
+            from openpyxl.drawing.image import Image
+            from io import BytesIO
+            from PIL import Image as PILImage
+            
+            # Load workbook
+            wb = load_workbook(self.excel_path)
+            if sheet_name not in wb.sheetnames:
+                return False
+                
+            sheet = wb[sheet_name]
+            
+            # Create a frame for images
+            images_frame = QWidget()
+            images_layout = QVBoxLayout(images_frame)
+            images_layout.setContentsMargins(10, 10, 10, 10)
+            
+            # Add a title for images section
+            images_title = QLabel("Diagrams and Images")
+            images_title.setFont(QFont("Segoe UI", 14, QFont.Bold))
+            images_title.setStyleSheet(f"color: {PRIMARY_COLOR};")
+            images_layout.addWidget(images_title)
+            
+            # Track if we found any images
+            found_images = False
+            
+            # Process all images in the sheet
+            for image in sheet._images:
+                found_images = True
+                
+                # Create a label to display the image
+                img_label = QLabel()
+                img_label.setAlignment(Qt.AlignCenter)
+                img_label.setStyleSheet("background-color: white; border: 1px solid #ddd; padding: 10px;")
+                
+                # Extract image data
+                img_data = image._data()
+                
+                # Convert to QPixmap and set to label
+                pixmap = QPixmap()
+                pixmap.loadFromData(img_data)
+                
+                # Scale image if too large
+                if pixmap.width() > 800:
+                    pixmap = pixmap.scaledToWidth(800, Qt.SmoothTransformation)
+                    
+                img_label.setPixmap(pixmap)
+                images_layout.addWidget(img_label)
+                
+                # Add some spacing between images
+                images_layout.addSpacing(20)
+            
+            # Add the images frame to the main layout if we found any
+            if found_images:
+                layout.addWidget(images_frame)
+                return True
+            
+            return False
+        except Exception as e:
+            print(f"Error processing images from sheet {sheet_name}: {str(e)}")
+            return False
     
     def process_sheet_data(self, df, sheet_name, layout):
         """Process the data from a sheet and create UI elements"""
         # Check if the sheet is a DATA sheet (just display as a table)
         if sheet_name.startswith("DATA_"):
             self.create_data_table(df, layout)
+            self.process_excel_images(sheet_name, layout)
             return
 
         # For DIP sheets or other sheets, process as forms
