@@ -889,17 +889,14 @@ class BDUGroupView(QMainWindow):
                 
                 if len(row) > 2 and not pd.isna(row.iloc[2]):
                     unit_cell = str(row.iloc[2]).strip() if not pd.isna(row.iloc[2]) else ""
+                    # Only process unit values with fu_ prefix
                     if isinstance(unit_cell, str) and unit_cell.startswith('fu_'):
                         has_unit = True
                         unit_value = unit_cell[3:].strip()  # Remove 'fu_' prefix
-                    elif isinstance(unit_cell, str) and unit_cell:
-                        # If there's any value in column 3 but no fu_ prefix, treat as unit
-                        has_unit = True
-                        unit_value = unit_cell
                 
                 # Check if there's any field in the right columns (columns C and beyond)
                 has_right_field = False
-                for col_idx in range(3, min(len(row), df.shape[1])):  # Start from column 3 (after potential unit)
+                for col_idx in range(2, min(len(row), df.shape[1])):  # Start checking from column 2
                     if col_idx < len(row) and not pd.isna(row[col_idx]):
                         col_value = ""
                         if isinstance(row[col_idx], str):
@@ -907,6 +904,10 @@ class BDUGroupView(QMainWindow):
                         elif not pd.isna(row[col_idx]):
                             col_value = str(row[col_idx]).strip()
                         else:
+                            continue
+                            
+                        # If we find a unit (fu_), skip it for right field check
+                        if isinstance(col_value, str) and col_value.startswith('fu_'):
                             continue
                             
                         # Check for any field prefix in the right columns
@@ -925,13 +926,9 @@ class BDUGroupView(QMainWindow):
                     unit_label.setStyleSheet("color: #666; margin-left: 5px;")
                     unit_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                     
-                    # If there's no field in the right columns, make input field span less
-                    if not has_right_field:
-                        section_grid.addWidget(input_field, current_row, 1, 1, 1)  # Only span 1 column
-                        section_grid.addWidget(unit_label, current_row, 2, 1, 1)   # Add unit in column 2
-                    else:
-                        section_grid.addWidget(input_field, current_row, 1, 1, 1)  # Normal span
-                        section_grid.addWidget(unit_label, current_row, 2, 1, 1)   # Add unit in next column
+                    # Add unit label without changing the original input field position
+                    section_grid.addWidget(input_field, current_row, 1)
+                    section_grid.addWidget(unit_label, current_row, 2)
                 else:
                     # If there's no field in the right columns, make this field span wider
                     if not has_right_field:
