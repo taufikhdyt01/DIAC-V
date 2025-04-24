@@ -514,6 +514,16 @@ class BDUGroupView(QMainWindow):
                 if len(header_row_labels) > 0:
                     current_header_labels = header_row_labels
                     has_column_headers = True
+                    
+                # Also look for any right headers (fh_) in the same row
+                for col_idx in range(1, df.shape[1]):
+                    if col_idx < len(row) and not pd.isna(row[col_idx]):
+                        col_value = str(row[col_idx]).strip() if isinstance(row[col_idx], str) else ""
+                        if col_value.startswith('fh_'):
+                            right_header_text = col_value[3:].strip()  # Remove 'fh_' prefix
+                            # If this is first header for right section, treat it as section title
+                            if right_section is None:
+                                right_section = right_header_text
 
         # Process each row
         for index, row in df.iterrows():
@@ -546,10 +556,12 @@ class BDUGroupView(QMainWindow):
                 section_layout.setContentsMargins(15, 15, 15, 15)
                 section_layout.setSpacing(15)
 
-                # Add section title
+                # Add section title - ensure it's aligned with the left margin, no indent
                 title_label = QLabel(section_title)
                 title_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
                 title_label.setStyleSheet(f"color: {PRIMARY_COLOR}; background-color: transparent;")
+                title_label.setContentsMargins(0, 0, 0, 0)  # Remove any default margins
+                title_label.setIndent(0)  # Ensure no text indentation
 
                 section_layout.addWidget(title_label)
                 
@@ -557,6 +569,7 @@ class BDUGroupView(QMainWindow):
                 section_grid = QGridLayout()
                 section_grid.setHorizontalSpacing(30)  # Increase horizontal spacing
                 section_grid.setVerticalSpacing(10)
+                section_grid.setContentsMargins(0, 0, 0, 0)  # Remove any default margins
                 section_layout.addLayout(section_grid)
 
                 # Add section to main layout
@@ -611,7 +624,12 @@ class BDUGroupView(QMainWindow):
                 header_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
                 header_label.setStyleSheet("color: #555; margin-top: 5px;")
                 
-                # Add header to the grid - spans 2 columns
+                # Crucial settings to prevent indentation
+                header_label.setContentsMargins(0, 0, 0, 0)  # Remove any default margins
+                header_label.setIndent(0)  # Set text indent to 0
+                
+                # Add header to the grid - in column 0, same as regular field labels
+                # Don't span columns to keep consistent alignment with field labels
                 section_grid.addWidget(header_label, current_row, 0, 1, 1)
                 
                 # Check if there are column headers (ch_) in the same row
@@ -643,8 +661,10 @@ class BDUGroupView(QMainWindow):
                     for i, header_text in enumerate(current_header_labels):
                         col_header_label = QLabel(header_text)
                         col_header_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
-                        col_header_label.setStyleSheet("color: #555; margin-top: 5px; padding-left: 5px;")
+                        col_header_label.setStyleSheet("color: #555; margin-top: 5px; padding-left: 0px;")
                         col_header_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                        col_header_label.setContentsMargins(0, 0, 0, 0)  # Remove any default margins
+                        col_header_label.setIndent(0)  # Prevent text indentation
                         
                         # Position headers at the same row as the field header
                         # For the first header (Name), put it at column 1
@@ -811,8 +831,10 @@ class BDUGroupView(QMainWindow):
                     for col_idx, header_text in enumerate(current_header_labels):
                         col_header_label = QLabel(header_text)
                         col_header_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
-                        col_header_label.setStyleSheet("color: #555; margin-top: 5px; padding-left: 5px;")
+                        col_header_label.setStyleSheet("color: #555; margin-top: 5px; padding-left: 0px;")
                         col_header_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                        col_header_label.setContentsMargins(0, 0, 0, 0)  # Remove any default margins
+                        col_header_label.setIndent(0)  # Prevent text indentation
                         
                         # Grid column position depends on the header position
                         grid_col = col_idx  # Each field takes its own column in our grid
@@ -833,6 +855,8 @@ class BDUGroupView(QMainWindow):
                 label.setFont(QFont("Segoe UI", 11))
                 label.setStyleSheet("color: #333; background-color: transparent;")
                 label.setMinimumWidth(250)  # Set minimum width for consistent layout
+                label.setContentsMargins(0, 0, 0, 0)  # Ensure no margins
+                label.setIndent(0)  # Set text indent to 0 for proper alignment
                 
                 # Add label to grid
                 section_grid.addWidget(label, current_row, 0)
@@ -859,9 +883,23 @@ class BDUGroupView(QMainWindow):
                 if len(row) > 1 and not pd.isna(row.iloc[1]):
                     input_field.setText(str(row.iloc[1]).strip())
                 
+                # Check if there's a unit value (fu_) in the next column
+                has_unit = False
+                unit_value = ""
+                
+                if len(row) > 2 and not pd.isna(row.iloc[2]):
+                    unit_cell = str(row.iloc[2]).strip() if not pd.isna(row.iloc[2]) else ""
+                    if isinstance(unit_cell, str) and unit_cell.startswith('fu_'):
+                        has_unit = True
+                        unit_value = unit_cell[3:].strip()  # Remove 'fu_' prefix
+                    elif isinstance(unit_cell, str) and unit_cell:
+                        # If there's any value in column 3 but no fu_ prefix, treat as unit
+                        has_unit = True
+                        unit_value = unit_cell
+                
                 # Check if there's any field in the right columns (columns C and beyond)
                 has_right_field = False
-                for col_idx in range(2, min(len(row), df.shape[1])):
+                for col_idx in range(3, min(len(row), df.shape[1])):  # Start from column 3 (after potential unit)
                     if col_idx < len(row) and not pd.isna(row[col_idx]):
                         col_value = ""
                         if isinstance(row[col_idx], str):
@@ -879,14 +917,28 @@ class BDUGroupView(QMainWindow):
                             has_right_field = True
                             break
                 
-                # If there's no field in the right columns, make this field span to match fm_ fields
-                if not has_right_field:
-                    # The key fix: set the input field to span only column 1 and 2
-                    # This will align with the 'Name' and 'Phone No/Email' columns of fm_ fields
-                    section_grid.addWidget(input_field, current_row, 1, 1, 2)
+                # If there's a unit value, add it to the layout
+                if has_unit:
+                    # Create unit label
+                    unit_label = QLabel(unit_value)
+                    unit_label.setFont(QFont("Segoe UI", 11))
+                    unit_label.setStyleSheet("color: #666; margin-left: 5px;")
+                    unit_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                    
+                    # If there's no field in the right columns, make input field span less
+                    if not has_right_field:
+                        section_grid.addWidget(input_field, current_row, 1, 1, 1)  # Only span 1 column
+                        section_grid.addWidget(unit_label, current_row, 2, 1, 1)   # Add unit in column 2
+                    else:
+                        section_grid.addWidget(input_field, current_row, 1, 1, 1)  # Normal span
+                        section_grid.addWidget(unit_label, current_row, 2, 1, 1)   # Add unit in next column
                 else:
-                    # Add input field to grid normally
-                    section_grid.addWidget(input_field, current_row, 1)
+                    # If there's no field in the right columns, make this field span wider
+                    if not has_right_field:
+                        section_grid.addWidget(input_field, current_row, 1, 1, 2)  # Span 2 columns
+                    else:
+                        # Add input field to grid normally
+                        section_grid.addWidget(input_field, current_row, 1)
                 
                 # Register the field
                 self.data_fields[field_key] = input_field
@@ -923,9 +975,11 @@ class BDUGroupView(QMainWindow):
                                     right_header_label = QLabel(right_field_name)
                                     right_header_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
                                     right_header_label.setStyleSheet("color: #555; margin-top: 5px;")
+                                    right_header_label.setContentsMargins(0, 0, 0, 0)  # Remove any default margins
+                                    right_header_label.setIndent(0)  # Prevent text indentation
                                     
-                                    # Add header to the right section
-                                    section_grid.addWidget(right_header_label, current_row, 3, 1, 2)
+                                    # Add header to the right section - position on column 3 only (don't span)
+                                    section_grid.addWidget(right_header_label, current_row, 3, 1, 1)
                                     right_field_found = True
                                 continue  # Skip further processing for headers
                                 
@@ -941,6 +995,8 @@ class BDUGroupView(QMainWindow):
                                 right_label.setFont(QFont("Segoe UI", 11))
                                 right_label.setStyleSheet("color: #333; background-color: transparent;")
                                 right_label.setMinimumWidth(250)  # Set minimum width for consistent layout
+                                right_label.setContentsMargins(0, 0, 0, 0)  # Remove any default margins
+                                right_label.setIndent(0)  # Prevent text indentation
                                 
                                 # Add label to grid - position at the same row level as current field
                                 section_grid.addWidget(right_label, current_row, 3)
@@ -1171,9 +1227,11 @@ class BDUGroupView(QMainWindow):
                                 right_header_label = QLabel(right_field_name)
                                 right_header_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
                                 right_header_label.setStyleSheet("color: #555; margin-top: 5px;")
+                                right_header_label.setContentsMargins(0, 0, 0, 0)  # Remove any default margins
+                                right_header_label.setIndent(0)  # Prevent text indentation
                                 
-                                # Add header to the grid at the same row level
-                                section_grid.addWidget(right_header_label, current_row, 3, 1, 2)
+                                # Add header to the grid at the same row level - don't span columns
+                                section_grid.addWidget(right_header_label, current_row, 3, 1, 1)
                                 
                                 # If this is first header for right section, treat it as section title if we don't have one yet
                                 if right_section is None:
@@ -1314,7 +1372,10 @@ class BDUGroupView(QMainWindow):
                     input_field = QLineEdit()
                     input_field.setFont(QFont("Segoe UI", 11))
                     input_field.setMinimumWidth(180)
-                    input_field.setPlaceholderText(f"Enter {header}")
+                    
+                    # Include the field name in the placeholder text
+                    input_field.setPlaceholderText(f"Enter {field_name} {header}")
+                    
                     input_field.setStyleSheet("""
                         QLineEdit {
                             padding: 5px;
@@ -1544,6 +1605,7 @@ class BDUGroupView(QMainWindow):
             no_data_label.setAlignment(Qt.AlignCenter)
             no_data_label.setStyleSheet("color: #666; margin: 20px;")
             layout.addWidget(no_data_label)
+    
     def save_sheet_data(self, sheet_name):
         """Simpan data dari suatu sheet ke file Excel"""
         try:
