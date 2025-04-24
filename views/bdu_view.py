@@ -486,6 +486,35 @@ class BDUGroupView(QMainWindow):
             layout.addWidget(empty_label)
             return
 
+        # First pass: pre-scan for column headers
+        # This will help us collect all ch_ headers before processing fields
+        for index, row in df.iterrows():
+            # Skip empty rows
+            if pd.isna(row).all():
+                continue
+            
+            first_col = row.iloc[0] if not pd.isna(row.iloc[0]) else ""
+            if not isinstance(first_col, str):
+                try:
+                    first_col = str(first_col)
+                except:
+                    continue
+                    
+            # If this is a 'Contact' type row with headers
+            if first_col.startswith('fh_') and any(isinstance(cell, str) and cell.startswith('ch_') for cell in row if not pd.isna(cell)):
+                # Process all cells in this row to find ch_ headers
+                header_row_labels = []
+                for col_idx in range(df.shape[1]):
+                    if col_idx < len(row) and not pd.isna(row[col_idx]):
+                        col_value = str(row[col_idx]).strip() if isinstance(row[col_idx], str) else ""
+                        if col_value.startswith('ch_'):
+                            header_text = col_value[3:].strip()  # Remove 'ch_' prefix
+                            header_row_labels.append(header_text)
+                
+                if len(header_row_labels) > 0:
+                    current_header_labels = header_row_labels
+                    has_column_headers = True
+
         # Process each row
         for index, row in df.iterrows():
             # Skip empty rows
@@ -538,9 +567,6 @@ class BDUGroupView(QMainWindow):
                 left_section = section_title  # Track as left section
                 current_row = 0  # Reset row counter for new section
                 field_count = 0
-                # Reset column headers when entering a new section
-                current_header_labels = []
-                has_column_headers = False
 
                 # Also check if there are additional sections in this row (columns to the right)
                 for col_idx in range(1, df.shape[1]):
@@ -586,8 +612,44 @@ class BDUGroupView(QMainWindow):
                 header_label.setStyleSheet("color: #555; margin-top: 5px;")
                 
                 # Add header to the grid - spans 2 columns
-                section_grid.addWidget(header_label, current_row, 0, 1, 2)
-                current_row += 1
+                section_grid.addWidget(header_label, current_row, 0, 1, 1)
+                
+                # Check if there are column headers (ch_) in the same row
+                has_ch_in_row = False
+                ch_headers = []
+                ch_columns = []  # Track the column positions of the headers
+                
+                for col_idx in range(1, df.shape[1]):
+                    if col_idx < len(row) and not pd.isna(row[col_idx]):
+                        col_value = ""
+                        if isinstance(row[col_idx], str):
+                            col_value = row[col_idx].strip()
+                        elif not pd.isna(row[col_idx]):
+                            col_value = str(row[col_idx]).strip()
+                        
+                        if col_value.startswith('ch_'):
+                            has_ch_in_row = True
+                            ch_header_text = col_value[3:].strip()
+                            ch_headers.append(ch_header_text)
+                            ch_columns.append(col_idx)  # Save the actual column position
+                
+                # If we found ch_ headers in this row, update our current headers
+                if has_ch_in_row:
+                    current_header_labels = ch_headers
+                    has_column_headers = True
+                    
+                    # Add the column headers to the grid in the same row as the field header
+                    # This is the key change - align column headers horizontally with the field header
+                    for i, header_text in enumerate(current_header_labels):
+                        col_header_label = QLabel(header_text)
+                        col_header_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
+                        col_header_label.setStyleSheet("color: #555; margin-top: 5px; padding-left: 5px;")
+                        col_header_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                        
+                        # Position headers at the same row as the field header
+                        # For the first header (Name), put it at column 1
+                        # For the second header (Phone No/Email), put it at column 2
+                        section_grid.addWidget(col_header_label, current_row, i+1)
                 
                 # Check if there are fields or headers in columns C and beyond in the same row
                 # Keep track of found right header to avoid duplicates
@@ -601,6 +663,10 @@ class BDUGroupView(QMainWindow):
                         elif not pd.isna(row[col_idx]):
                             col_value = str(row[col_idx]).strip()
                         else:
+                            continue
+                            
+                        # Skip ch_ headers as we've already processed them
+                        if col_value.startswith('ch_'):
                             continue
                             
                         # Check for any field type in the right columns - not just fh_
@@ -631,7 +697,7 @@ class BDUGroupView(QMainWindow):
                                 
                                 # Position in the grid correctly - at the same row level as the left header
                                 # But in columns 3-4 (index 3-4) to create proper separation
-                                section_grid.addWidget(right_header_label, current_row - 1, 3, 1, 2)
+                                section_grid.addWidget(right_header_label, current_row, 3, 1, 2)
                             else:
                                 # Handle non-header fields in the right section immediately after a header in the left
                                 right_section_name = right_section if right_section else current_section
@@ -645,7 +711,7 @@ class BDUGroupView(QMainWindow):
                                 right_label.setMinimumWidth(250)  # Set minimum width for consistent layout
                                 
                                 # Add label to grid - position at the same row level as current header
-                                section_grid.addWidget(right_label, current_row - 1, 3)
+                                section_grid.addWidget(right_label, current_row, 3)
                                 
                                 # Create input field based on type
                                 if col_value.startswith('fd_'):
@@ -694,7 +760,7 @@ class BDUGroupView(QMainWindow):
                                             right_input_field.setCurrentText(value)
                                     
                                     # Add to grid
-                                    section_grid.addWidget(right_input_field, current_row - 1, 4)
+                                    section_grid.addWidget(right_input_field, current_row, 4)
                                 else:
                                     # It's a regular input field (f_ or fm_)
                                     right_input_field = QLineEdit()
@@ -719,22 +785,23 @@ class BDUGroupView(QMainWindow):
                                         right_input_field.setText(str(row.iloc[col_idx + 1]).strip())
                                     
                                     # Add to grid
-                                    section_grid.addWidget(right_input_field, current_row - 1, 4)
+                                    section_grid.addWidget(right_input_field, current_row, 4)
                                 
                                 # Register the field
                                 self.data_fields[right_field_key] = right_input_field
                 
+                current_row += 1
                 continue
 
-            # Check if it's a column header row (first cell starts with ch_)
-            elif first_col.startswith('ch_'):
+            # Check if it's a column header row (first cell starts with ch_ or has ch_ cells in the row)
+            elif first_col.startswith('ch_') or any(isinstance(cell, str) and cell.startswith('ch_') for cell in row if not pd.isna(cell)):
                 has_column_headers = True
                 current_header_labels = []
                 
                 # Process header row and collect all ch_ columns
                 for col_idx in range(df.shape[1]):
                     if col_idx < len(row) and not pd.isna(row[col_idx]):
-                        col_value = str(row[col_idx]).strip()
+                        col_value = str(row[col_idx]).strip() if isinstance(row[col_idx], str) else str(row[col_idx]).strip()
                         if col_value.startswith('ch_'):
                             header_text = col_value[3:].strip()  # Remove 'ch_' prefix
                             current_header_labels.append(header_text)
@@ -744,11 +811,12 @@ class BDUGroupView(QMainWindow):
                     for col_idx, header_text in enumerate(current_header_labels):
                         col_header_label = QLabel(header_text)
                         col_header_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
-                        col_header_label.setStyleSheet("color: #555; margin-top: 5px;")
+                        col_header_label.setStyleSheet("color: #555; margin-top: 5px; padding-left: 5px;")
+                        col_header_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                         
                         # Grid column position depends on the header position
-                        grid_col = col_idx * 2  # Each field takes 2 columns in our grid
-                        section_grid.addWidget(col_header_label, current_row, grid_col, 1, 2)
+                        grid_col = col_idx  # Each field takes its own column in our grid
+                        section_grid.addWidget(col_header_label, current_row, grid_col + 1)  # +1 to leave room for labels
                     
                     current_row += 1
                 
@@ -791,8 +859,34 @@ class BDUGroupView(QMainWindow):
                 if len(row) > 1 and not pd.isna(row.iloc[1]):
                     input_field.setText(str(row.iloc[1]).strip())
                 
-                # Add input field to grid
-                section_grid.addWidget(input_field, current_row, 1)
+                # Check if there's any field in the right columns (columns C and beyond)
+                has_right_field = False
+                for col_idx in range(2, min(len(row), df.shape[1])):
+                    if col_idx < len(row) and not pd.isna(row[col_idx]):
+                        col_value = ""
+                        if isinstance(row[col_idx], str):
+                            col_value = row[col_idx].strip()
+                        elif not pd.isna(row[col_idx]):
+                            col_value = str(row[col_idx]).strip()
+                        else:
+                            continue
+                            
+                        # Check for any field prefix in the right columns
+                        if (col_value.startswith('f_') or 
+                            col_value.startswith('fd_') or 
+                            col_value.startswith('fh_') or 
+                            col_value.startswith('fm_')):
+                            has_right_field = True
+                            break
+                
+                # If there's no field in the right columns, make this field span to match fm_ fields
+                if not has_right_field:
+                    # The key fix: set the input field to span only column 1 and 2
+                    # This will align with the 'Name' and 'Phone No/Email' columns of fm_ fields
+                    section_grid.addWidget(input_field, current_row, 1, 1, 2)
+                else:
+                    # Add input field to grid normally
+                    section_grid.addWidget(input_field, current_row, 1)
                 
                 # Register the field
                 self.data_fields[field_key] = input_field
@@ -1007,8 +1101,36 @@ class BDUGroupView(QMainWindow):
                 elif len(options) > 0:
                     input_field.setCurrentText(options[0])
                 
-                # Add dropdown to grid
-                section_grid.addWidget(input_field, current_row, 1)
+                # Check if there's any field in the right columns (columns C and beyond)
+                has_right_field = False
+                for col_idx in range(2, min(len(row), df.shape[1])):
+                    if col_idx < len(row) and not pd.isna(row[col_idx]):
+                        col_value = ""
+                        if isinstance(row[col_idx], str):
+                            col_value = row[col_idx].strip()
+                        elif not pd.isna(row[col_idx]):
+                            col_value = str(row[col_idx]).strip()
+                        else:
+                            continue
+                            
+                        # Check for any field prefix in the right columns
+                        if (col_value.startswith('f_') or 
+                            col_value.startswith('fd_') or 
+                            col_value.startswith('fh_') or 
+                            col_value.startswith('fm_')):
+                            has_right_field = True
+                            break
+                
+                # If there's no field in the right columns, make this field span to match fm_ fields
+                if not has_right_field:
+                    # Set dropdown to span only columns 1 and 2 to align with fm_ fields
+                    section_grid.addWidget(input_field, current_row, 1, 1, 2)  # Span 2 columns
+                else:
+                    # Add dropdown to grid normally
+                    section_grid.addWidget(input_field, current_row, 1)
+                    
+                # Register the field
+                self.data_fields[field_key] = input_field
                 
                 # Register the field
                 self.data_fields[field_key] = input_field
@@ -1178,66 +1300,66 @@ class BDUGroupView(QMainWindow):
                 if has_column_headers and len(current_header_labels) > 0:
                     header_names = current_header_labels
                 else:
-                    # Default fallback column names
-                    header_names = ["Value", "Description"]
+                    # Default fallback column names based on the screenshot
+                    header_names = ["Name", "Phone No/Email"]
                 
-                # Create first input field
-                input_field = QLineEdit()
-                input_field.setFont(QFont("Segoe UI", 11))
-                input_field.setMinimumWidth(200)  # Set minimum width for consistent layout
+                # KEY CHANGE: Instead of creating a container widget, we'll place fields directly in the grid
+                # This aligns the fields with the column headers above
                 
-                # Add appropriate placeholder text based on header 
-                if len(header_names) > 0:
-                    input_field.setPlaceholderText(f"Enter {header_names[0]}")
-                else:
-                    input_field.setPlaceholderText(f"Enter {field_name}")
+                # Create input fields based on the number of headers
+                for i, header in enumerate(header_names):
+                    if i >= 2:  # Limit to 2 columns in case there are more headers
+                        break
+                        
+                    input_field = QLineEdit()
+                    input_field.setFont(QFont("Segoe UI", 11))
+                    input_field.setMinimumWidth(180)
+                    input_field.setPlaceholderText(f"Enter {header}")
+                    input_field.setStyleSheet("""
+                        QLineEdit {
+                            padding: 5px;
+                            border: 1px solid #ccc;
+                            border-radius: 4px;
+                            background-color: white;
+                            min-height: 28px;
+                        }
+                        QLineEdit:hover {
+                            border: 1px solid #3498DB;
+                        }
+                    """)
                     
-                input_field.setStyleSheet("""
-                    QLineEdit {
-                        padding: 5px;
-                        border: 1px solid #ccc;
-                        border-radius: 4px;
-                        background-color: white;
-                        min-height: 28px;
-                    }
-                    QLineEdit:hover {
-                        border: 1px solid #3498DB;
-                    }
-                """)
+                    # Set value if available
+                    if i+1 < len(row) and not pd.isna(row.iloc[i+1]):
+                        input_field.setText(str(row.iloc[i+1]).strip())
+                    
+                    # Place each field directly in its corresponding column position
+                    # First field (Name) goes in column 1, second field (Phone No/Email) goes in column 2
+                    section_grid.addWidget(input_field, current_row, i+1)
+                    
+                    # Register field
+                    self.data_fields[f"{field_key_base}_{i}"] = input_field
+                    field_count += 1
                 
-                # Set value if available
-                if len(row) > 1 and not pd.isna(row.iloc[1]):
-                    input_field.setText(str(row.iloc[1]).strip())
-                
-                # Add field to grid
-                section_grid.addWidget(input_field, current_row, 1)
-                
-                # Register the field
-                self.data_fields[f"{field_key_base}_0"] = input_field
-                field_count += 1
-                
-                # Check for additional multiple fields in this row for the right section
-                # Process any field type (f_, fd_, fm_) in the right section
+                # Check for fields in right section (columns to the right)
                 right_field_found = False
                 
-                for col_idx in range(2, min(len(row), df.shape[1])):
+                for col_idx in range(3, min(len(row), df.shape[1])):
                     if col_idx < len(row) and not pd.isna(row[col_idx]):
                         col_value = ""
                         if isinstance(row[col_idx], str):
                             col_value = row[col_idx].strip()
                         elif not pd.isna(row[col_idx]):
-                            # Convert non-string values to string
                             col_value = str(row[col_idx]).strip()
                         else:
                             continue
                             
-                        # Check for any field prefix in the right section
+                        # Check for any field prefix in right section
                         if (col_value.startswith('f_') or 
                             col_value.startswith('fd_') or 
                             col_value.startswith('fm_') or
                             col_value.startswith('fh_')):
                             
-                            # Extract the right field prefix and name accordingly
+                            # Extract the prefix and name
                             if col_value.startswith('f_'):
                                 prefix = col_value[:2]
                                 suffix = col_value[2:]
@@ -1247,144 +1369,138 @@ class BDUGroupView(QMainWindow):
                             
                             right_field_name = suffix.strip()
                             
-                            # Skip if this is a header (fh_) as we already processed those
+                            # Skip headers
                             if col_value.startswith('fh_'):
                                 continue
                                 
-                            right_section_name = right_section if right_section else current_section
-                            right_field_key_base = f"{sheet_name}_{right_section_name}_{right_field_name}"
-                            right_field_found = True
-                            
-                            # Create right field label
-                            right_label = QLabel(right_field_name)
-                            right_label.setFont(QFont("Segoe UI", 11))
-                            right_label.setStyleSheet("color: #333; background-color: transparent;")
-                            right_label.setMinimumWidth(250)  # Set minimum width for consistent layout
-                            
-                            # Add label to grid at the same row level as current field
-                            section_grid.addWidget(right_label, current_row, 3)
-                            
-                            # If it's a dropdown field
-                            if col_value.startswith('fd_'):
-                                # Create dropdown for right field
-                                right_input_field = QComboBox()
-                                right_input_field.setFont(QFont("Segoe UI", 11))
-                                right_input_field.setMinimumWidth(200)  # Set minimum width for consistent layout
-                                right_input_field.setStyleSheet("""
-                                    QComboBox {
-                                        padding: 5px;
-                                        border: 1px solid #ccc;
-                                        border-radius: 4px;
-                                        background-color: white;
-                                        min-height: 28px;
-                                    }
-                                    QComboBox:hover {
-                                        border: 1px solid #3498DB;
-                                    }
-                                    QComboBox::drop-down {
-                                        subcontrol-origin: padding;
-                                        subcontrol-position: top right;
-                                        width: 20px;
-                                        border-left-width: 1px;
-                                        border-left-color: #ccc;
-                                        border-left-style: solid;
-                                        border-top-right-radius: 4px;
-                                        border-bottom-right-radius: 4px;
-                                    }
-                                """)
+                            # Process the first field found in right section
+                            if not right_field_found:
+                                right_field_found = True
                                 
-                                # Get options for right dropdown
-                                right_options = []
-                                right_cell_col = col_idx + 1
-                                right_cell_address = f"{chr(ord('A') + right_cell_col)}{index + 1}"
+                                right_section_name = right_section if right_section else current_section
+                                right_field_key_base = f"{sheet_name}_{right_section_name}_{right_field_name}"
                                 
-                                right_validation_options = self.get_validation_values(self.excel_path, sheet_name, right_cell_address)
+                                # Create right field label
+                                right_label = QLabel(right_field_name)
+                                right_label.setFont(QFont("Segoe UI", 11))
+                                right_label.setStyleSheet("color: #333; background-color: transparent;")
+                                right_label.setMinimumWidth(250)
                                 
-                                if right_validation_options:
-                                    right_options = right_validation_options
+                                section_grid.addWidget(right_label, current_row, 3)
+                                
+                                # For multiple fields (fm_) in right section
+                                if col_value.startswith('fm_'):
+                                    # Create container for right fields
+                                    right_container = QWidget()
+                                    right_layout = QHBoxLayout(right_container)
+                                    right_layout.setContentsMargins(0, 0, 0, 0)
+                                    right_layout.setSpacing(10)
+                                    right_layout.setAlignment(Qt.AlignLeft)
+                                    
+                                    # Create fields based on number of headers
+                                    for i, header in enumerate(header_names):
+                                        if i >= 2:  # Limit to 2 columns
+                                            break
+                                            
+                                        right_input = QLineEdit()
+                                        right_input.setFont(QFont("Segoe UI", 11))
+                                        right_input.setPlaceholderText(f"Enter {header}")
+                                        right_input.setStyleSheet("""
+                                            QLineEdit {
+                                                padding: 5px;
+                                                border: 1px solid #ccc;
+                                                border-radius: 4px;
+                                                background-color: white;
+                                                min-height: 28px;
+                                            }
+                                            QLineEdit:hover {
+                                                border: 1px solid #3498DB;
+                                            }
+                                        """)
+                                        
+                                        # Set value if available
+                                        if col_idx + i + 1 < len(row) and not pd.isna(row.iloc[col_idx + i + 1]):
+                                            right_input.setText(str(row.iloc[col_idx + i + 1]).strip())
+                                        
+                                        right_layout.addWidget(right_input)
+                                        
+                                        # Register field
+                                        self.data_fields[f"{right_field_key_base}_{i}"] = right_input
+                                        field_count += 1
+                                    
+                                    # Add container to grid
+                                    section_grid.addWidget(right_container, current_row, 4, 1, 1)
                                 else:
-                                    # Fallback if data validation not found
-                                    if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
-                                        right_options_str = str(row.iloc[col_idx + 1]).strip()
-                                        right_options = [opt.strip() for opt in right_options_str.split(',')]
-                                
-                                # Add options to right dropdown
-                                right_input_field.addItems(right_options)
-                                
-                                # Set default value if available
-                                if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]) and str(row.iloc[col_idx + 1]).strip() in right_options:
-                                    right_input_field.setCurrentText(str(row.iloc[col_idx + 1]).strip())
-                                elif len(right_options) > 0:
-                                    right_input_field.setCurrentText(right_options[0])
-                                
-                                # Add dropdown to grid
-                                section_grid.addWidget(right_input_field, current_row, 4)
-                            else:
-                                # Regular input field
-                                right_input = QLineEdit()
-                                right_input.setFont(QFont("Segoe UI", 11))
-                                right_input.setMinimumWidth(200)  # Set minimum width for consistent layout
-                                right_input.setPlaceholderText(f"Enter {right_field_name}")
-                                
-                                # Set value if available
-                                if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
-                                    right_input.setText(str(row.iloc[col_idx + 1]).strip())
-                                
-                                right_input.setStyleSheet("""
-                                    QLineEdit {
-                                        padding: 5px;
-                                        border: 1px solid #ccc;
-                                        border-radius: 4px;
-                                        background-color: white;
-                                        min-height: 28px;
-                                    }
-                                    QLineEdit:hover {
-                                        border: 1px solid #3498DB;
-                                    }
-                                """)
-                                
-                                # Add to grid
-                                section_grid.addWidget(right_input, current_row, 4)
+                                    # For other field types
+                                    if col_value.startswith('fd_'):
+                                        # Create dropdown
+                                        right_input = QComboBox()
+                                        right_input.setFont(QFont("Segoe UI", 11))
+                                        right_input.setMinimumWidth(200)
+                                        right_input.setStyleSheet("""
+                                            QComboBox {
+                                                padding: 5px;
+                                                border: 1px solid #ccc;
+                                                border-radius: 4px;
+                                                background-color: white;
+                                                min-height: 28px;
+                                            }
+                                            QComboBox:hover {
+                                                border: 1px solid #3498DB;
+                                            }
+                                            QComboBox::drop-down {
+                                                subcontrol-origin: padding;
+                                                subcontrol-position: top right;
+                                                width: 20px;
+                                                border-left-width: 1px;
+                                                border-left-color: #ccc;
+                                                border-left-style: solid;
+                                                border-top-right-radius: 4px;
+                                                border-bottom-right-radius: 4px;
+                                            }
+                                        """)
+                                        
+                                        # Get options
+                                        right_options = []
+                                        if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
+                                            right_options_str = str(row.iloc[col_idx + 1]).strip()
+                                            right_options = [opt.strip() for opt in right_options_str.split(',')]
+                                        
+                                        right_input.addItems(right_options)
+                                        
+                                        if len(right_options) > 0:
+                                            right_input.setCurrentText(right_options[0])
+                                        
+                                        section_grid.addWidget(right_input, current_row, 4)
+                                    else:
+                                        # Regular input field
+                                        right_input = QLineEdit()
+                                        right_input.setFont(QFont("Segoe UI", 11))
+                                        right_input.setPlaceholderText(f"Enter {right_field_name}")
+                                        right_input.setStyleSheet("""
+                                            QLineEdit {
+                                                padding: 5px;
+                                                border: 1px solid #ccc;
+                                                border-radius: 4px;
+                                                background-color: white;
+                                                min-height: 28px;
+                                            }
+                                            QLineEdit:hover {
+                                                border: 1px solid #3498DB;
+                                            }
+                                        """)
+                                        
+                                        # Set value
+                                        if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
+                                            right_input.setText(str(row.iloc[col_idx + 1]).strip())
+                                        
+                                        section_grid.addWidget(right_input, current_row, 4)
+                                    
+                                    # Register field
+                                    self.data_fields[f"{right_field_key_base}_0"] = right_input
+                                    field_count += 1
                             
-                            # Register field
-                            self.data_fields[f"{right_field_key_base}_0"] = right_input
-                            field_count += 1
-                            break  # Process only the first right field for simplicity
-                        elif not right_field_found:
-                            # This could be a second value for the multiple field on the left
-                            # Only handle if it's not already handled as part of a right field
-                            # Create additional input field
-                            extra_input = QLineEdit()
-                            extra_input.setFont(QFont("Segoe UI", 11))
-                            
-                            # Use appropriate header if available
-                            if len(header_names) > (col_idx - 1) and (col_idx - 1) >= 0:
-                                extra_input.setPlaceholderText(f"Enter {header_names[col_idx - 1]}")
-                            else:
-                                extra_input.setPlaceholderText(f"Enter additional {field_name}")
-                                
-                            extra_input.setStyleSheet("""
-                                QLineEdit {
-                                    padding: 5px;
-                                    border: 1px solid #ccc;
-                                    border-radius: 4px;
-                                    background-color: white;
-                                    min-height: 28px;
-                                }
-                                QLineEdit:hover {
-                                    border: 1px solid #3498DB;
-                                }
-                            """)
-                            
-                            # Set value
-                            extra_input.setText(str(row[col_idx]).strip())
-                            
-                            # Place this as an additional column for the left field
-                            section_grid.addWidget(extra_input, current_row, 2)
-                            
-                            # Register field
-                            self.data_fields[f"{field_key_base}_{col_idx-1}"] = extra_input
-                            field_count += 1
+                            break  # Only process the first field with a prefix
                 
                 current_row += 1
                 continue
@@ -1393,35 +1509,41 @@ class BDUGroupView(QMainWindow):
         if section_layout:
             self.process_excel_images(sheet_name, section_layout)
             
+        # Add a save button for the sheet at the end (only for DIP sheets)
+        if section_layout and sheet_name.startswith("DIP_"):
+            # Add spacer
+            section_layout.addSpacing(10)
+
+            # Save button
+            save_btn = QPushButton("Save Changes")
+            save_btn.setFont(QFont("Segoe UI", 11, QFont.Bold))
+            save_btn.setCursor(Qt.PointingHandCursor)
+            save_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {SECONDARY_COLOR};
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 8px 15px;
+                }}
+                QPushButton:hover {{
+                    background-color: #2980B9;
+                }}
+            """)
+            save_btn.clicked.connect(lambda: self.save_sheet_data(sheet_name))
+
+            button_layout = QHBoxLayout()
+            button_layout.addStretch()
+            button_layout.addWidget(save_btn)
+
+            section_layout.addLayout(button_layout)
+            
         # If no content was added, add a default message
         if not layout.count():
             no_data_label = QLabel("No form fields found in this sheet.")
             no_data_label.setAlignment(Qt.AlignCenter)
             no_data_label.setStyleSheet("color: #666; margin: 20px;")
             layout.addWidget(no_data_label)
-            
-    def _get_right_section_for_row(self, df, row_idx, col_idx):
-        """Helper untuk mendapatkan section dari kolom kanan untuk baris tertentu"""
-        # Start from the top and look for 'sub_' in the specified column
-        current_right_section = None
-        
-        for i in range(row_idx):
-            if i >= len(df):
-                break
-                
-            row = df.iloc[i]
-            
-            # Skip if column doesn't exist
-            if col_idx >= len(row):
-                continue
-                
-            col_value = row.iloc[col_idx] if not pd.isna(row.iloc[col_idx]) else ""
-            
-            if isinstance(col_value, str) and col_value.startswith('sub_'):
-                current_right_section = col_value[4:].strip()
-        
-        return current_right_section
-
     def save_sheet_data(self, sheet_name):
         """Simpan data dari suatu sheet ke file Excel"""
         try:
@@ -1523,7 +1645,7 @@ class BDUGroupView(QMainWindow):
                         try:
                             first_col = str(first_col)
                         except:
-                            continue
+                            continue  # Skip if can't convert to string
                     
                     # Proses berdasarkan tipe prefix
                     if first_col.startswith('sub_') or first_col.startswith('fh_') or first_col.startswith('ch_'):
@@ -1547,9 +1669,9 @@ class BDUGroupView(QMainWindow):
                             
                             # Check for any field type (f_, fd_, fh_) in right columns
                             if isinstance(col_value, str) and (col_value.startswith('f_') or 
-                                   col_value.startswith('fd_') or 
-                                   col_value.startswith('fh_')):
-                                   
+                                col_value.startswith('fd_') or 
+                                col_value.startswith('fh_')):
+                                
                                 # This is a field in a right column
                                 # Extract the prefix and field name
                                 if col_value.startswith('f_'):
@@ -1591,9 +1713,9 @@ class BDUGroupView(QMainWindow):
                             
                             # Check for any field type (f_, fd_, fh_) in right columns
                             if isinstance(col_value, str) and (col_value.startswith('f_') or 
-                                   col_value.startswith('fd_') or 
-                                   col_value.startswith('fh_')):
-                                   
+                                col_value.startswith('fd_') or 
+                                col_value.startswith('fh_')):
+                                
                                 # This is a field in a right column
                                 # Extract the prefix and field name
                                 if col_value.startswith('f_'):
@@ -1641,10 +1763,10 @@ class BDUGroupView(QMainWindow):
                             
                             # Check for any field type in right columns
                             if isinstance(col_value, str) and (col_value.startswith('f_') or 
-                                   col_value.startswith('fd_') or 
-                                   col_value.startswith('fm_') or
-                                   col_value.startswith('fh_')):
-                                   
+                                col_value.startswith('fd_') or 
+                                col_value.startswith('fm_') or
+                                col_value.startswith('fh_')):
+                                
                                 # This is a field in a right column
                                 # Extract the prefix and field name
                                 if col_value.startswith('f_'):
@@ -1693,6 +1815,30 @@ class BDUGroupView(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Gagal menyimpan data: {str(e)}")
             print(f"Error saving sheet data: {str(e)}")
+    
+    def _get_right_section_for_row(self, df, row_idx, col_idx):
+        """Helper untuk mendapatkan section dari kolom kanan untuk baris tertentu"""
+        # Start from the top and look for 'sub_' in the specified column
+        current_right_section = None
+        
+        for i in range(row_idx):
+            if i >= len(df):
+                break
+                
+            row = df.iloc[i]
+            
+            # Skip if column doesn't exist
+            if col_idx >= len(row):
+                continue
+                
+            col_value = row.iloc[col_idx] if not pd.isna(row.iloc[col_idx]) else ""
+            
+            if isinstance(col_value, str) and col_value.startswith('sub_'):
+                current_right_section = col_value[4:].strip()
+        
+        return current_right_section
+                        
+            
         
     def _get_section_for_row(self, df, row_idx):
         """Helper untuk mendapatkan section dari baris tertentu"""
