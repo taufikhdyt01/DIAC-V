@@ -6,13 +6,26 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QPushButton, QFrame, QGridLayout, QSpacerItem,
                              QSizePolicy, QScrollArea, QApplication, QMenu, QAction,
                              QTabWidget, QLineEdit, QComboBox, QTableWidget, QTableWidgetItem,
-                             QHeaderView, QMessageBox, QFileDialog, QDateEdit)
+                             QHeaderView, QMessageBox, QFileDialog, QDateEdit, QCheckBox)
 from PyQt5.QtGui import QPixmap, QIcon, QFont, QColor, QPalette, QCursor
 from PyQt5.QtCore import Qt, QSize, pyqtSignal, QPoint, QDate
 
 # Import local modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import APP_NAME, SECONDARY_COLOR, PRIMARY_COLOR, BG_COLOR, DEPARTMENTS
+
+INDUSTRY_SUBTYPE_MAPPING = {
+    "Palm Oil": ["CPO&CPKO", "EFB", "Palm Oil Plantation"],
+    "Mining": ["Coal Mining", "Gold Mining", "Nickel Mining", "Tin Mining", "Bauxite Mining"],
+    "Oil & Gas": ["Upstream", "Midstream", "Downstream"],
+    "Non Food Industry-A": ["Apparel & Footwear (Textile)", "Manufacturing/Heavy Industry", 
+                           "Technology & Telecommunication", "Transportation & Logistics"],
+    "F&B": ["Processed Food", "Beverages", "Dairy Products", "Confectionary", 
+           "Meat Processing", "Seasoning"],
+    "Agro Industry": ["Fishery & Aquaculture Products", "Food Crops (Cofee, Cocoa)", 
+                     "Tobacco", "Sugar", "Livestock & Poultry"],
+    "Non Food Industry-B": ["Tourism & Hospitality", "Construction & Real Estate", "Residential"]
+}
 
 class BDUGroupView(QMainWindow):
     """View untuk BDU Group"""
@@ -25,6 +38,7 @@ class BDUGroupView(QMainWindow):
         self.excel_data = None
         self.sheet_tabs = {}
         self.data_fields = {}
+        self.linked_dropdowns = {}
         
         # Excel path
         self.excel_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "SET_BDU.xlsx")
@@ -260,6 +274,18 @@ class BDUGroupView(QMainWindow):
         self.back_to_dashboard.emit()
         self.close()
     
+    def update_dependent_dropdown(self, parent_value, child_dropdown):
+        """Update dropdown yang bergantung berdasarkan nilai dropdown utama"""
+        # Bersihkan dropdown anak
+        child_dropdown.clear()
+        
+        # Isi dengan nilai-nilai yang sesuai berdasarkan pilihan pada dropdown utama
+        if parent_value in INDUSTRY_SUBTYPE_MAPPING:
+            child_dropdown.addItems(INDUSTRY_SUBTYPE_MAPPING[parent_value])
+        else:
+            # Jika tidak ada mapping, tambahkan placeholder atau biarkan kosong
+            child_dropdown.addItem("-- Select Sub Industry --")
+            
     def load_excel_data(self):
         """Load data from SET_BDU.xlsx"""
         try:
@@ -477,6 +503,14 @@ class BDUGroupView(QMainWindow):
 
         # Field identification
         field_count = 0
+        
+        # Variables to track industry dropdown fields
+        industry_dropdown = None
+        sub_industry_dropdown = None
+        
+        # Untuk melacak pasangan field dropdown industry-subindustry
+        industry_field_key = None
+        sub_industry_field_key = None
 
         # Check if the dataframe is empty
         if df.empty:
@@ -1127,6 +1161,10 @@ class BDUGroupView(QMainWindow):
                     }
                 """)
                 
+                is_industry_field = field_name == "Industry Classification"
+                is_sub_industry_field = field_name == "Sub Industry Specification"
+                
+                
                 # Try to get options from data validation or from second column
                 options = []
                 # If Excel stores cell position
@@ -1134,26 +1172,45 @@ class BDUGroupView(QMainWindow):
                 col_index = 2  # Assuming column B for dropdown value
                 cell_address = f"{chr(ord('A') + col_index-1)}{row_index}"
                 
-                # Try to get from data validation
-                validation_options = self.get_validation_values(self.excel_path, sheet_name, cell_address)
-                
-                if validation_options:
-                    options = validation_options
+                # Untuk field Industry Classification, gunakan data dari mapping
+                if is_industry_field:
+                    # Gunakan list industry dari mapping
+                    options = list(INDUSTRY_SUBTYPE_MAPPING.keys())
+                    industry_dropdown = input_field
+                    industry_field_key = field_key
                 else:
-                    # Fallback to old method if data validation not found
-                    if len(row) > 1 and not pd.isna(row.iloc[1]):
-                        options_str = str(row.iloc[1]).strip()
-                        options = [opt.strip() for opt in options_str.split(',')]
+                    # Untuk field lain, gunakan metode biasa
+                    # Try to get from data validation
+                    validation_options = self.get_validation_values(self.excel_path, sheet_name, cell_address)
+                    
+                    if validation_options:
+                        options = validation_options
+                    else:
+                        # Fallback to old method if data validation not found
+                        if len(row) > 1 and not pd.isna(row.iloc[1]):
+                            options_str = str(row.iloc[1]).strip()
+                            options = [opt.strip() for opt in options_str.split(',')]
+                
+                # Jika ini adalah Sub Industry Specification field
+                if is_sub_industry_field:
+                    sub_industry_dropdown = input_field
+                    sub_industry_field_key = field_key
+                    # Tambahkan placeholder, nilai sebenarnya akan diisi nanti saat industry dipilih
+                    options = ["-- Select Industry first --"]
                 
                 # Add options and set default if available
                 input_field.addItems(options)
                 
                 # Set default value if available
-                if len(row) > 1 and not pd.isna(row.iloc[1]) and str(row.iloc[1]).strip() in options:
-                    input_field.setCurrentText(str(row.iloc[1]).strip())
+                default_value = ""
+                if len(row) > 1 and not pd.isna(row.iloc[1]):
+                    default_value = str(row.iloc[1]).strip()
+                    
+                if default_value and default_value in options:
+                    input_field.setCurrentText(default_value)
                 elif len(options) > 0:
                     input_field.setCurrentText(options[0])
-                
+                    
                 # Check if there's any field in the right columns (columns C and beyond)
                 has_right_field = False
                 for col_idx in range(2, min(len(row), df.shape[1])):
@@ -1562,6 +1619,178 @@ class BDUGroupView(QMainWindow):
                 
                 current_row += 1
                 continue
+            
+            # Check if it's a table group (ftg_)
+            if first_col.startswith('ftg_'):
+                group_name = first_col[4:].strip()  # Remove 'ftg_' prefix
+                
+                # Create group header label - span across all columns
+                group_label = QLabel(group_name)
+                group_label.setFont(QFont("Segoe UI", 11, QFont.Bold))  # Make it bold
+                group_label.setStyleSheet("""
+                    color: #333; 
+                    background-color: #f0f0f0; 
+                    padding: 5px;
+                    border-bottom: 1px solid #ccc;
+                """)
+                group_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                
+                # Add label to grid - span across all columns (4 columns: task, client, contractor, remarks)
+                section_grid.addWidget(group_label, current_row, 0, 1, 4)
+                
+                current_row += 1
+                continue
+            
+            # Check if it's a table note (ftn_)
+            if first_col.startswith('ftn_'):
+                note_text = first_col[4:].strip()  # Remove 'ftn_' prefix
+                
+                # Create note label with italic style
+                note_label = QLabel(note_text)
+                note_label.setFont(QFont("Segoe UI", 10))
+                note_label.setStyleSheet("""
+                    color: #666; 
+                    background-color: #f9f9f9; 
+                    padding: 3px 5px;
+                    font-style: italic;
+                """)
+                note_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                
+                # Add label to grid - span across all columns
+                section_grid.addWidget(note_label, current_row, 0, 1, 4)
+                
+                current_row += 1
+                continue
+
+            # Check if it's a table item (ft_)
+            elif first_col.startswith('ft_'):
+                task_name = first_col[3:].strip()  # Remove 'ft_' prefix
+                field_key_base = f"{sheet_name}_{current_section}_{field_count}"
+                field_count += 1
+                
+                # Create task label
+                task_label = QLabel(task_name)
+                task_label.setFont(QFont("Segoe UI", 11))
+                task_label.setStyleSheet("color: #333; background-color: transparent;")
+                task_label.setMinimumWidth(300)  # Wider for task text
+                task_label.setWordWrap(True)  # Allow text wrapping for long task names
+                
+                # Add label to grid - span only column 0
+                section_grid.addWidget(task_label, current_row, 0)
+                
+                # Create checkbox for Client
+                client_checkbox = QCheckBox()
+                client_checkbox.setStyleSheet("""
+                    QCheckBox {
+                        min-height: 20px;
+                    }
+                    QCheckBox::indicator {
+                        width: 18px;
+                        height: 18px;
+                    }
+                """)
+                
+                # Create container widget for client checkbox to center it
+                client_container = QWidget()
+                client_layout = QHBoxLayout(client_container)
+                client_layout.setAlignment(Qt.AlignCenter)
+                client_layout.setContentsMargins(0, 0, 0, 0)
+                client_layout.addWidget(client_checkbox)
+                
+                section_grid.addWidget(client_container, current_row, 1)
+                
+                # Create checkbox for Contractor
+                contractor_checkbox = QCheckBox()
+                contractor_checkbox.setStyleSheet("""
+                    QCheckBox {
+                        min-height: 20px;
+                    }
+                    QCheckBox::indicator {
+                        width: 18px;
+                        height: 18px;
+                    }
+                """)
+                
+                # Create container widget for contractor checkbox to center it
+                contractor_container = QWidget()
+                contractor_layout = QHBoxLayout(contractor_container)
+                contractor_layout.setAlignment(Qt.AlignCenter)
+                contractor_layout.setContentsMargins(0, 0, 0, 0)
+                contractor_layout.addWidget(contractor_checkbox)
+                
+                section_grid.addWidget(contractor_container, current_row, 2)
+                
+                # Create input field for Remarks
+                remarks_input = QLineEdit()
+                remarks_input.setFont(QFont("Segoe UI", 11))
+                remarks_input.setPlaceholderText("Enter remarks")
+                remarks_input.setStyleSheet("""
+                    QLineEdit {
+                        padding: 5px;
+                        border: 1px solid #ccc;
+                        border-radius: 4px;
+                        background-color: white;
+                        min-height: 28px;
+                    }
+                    QLineEdit:hover {
+                        border: 1px solid #3498DB;
+                    }
+                """)
+                section_grid.addWidget(remarks_input, current_row, 3)
+                
+                # Set default values if available
+                if len(row) > 1 and not pd.isna(row.iloc[1]):
+                    # For Client checkbox
+                    client_value = str(row.iloc[1]).strip()
+                    if client_value == 'ü' or client_value.lower() == 'true':
+                        client_checkbox.setChecked(True)
+                        
+                if len(row) > 2 and not pd.isna(row.iloc[2]):
+                    # For Contractor checkbox
+                    contractor_value = str(row.iloc[2]).strip()
+                    if contractor_value == 'ü' or contractor_value.lower() == 'true':
+                        contractor_checkbox.setChecked(True)
+                        
+                if len(row) > 3 and not pd.isna(row.iloc[3]):
+                    # For Remarks input
+                    remarks_input.setText(str(row.iloc[3]).strip())
+                
+                def create_checkbox_handler(client_cb, contractor_cb, source):
+                    def handler():
+                        if source == 'client' and client_cb.isChecked():
+                            contractor_cb.setChecked(False)
+                        elif source == 'contractor' and contractor_cb.isChecked():
+                            client_cb.setChecked(False)
+                    return handler
+
+                # Hubungkan dengan cara yang lebih eksplisit
+                client_handler = create_checkbox_handler(client_checkbox, contractor_checkbox, 'client')
+                contractor_handler = create_checkbox_handler(client_checkbox, contractor_checkbox, 'contractor')
+
+                client_checkbox.clicked.connect(client_handler)
+                contractor_checkbox.clicked.connect(contractor_handler)
+                
+                # Register the fields
+                self.data_fields[f"{field_key_base}_client"] = client_checkbox
+                self.data_fields[f"{field_key_base}_contractor"] = contractor_checkbox
+                self.data_fields[f"{field_key_base}_remarks"] = remarks_input
+                
+                current_row += 1
+                continue
+
+        # Setelah semua field diproses, hubungkan dropdown yang saling terkait
+        if industry_dropdown and sub_industry_dropdown:
+            # Simpan pasangan dropdown untuk referensi nanti
+            self.linked_dropdowns[industry_field_key] = sub_industry_field_key
+            
+            # Hubungkan event dropdown industry ke fungsi update untuk dropdown sub-industry
+            industry_dropdown.currentTextChanged.connect(
+                lambda text, child=sub_industry_dropdown: self.update_dependent_dropdown(text, child))
+            
+            # Trigger update awal untuk mengisi sub-industry berdasarkan nilai industry yang sudah dipilih
+            industry_value = industry_dropdown.currentText()
+            if industry_value:
+                self.update_dependent_dropdown(industry_value, sub_industry_dropdown)
 
         # Process any excel images that may exist in this sheet
         if section_layout:
@@ -1603,6 +1832,62 @@ class BDUGroupView(QMainWindow):
             no_data_label.setStyleSheet("color: #666; margin: 20px;")
             layout.addWidget(no_data_label)
     
+    # Implementasi method lainnya yang perlu tetap ada (dari kode asli)
+    def get_validation_values(self, excel_path, sheet_name, cell_address):
+        """Mengambil nilai dari data validation di sebuah sel Excel"""
+        from openpyxl import load_workbook
+        
+        try:
+            # Pastikan untuk memuat dengan data_only=False agar kita bisa mengakses validasi
+            workbook = load_workbook(excel_path, data_only=False)
+            
+            if sheet_name not in workbook.sheetnames:
+                return []
+                
+            sheet = workbook[sheet_name]
+            
+            # Periksa apakah cell address valid
+            try:
+                cell = sheet[cell_address]
+            except:
+                return []
+            
+            # Cek data validation secara eksplisit
+            dv = sheet.data_validations.dataValidation
+            for validation in dv:
+                for coord in validation.sqref.ranges:
+                    if cell.coordinate in str(coord):
+                        # Ditemukan validasi untuk sel ini
+                        if validation.type == "list":
+                            formula = validation.formula1
+                            
+                            # Jika formula menggunakan referensi
+                            if formula.startswith('='):
+                                # Implementasi sama seperti sebelumnya...
+                                pass
+                            else:
+                                # Untuk list langsung seperti "A,B,C"
+                                if formula.startswith('"') and formula.endswith('"'):
+                                    formula = formula[1:-1]
+                                return [val.strip() for val in formula.split(',')]
+            
+            # Fallback: Coba cara lain untuk mendapatkan validation list
+            try:
+                # Untuk beberapa versi openpyxl, langsung coba akses data_validation
+                if hasattr(cell, 'data_validation') and cell.data_validation and hasattr(cell.data_validation, 'type'):
+                    if cell.data_validation.type == 'list':
+                        formula = cell.data_validation.formula1
+                        if formula.startswith('"') and formula.endswith('"'):
+                            formula = formula[1:-1]
+                        return [val.strip() for val in formula.split(',')]
+            except:
+                pass
+                
+            return []
+        except Exception as e:
+            print(f"Error saat membaca data validation: {str(e)}")
+            return []
+        
     def save_sheet_data(self, sheet_name):
         """Simpan data dari suatu sheet ke file Excel"""
         try:
@@ -1859,7 +2144,73 @@ class BDUGroupView(QMainWindow):
                                             if right_values[i] is not None:
                                                 # col_idx+i+1 because we start at the column after the field name
                                                 sheet.cell(row=row_idx, column=col_idx+i+1).value = right_values[i]
-                
+            
+                if '_client' in field_key or '_contractor' in field_key or '_remarks' in field_key:
+                    # Parse parts dari field key untuk mendapatkan informasi lengkap
+                    parts = field_key.split('_')
+                    suffix = parts[-1]  # 'client', 'contractor', atau 'remarks'
+                    
+                    # Dapatkan sheet_name, section, dan base_key
+                    sheet_part = parts[0]
+                    section_part = parts[1]
+                    
+                    # Jika ada banyak underscore dalam task name, kita perlu merekonstruksi dengan benar
+                    if len(parts) > 3:
+                        # Gabungkan semua bagian di tengah untuk mendapatkan task name dengan underscore
+                        task_id_parts = parts[2:-1]  # Ambil semua kecuali sheet, section, dan suffix
+                        task_id = '_'.join(task_id_parts)
+                    else:
+                        # Format sederhana: sheet_section_task_suffix
+                        task_id = parts[2]
+                    
+                    # Cari task name yang sesuai dengan ID ini dalam excel_data
+                    task_name = None
+                    row_idx_to_update = None
+                    
+                    # Scan Excel untuk menemukan baris yang sesuai
+                    for idx, excel_row in excel_data.iterrows():
+                        # Skip baris kosong
+                        if pd.isna(excel_row).all():
+                            continue
+                            
+                        first_col = excel_row.iloc[0] if not pd.isna(excel_row.iloc[0]) else ""
+                        if not isinstance(first_col, str):
+                            try:
+                                first_col = str(first_col)
+                            except:
+                                continue
+                                
+                        # Periksa apakah ini adalah item table (ft_)
+                        if first_col.startswith('ft_'):
+                            task_name_in_excel = first_col[3:].strip()
+                            current_task_id = f"{sheet_part}_{section_part}_{idx}"
+                            
+                            # Jika ini adalah baris yang kita cari berdasarkan indeks baris
+                            if str(idx) == task_id or current_task_id == f"{sheet_part}_{section_part}_{task_id}":
+                                row_idx_to_update = idx + 1  # +1 karena Excel row mulai dari 1
+                                task_name = task_name_in_excel
+                                break
+                    
+                    # Jika menemukan baris yang cocok
+                    if row_idx_to_update is not None:
+                        # Tentukan kolom berdasarkan jenis field
+                        col_idx = None
+                        value = None
+                        
+                        if suffix == 'client':
+                            col_idx = 1  # Kolom B
+                            value = 'ü' if field_input.isChecked() else ''
+                        elif suffix == 'contractor':
+                            col_idx = 2  # Kolom C
+                            value = 'ü' if field_input.isChecked() else ''
+                        elif suffix == 'remarks':
+                            col_idx = 3  # Kolom D
+                            value = field_input.text()
+                        
+                        # Update nilai di cell Excel
+                        if col_idx is not None:
+                            sheet.cell(row=row_idx_to_update, column=col_idx+1).value = value
+                            
                 # Simpan workbook
                 workbook.save(self.excel_path)
                 
