@@ -511,6 +511,18 @@ class BDUGroupView(QMainWindow):
         # Untuk melacak pasangan field dropdown industry-subindustry
         industry_field_key = None
         sub_industry_field_key = None
+        
+        # Create a section for table if we find table formatting
+        table_section = None
+        table_grid = None
+        in_table = False
+        table_row = 0
+        
+        # Dictionary to track rowspans
+        rowspans = {}
+        tdm_counter = 0  # Counter for tdm_ cells in current row
+        last_header = None  # Track last header for rowspans
+        current_tdm_row = 0  # Track current row for tdm counters
 
         # Check if the dataframe is empty
         if df.empty:
@@ -574,6 +586,263 @@ class BDUGroupView(QMainWindow):
                     first_col = str(first_col)
                 except:
                     continue  # Skip if can't convert to string
+            
+            # Convert to string for startswith checks, but only if we're not in a DATA_ sheet
+            if not isinstance(first_col, str):
+                try:
+                    first_col = str(first_col)
+                except:
+                    continue  # Skip if can't convert to string
+                    
+            # Convert to string for startswith checks
+            if not isinstance(first_col, str):
+                try:
+                    first_col = str(first_col)
+                except:
+                    continue
+                        
+            # Check if we're starting a table format (th_, thr_, td_, etc.)
+            if (first_col.startswith('th_') or 
+                first_col.startswith('thr_') or 
+                first_col.startswith('td_') or
+                first_col.startswith('tdi_') or
+                first_col.startswith('tdm_')):
+                
+                # If this is our first table element, create a table section
+                if not in_table:
+                    in_table = True
+                    
+                    # Create a section for the table if we don't have one
+                    if section_layout is None:
+                        # Create default section first
+                        section_frame = QWidget()
+                        section_frame.setStyleSheet("background-color: white;")
+                        section_layout = QVBoxLayout(section_frame)
+                        section_layout.setContentsMargins(15, 15, 15, 15)
+                        section_layout.setSpacing(15)
+                        layout.addWidget(section_frame)
+                    
+                    # Create table frame
+                    table_frame = QWidget()
+                    table_frame.setStyleSheet("background-color: white; border: 1px solid #ddd;")
+                    
+                    table_section = QVBoxLayout(table_frame)
+                    table_section.setContentsMargins(0, 0, 0, 0)
+                    table_section.setSpacing(0)
+                    
+                    # Create grid for table
+                    table_grid = QGridLayout()
+                    table_grid.setSpacing(0)
+                    table_grid.setContentsMargins(0, 0, 0, 0)
+                    
+                    # Add to current section
+                    section_layout.addWidget(table_frame)
+                    table_section.addLayout(table_grid)
+                    
+                    # Reset table counters
+                    table_row = 0
+                    tdm_counter = 0
+                
+                # Process table row based on prefix
+                if first_col.startswith('th_'):
+                    # Table header
+                    header_text = first_col[3:].strip()  # Remove 'th_' prefix
+                    header_label = QLabel(header_text)
+                    header_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
+                    header_label.setStyleSheet("""
+                        background-color: #f5f5f5; 
+                        color: #333;
+                        padding: 8px;
+                        border: 1px solid #ddd;
+                    """)
+                    header_label.setMinimumWidth(250)
+                    
+                    # Add to grid
+                    table_grid.addWidget(header_label, table_row, 0)
+                    
+                    # Get and process the data cell
+                    if len(row) > 1 and not pd.isna(row.iloc[1]):
+                        data_text = str(row.iloc[1]).strip()
+                        data_label = QLabel(data_text)
+                        data_label.setFont(QFont("Segoe UI", 11))
+                        data_label.setStyleSheet("""
+                            padding: 8px;
+                            border: 1px solid #ddd;
+                        """)
+                        data_label.setWordWrap(True)
+                        
+                        # Add to grid, span across remaining columns
+                        table_grid.addWidget(data_label, table_row, 1, 1, 2)
+                    
+                    # Store last header
+                    last_header = header_text
+                    table_row += 1
+                    
+                elif first_col.startswith('thr_'):
+                    # Table header with rowspan
+                    header_text = first_col[4:].strip()  # Remove 'thr_' prefix
+                    header_label = QLabel(header_text)
+                    header_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
+                    header_label.setStyleSheet("""
+                        background-color: #f5f5f5; 
+                        color: #333;
+                        padding: 8px;
+                        border: 1px solid #ddd;
+                    """)
+                    header_label.setMinimumWidth(250)
+                    header_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+                    
+                    # Determine rowspan by looking ahead
+                    rowspan = 0
+                    for lookahead_idx in range(index + 1, len(df)):
+                        lookahead_cell = df.iloc[lookahead_idx, 0] if not pd.isna(df.iloc[lookahead_idx, 0]) else ""
+                        if isinstance(lookahead_cell, str) and (
+                            lookahead_cell.startswith('th_') or 
+                            lookahead_cell.startswith('thr_')):
+                            break
+                        if isinstance(lookahead_cell, str) and (
+                            lookahead_cell.startswith('td_') or
+                            lookahead_cell.startswith('tdi_') or
+                            lookahead_cell.startswith('tdm_')):
+                            rowspan += 1
+                    
+                    # Need at least 1 row
+                    rowspan = max(1, rowspan)
+                    
+                    # Store information for rowspan
+                    rowspans[table_row] = {
+                        'header': header_text,
+                        'rowspan': rowspan,
+                        'widget': header_label
+                    }
+                    
+                    # Add to grid with rowspan
+                    table_grid.addWidget(header_label, table_row, 0, rowspan, 1)
+                    
+                    # Get and process the data cell for first row
+                    if len(row) > 1 and not pd.isna(row.iloc[1]):
+                        data_text = str(row.iloc[1]).strip()
+                        data_label = QLabel(data_text)
+                        data_label.setFont(QFont("Segoe UI", 11))
+                        data_label.setStyleSheet("""
+                            padding: 8px;
+                            border: 1px solid #ddd;
+                        """)
+                        data_label.setWordWrap(True)
+                        
+                        # Add to grid
+                        table_grid.addWidget(data_label, table_row, 1, 1, 2)
+                    
+                    # Store last header
+                    last_header = header_text
+                    table_row += 1
+                    current_tdm_row = table_row  # Reset tdm row counter for this header
+                    
+                elif first_col.startswith('td_'):
+                    # Regular data row - Extract text after prefix
+                    data_text = first_col[3:].strip()  # Remove 'td_' prefix
+                    
+                    # Create label
+                    data_label = QLabel(data_text)
+                    data_label.setFont(QFont("Segoe UI", 11))
+                    data_label.setStyleSheet("""
+                        padding: 8px;
+                        border: 1px solid #ddd;
+                    """)
+                    data_label.setWordWrap(True)
+                    
+                    # Add to grid, span across columns
+                    table_grid.addWidget(data_label, table_row, 1, 1, 2)
+                    table_row += 1
+                    
+                elif first_col.startswith('tdi_'):
+                    # Data row with input field - Extract text after prefix
+                    data_text = first_col[4:].strip()  # Remove 'tdi_' prefix
+                    
+                    # Check for input placeholders like $P1$
+                    import re
+                    placeholders = re.findall(r'\$P\d+\$', data_text)
+                    
+                    if placeholders:
+                        # Create a container for the input field + text
+                        container = QWidget()
+                        container_layout = QHBoxLayout(container)
+                        container_layout.setContentsMargins(8, 8, 8, 8)
+                        
+                        # Split text by placeholder
+                        parts = re.split(r'(\$P\d+\$)', data_text)
+                        
+                        for part in parts:
+                            if re.match(r'\$P\d+\$', part):
+                                # This is a placeholder, create input field
+                                input_field = QLineEdit()
+                                input_field.setFixedWidth(50)
+                                input_field.setStyleSheet("""
+                                    padding: 5px;
+                                    border: 1px solid #ccc;
+                                    border-radius: 4px;
+                                """)
+                                container_layout.addWidget(input_field)
+                                
+                                # Register this field in data_fields
+                                field_key = f"tdi_{part}_{last_header}"
+                                self.data_fields[field_key] = input_field
+                            else:
+                                # Regular text
+                                text_label = QLabel(part)
+                                text_label.setFont(QFont("Segoe UI", 11))
+                                container_layout.addWidget(text_label)
+                        
+                        container_layout.addStretch()
+                        
+                        # Add to grid, span across columns
+                        table_grid.addWidget(container, table_row, 1, 1, 2)
+                    else:
+                        # No placeholders, just regular text
+                        data_label = QLabel(data_text)
+                        data_label.setFont(QFont("Segoe UI", 11))
+                        data_label.setStyleSheet("""
+                            padding: 8px;
+                            border: 1px solid #ddd;
+                        """)
+                        data_label.setWordWrap(True)
+                        
+                        # Add to grid, span across columns
+                        table_grid.addWidget(data_label, table_row, 1, 1, 2)
+                    
+                    table_row += 1
+                    
+                elif first_col.startswith('tdm_'):
+                    # Table data multiple columns - Extract text after prefix
+                    data_text = first_col[4:].strip()  # Remove 'tdm_' prefix
+                    
+                    # Create label
+                    data_label = QLabel(data_text)
+                    data_label.setFont(QFont("Segoe UI", 11))
+                    data_label.setStyleSheet("""
+                        padding: 8px;
+                        border: 1px solid #ddd;
+                    """)
+                    
+                    # Calculate position based on tdm counter
+                    if tdm_counter == 0:
+                        # First column
+                        table_grid.addWidget(data_label, table_row, 1)
+                        tdm_counter += 1
+                    else:
+                        # Second column
+                        table_grid.addWidget(data_label, table_row, 2)
+                        tdm_counter = 0
+                        table_row += 1  # Move to next row after 2 columns
+                
+                # Continue to next iteration since we processed this row
+                continue
+                    
+            # If we were in a table but now we're not, reset the flag
+            elif in_table:
+                in_table = False
+                table_section = None
+                table_grid = None
                 
             # Check if it's a section header (sub_)
             if isinstance(first_col, str) and first_col.startswith('sub_'):
@@ -1663,7 +1932,7 @@ class BDUGroupView(QMainWindow):
                 continue
 
             # Check if it's a table item (ft_)
-            elif first_col.startswith('ft_'):
+            if first_col.startswith('ft_'):
                 task_name = first_col[3:].strip()  # Remove 'ft_' prefix
                 field_key_base = f"{sheet_name}_{current_section}_{field_count}"
                 field_count += 1
@@ -1672,7 +1941,7 @@ class BDUGroupView(QMainWindow):
                 task_label = QLabel(task_name)
                 task_label.setFont(QFont("Segoe UI", 11))
                 task_label.setStyleSheet("color: #333; background-color: transparent;")
-                task_label.setMinimumWidth(300)  # Wider for task text
+                task_label.setMinimumWidth(1000)  # Wider for task text
                 task_label.setWordWrap(True)  # Allow text wrapping for long task names
                 
                 # Add label to grid - span only column 0
@@ -1777,7 +2046,7 @@ class BDUGroupView(QMainWindow):
                 
                 current_row += 1
                 continue
-
+            
         # Setelah semua field diproses, hubungkan dropdown yang saling terkait
         if industry_dropdown and sub_industry_dropdown:
             # Simpan pasangan dropdown untuk referensi nanti
