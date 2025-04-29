@@ -27,6 +27,22 @@ INDUSTRY_SUBTYPE_MAPPING = {
     "Non Food Industry-B": ["Tourism & Hospitality", "Construction & Real Estate", "Residential"]
 }
 
+SEISMIC_ZONE_DESCRIPTIONS = {
+    "ZONE-1": "2.5 or less. Usually not felt, but can be recorded by seismographs",
+    "ZONE-2": "2.5 - 5.4. Often felt, but causes only minor damage",
+    "ZONE-3": "5.5 - 6.0. Can cause slight damage to buildings and other structures",
+    "ZONE-4": "6.6 - 6.9. Can cause significant damage in populated areas"
+}
+
+WIND_SPEED_DESCRIPTIONS = {
+    "LEVEL-1": "0 - 2,0 m/s",
+    "LEVEL-2": "2,0 - 4,0 m/s",
+    "LEVEL-3": "4,0 - 6,0 m/s",
+    "LEVEL-4": "6,0 - 8,0 m/s",
+    "LEVEL-5": "8,0 - 10,0 m/s",
+    "LEVEL-6": "10,0 m/s"
+}
+
 class BDUGroupView(QMainWindow):
     """View untuk BDU Group"""
     back_to_dashboard = pyqtSignal()
@@ -306,18 +322,18 @@ class BDUGroupView(QMainWindow):
             xl = pd.ExcelFile(self.excel_path)
             sheet_names = xl.sheet_names
 
-            # Use sheet_names directly to preserve the order from Excel file
-            # Instead of: sorted_sheets = sorted(sheet_names)
+            # Filter sheets to only include those starting with DATA_ or DIP_
+            filtered_sheets = [sheet for sheet in sheet_names if sheet.startswith("DATA_") or sheet.startswith("DIP_")]
 
-            if len(sheet_names) == 0:
-                self.loading_label.setText("No sheets found in SET_BDU.xlsx.")
+            if len(filtered_sheets) == 0:
+                self.loading_label.setText("No DATA_ or DIP_ sheets found in SET_BDU.xlsx.")
                 return
 
             # Hide loading label as we have data
             self.loading_label.setVisible(False)
 
-            # Create a tab for each sheet
-            for sheet_name in sheet_names:
+            # Create a tab for each filtered sheet
+            for sheet_name in filtered_sheets:
                 # Get display name (remove DIP_ or DATA_ prefix)
                 display_name = sheet_name
                 if sheet_name.startswith("DIP_"):
@@ -1201,6 +1217,35 @@ class BDUGroupView(QMainWindow):
                 # Add options and set default if available
                 input_field.addItems(options)
                 
+                # Tambahkan stylesheet untuk tooltip
+                app = QApplication.instance()
+                app.setStyleSheet("""
+                    QToolTip {
+                        background-color: #F5F5F5;
+                        color: #333333;
+                        border: 1px solid #CCCCCC;
+                        padding: 5px;
+                        font: 10pt "Segoe UI";
+                        opacity: 255;
+                    }
+                """)
+                
+                # Periksa field untuk menambahkan tooltip yang sesuai
+                if field_name == "Seismic Hazard Zone":
+                    # Tambahkan tooltip untuk setiap zona
+                    for i in range(input_field.count()):
+                        zone_text = input_field.itemText(i)
+                        if zone_text in SEISMIC_ZONE_DESCRIPTIONS:
+                            input_field.setItemData(i, SEISMIC_ZONE_DESCRIPTIONS[zone_text], Qt.ToolTipRole)
+                
+                # Tambahkan kondisi untuk Wind Speed Zone
+                elif field_name == "Wind Speed Zone":
+                    # Tambahkan tooltip untuk setiap level
+                    for i in range(input_field.count()):
+                        level_text = input_field.itemText(i)
+                        if level_text in WIND_SPEED_DESCRIPTIONS:
+                            input_field.setItemData(i, WIND_SPEED_DESCRIPTIONS[level_text], Qt.ToolTipRole)
+                
                 # Set default value if available
                 default_value = ""
                 if len(row) > 1 and not pd.isna(row.iloc[1]):
@@ -1672,7 +1717,7 @@ class BDUGroupView(QMainWindow):
                 task_label = QLabel(task_name)
                 task_label.setFont(QFont("Segoe UI", 11))
                 task_label.setStyleSheet("color: #333; background-color: transparent;")
-                task_label.setMinimumWidth(300)  # Wider for task text
+                task_label.setMinimumWidth(1000)  # Wider for task text
                 task_label.setWordWrap(True)  # Allow text wrapping for long task names
                 
                 # Add label to grid - span only column 0
