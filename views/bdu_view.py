@@ -527,6 +527,18 @@ class BDUGroupView(QMainWindow):
         # Untuk melacak pasangan field dropdown industry-subindustry
         industry_field_key = None
         sub_industry_field_key = None
+        
+        # Create a section for table if we find table formatting
+        table_section = None
+        table_grid = None
+        in_table = False
+        table_row = 0
+
+        # Dictionary to track rowspans
+        rowspans = {}
+        tdm_counter = 0  # Counter for tdm_ cells in current row
+        last_header = None  # Track last header for rowspans
+        current_tdm_row = 0  # Track current row for tdm counters
 
         # Check if the dataframe is empty
         if df.empty:
@@ -590,6 +602,468 @@ class BDUGroupView(QMainWindow):
                     first_col = str(first_col)
                 except:
                     continue  # Skip if can't convert to string
+            
+            # Ambil nilai kolom A (indeks 0)
+            col_a = row.iloc[0] if not pd.isna(row.iloc[0]) else ""
+            
+            # Ubah ke string untuk pemeriksaan dengan startswith
+            if not isinstance(col_a, str):
+                try:
+                    col_a = str(col_a)
+                except:
+                    continue  # Lewati jika tidak bisa dikonversi ke string
+            
+            # Pemrosesan header (th_ atau thr_) di kolom A
+            if col_a.startswith('th_') or col_a.startswith('thr_'):
+                # Jika kita sedang dalam tabel tapi ini header baru, reset penghitung
+                if in_table and table_grid is None:
+                    # Buat struktur tabel baru
+                    table_frame = QWidget()
+                    table_frame.setStyleSheet("background-color: white; border: 1px solid #ddd;")
+                    
+                    table_section = QVBoxLayout(table_frame)
+                    table_section.setContentsMargins(0, 0, 0, 0)
+                    table_section.setSpacing(0)
+                    
+                    table_grid = QGridLayout()
+                    table_grid.setSpacing(0)
+                    table_grid.setContentsMargins(0, 0, 0, 0)
+                    
+                    section_layout.addWidget(table_frame)
+                    table_section.addLayout(table_grid)
+                    
+                    table_row = 0
+                elif not in_table:
+                    # Buat tabel baru jika belum ada
+                    in_table = True
+                    
+                    # Buat section untuk tabel jika belum ada
+                    if section_layout is None:
+                        section_frame = QWidget()
+                        section_frame.setStyleSheet("background-color: white;")
+                        section_layout = QVBoxLayout(section_frame)
+                        section_layout.setContentsMargins(15, 15, 15, 15)
+                        section_layout.setSpacing(15)
+                        layout.addWidget(section_frame)
+                    
+                    # Buat frame tabel
+                    table_frame = QWidget()
+                    table_frame.setStyleSheet("background-color: white; border: 1px solid #ddd;")
+                    
+                    table_section = QVBoxLayout(table_frame)
+                    table_section.setContentsMargins(0, 0, 0, 0)
+                    table_section.setSpacing(0)
+                    
+                    # Buat grid untuk tabel
+                    table_grid = QGridLayout()
+                    table_grid.setSpacing(0)
+                    table_grid.setContentsMargins(0, 0, 0, 0)
+                    
+                    # Tambahkan ke section
+                    section_layout.addWidget(table_frame)
+                    table_section.addLayout(table_grid)
+                    
+                    # Reset penghitung tabel
+                    table_row = 0
+                
+                # Header biasa (th_)
+                if col_a.startswith('th_'):
+                    header_text = col_a[3:].strip()  # Hapus awalan 'th_'
+                    header_label = QLabel(header_text)
+                    header_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
+                    header_label.setStyleSheet("""
+                        background-color: #f5f5f5; 
+                        color: #333;
+                        padding: 8px;
+                        border: 1px solid #ddd;
+                    """)
+                    header_label.setMinimumWidth(250)
+                    
+                    # Tambahkan ke grid
+                    table_grid.addWidget(header_label, table_row, 0)
+                    
+                    # Cek kolom B (indeks 1) untuk data
+                    if len(row) > 1 and not pd.isna(row.iloc[1]):
+                        col_b = row.iloc[1]
+                        
+                        # Ubah ke string untuk pemeriksaan
+                        if not isinstance(col_b, str):
+                            try:
+                                col_b = str(col_b)
+                            except:
+                                col_b = ""
+                        
+                        # Proses data berdasarkan jenisnya
+                        if col_b.startswith('td_'):
+                            # Data biasa
+                            data_text = col_b[3:].strip()  # Hapus awalan 'td_'
+                            data_label = QLabel(data_text)
+                            data_label.setFont(QFont("Segoe UI", 11))
+                            data_label.setStyleSheet("""
+                                padding: 8px;
+                                border: 1px solid #ddd;
+                            """)
+                            data_label.setWordWrap(True)
+                            
+                            # Tambahkan ke grid, span 2 kolom
+                            table_grid.addWidget(data_label, table_row, 1, 1, 2)
+                        
+                        elif col_b.startswith('tdi_'):
+                            # Data dengan input field
+                            data_text = col_b[4:].strip()  # Hapus awalan 'tdi_'
+                            
+                            # Cek placeholder seperti $P1$
+                            import re
+                            placeholders = re.findall(r'\$P\d+\$', data_text)
+                            
+                            if placeholders:
+                                # Buat container untuk input field + teks
+                                container = QWidget()
+                                container_layout = QHBoxLayout(container)
+                                container_layout.setContentsMargins(8, 8, 8, 8)
+                                
+                                # Pisah teks berdasarkan placeholder
+                                parts = re.split(r'(\$P\d+\$)', data_text)
+                                
+                                for part in parts:
+                                    if re.match(r'\$P\d+\$', part):
+                                        # Ini placeholder, buat input field
+                                        input_field = QLineEdit()
+                                        input_field.setFixedWidth(50)
+                                        input_field.setStyleSheet("""
+                                            padding: 5px;
+                                            border: 1px solid #ccc;
+                                            border-radius: 4px;
+                                        """)
+                                        container_layout.addWidget(input_field)
+                                        
+                                        # Daftarkan field di data_fields
+                                        field_key = f"tdi_{part}_{header_text}"
+                                        self.data_fields[field_key] = input_field
+                                    else:
+                                        # Teks biasa
+                                        text_label = QLabel(part)
+                                        text_label.setFont(QFont("Segoe UI", 11))
+                                        container_layout.addWidget(text_label)
+                                
+                                container_layout.addStretch()
+                                
+                                # Tambahkan ke grid, span 2 kolom
+                                table_grid.addWidget(container, table_row, 1, 1, 2)
+                            else:
+                                # Tidak ada placeholder, teks biasa
+                                data_label = QLabel(data_text)
+                                data_label.setFont(QFont("Segoe UI", 11))
+                                data_label.setStyleSheet("""
+                                    padding: 8px;
+                                    border: 1px solid #ddd;
+                                """)
+                                data_label.setWordWrap(True)
+                                
+                                # Tambahkan ke grid, span 2 kolom
+                                table_grid.addWidget(data_label, table_row, 1, 1, 2)
+                        
+                        elif col_b.startswith('tdm_'):
+                            # Multi-kolom data (2 kolom)
+                            data_text_b = col_b[4:].strip()  # Hapus awalan 'tdm_'
+                            
+                            # Buat label untuk kolom pertama (B)
+                            data_label_b = QLabel(data_text_b)
+                            data_label_b.setFont(QFont("Segoe UI", 11))
+                            data_label_b.setStyleSheet("""
+                                padding: 8px;
+                                border: 1px solid #ddd;
+                            """)
+                            data_label_b.setWordWrap(True)
+                            
+                            # Tambahkan ke grid di kolom 1
+                            table_grid.addWidget(data_label_b, table_row, 1)
+                            
+                            # Cek kolom C (indeks 2) untuk data kedua
+                            if len(row) > 2 and not pd.isna(row.iloc[2]):
+                                col_c = row.iloc[2]
+                                
+                                # Ubah ke string untuk pemeriksaan
+                                if not isinstance(col_c, str):
+                                    try:
+                                        col_c = str(col_c)
+                                    except:
+                                        col_c = ""
+                                
+                                if col_c.startswith('tdm_'):
+                                    # Multi-kolom data kedua
+                                    data_text_c = col_c[4:].strip()  # Hapus awalan 'tdm_'
+                                    
+                                    # Buat label untuk kolom kedua (C)
+                                    data_label_c = QLabel(data_text_c)
+                                    data_label_c.setFont(QFont("Segoe UI", 11))
+                                    data_label_c.setStyleSheet("""
+                                        padding: 8px;
+                                        border: 1px solid #ddd;
+                                    """)
+                                    data_label_c.setWordWrap(True)
+                                    
+                                    # Tambahkan ke grid di kolom 2
+                                    table_grid.addWidget(data_label_c, table_row, 2)
+                        
+                        else:
+                            # Data tanpa awalan khusus, tampilkan sebagai teks biasa
+                            data_text = str(col_b).strip()
+                            data_label = QLabel(data_text)
+                            data_label.setFont(QFont("Segoe UI", 11))
+                            data_label.setStyleSheet("""
+                                padding: 8px;
+                                border: 1px solid #ddd;
+                            """)
+                            data_label.setWordWrap(True)
+                            
+                            # Tambahkan ke grid, span 2 kolom
+                            table_grid.addWidget(data_label, table_row, 1, 1, 2)
+                    
+                    # Simpan header terakhir
+                    last_header = header_text
+                    table_row += 1
+                
+                # Untuk header dengan rowspan (thr_)
+                elif col_a.startswith('thr_'):
+                    header_text = col_a[4:].strip()  # Hapus awalan 'thr_'
+                    header_label = QLabel(header_text)
+                    header_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
+                    header_label.setStyleSheet("""
+                        background-color: #f5f5f5; 
+                        color: #333;
+                        padding: 8px;
+                        border: 1px solid #ddd;
+                    """)
+                    header_label.setMinimumWidth(250)
+                    header_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+                    
+                    # Hitung rowspan dengan melihat baris-baris berikutnya
+                    rowspan = 0
+                    tdm_count = 0
+                    current_row = index
+                    
+                    # Simpan baris-baris data yang akan diproses nanti
+                    data_rows = []
+                    
+                    # Periksa baris-baris berikutnya sampai ketemu header baru
+                    while current_row + 1 < len(df):
+                        next_row = current_row + 1
+                        next_row_data = df.iloc[next_row]
+                        next_col_a = next_row_data.iloc[0] if not pd.isna(next_row_data.iloc[0]) else ""
+                        
+                        # Ubah ke string jika perlu
+                        if not isinstance(next_col_a, str):
+                            try:
+                                next_col_a = str(next_col_a)
+                            except:
+                                next_col_a = ""
+                        
+                        # Jika ketemu header baru, berhenti
+                        if next_col_a.startswith('th_') or next_col_a.startswith('thr_'):
+                            break
+                        
+                        # Periksa kolom B untuk data, meskipun kolom A kosong
+                        if len(next_row_data) > 1:
+                            next_col_b = next_row_data.iloc[1] if not pd.isna(next_row_data.iloc[1]) else ""
+                            
+                            # Ubah ke string jika perlu
+                            if not isinstance(next_col_b, str):
+                                try:
+                                    next_col_b = str(next_col_b)
+                                except:
+                                    next_col_b = ""
+                            
+                            # Jika ada data di kolom B, tambah rowspan dan simpan data
+                            if (next_col_b.startswith('td_') or 
+                                next_col_b.startswith('tdi_') or
+                                next_col_b.startswith('tdm_')):
+                                rowspan += 1
+                                data_rows.append(next_row_data)
+                        
+                        current_row = next_row
+                    
+                    # Perlu ditambahkan 1 untuk baris pertama
+                    rowspan = max(1, rowspan + 1)
+                    
+                    # Tambahkan baris saat ini ke daftar data
+                    data_rows.insert(0, row)
+                    
+                    # Simpan informasi rowspan
+                    rowspans[table_row] = {
+                        'header': header_text,
+                        'rowspan': rowspan,
+                        'widget': header_label
+                    }
+                    
+                    # Tambahkan ke grid dengan rowspan
+                    table_grid.addWidget(header_label, table_row, 0, rowspan, 1)
+                    
+                    # Proses semua data dalam rowspan
+                    current_data_row = table_row
+                    
+                    # Proses semua baris data yang telah dikumpulkan
+                    for data_row in data_rows:
+                        # Cek kolom B untuk data
+                        if len(data_row) > 1 and not pd.isna(data_row.iloc[1]):
+                            col_b = data_row.iloc[1]
+                            
+                            # Ubah ke string jika perlu
+                            if not isinstance(col_b, str):
+                                try:
+                                    col_b = str(col_b)
+                                except:
+                                    col_b = ""
+                            
+                            # Proses berdasarkan jenis data
+                            if col_b.startswith('td_'):
+                                data_text = col_b[3:].strip()
+                                data_label = QLabel(data_text)
+                                data_label.setFont(QFont("Segoe UI", 11))
+                                data_label.setStyleSheet("""
+                                    padding: 8px;
+                                    border: 1px solid #ddd;
+                                """)
+                                data_label.setWordWrap(True)
+                                table_grid.addWidget(data_label, current_data_row, 1, 1, 2)
+                                current_data_row += 1
+                            
+                            # Untuk memproses tdi_
+                            elif col_b.startswith('tdi_'):
+                                data_text = col_b[4:].strip()  # Hapus awalan 'tdi_'
+                                
+                                import re
+                                placeholders = re.findall(r'\$P\d+\$', data_text)
+                                
+                                if placeholders:
+                                    # Buat container untuk input field + teks
+                                    container = QWidget()
+                                    container_layout = QHBoxLayout(container)
+                                    container_layout.setContentsMargins(8, 8, 8, 8)
+                                    
+                                    # Split teks berdasarkan placeholder
+                                    parts = re.split(r'(\$P\d+\$)', data_text)
+                                    
+                                    for part in parts:
+                                        if re.match(r'\$P\d+\$', part):
+                                            # Ini placeholder, buat input field
+                                            input_field = QLineEdit()
+                                            input_field.setFixedWidth(50)
+                                            input_field.setStyleSheet("""
+                                                padding: 5px;
+                                                border: 1px solid #ccc;
+                                                border-radius: 4px;
+                                            """)
+                                            
+                                            # Validator untuk membatasi input hanya angka 0-100
+                                            from PyQt5.QtGui import QIntValidator
+                                            validator = QIntValidator(0, 100)
+                                            input_field.setValidator(validator)
+                                            
+                                            # Set nilai default berdasarkan placeholder
+                                            if part == "$P1$":
+                                                input_field.setText("30")
+                                            elif part == "$P2$":
+                                                input_field.setText("50")
+                                            elif part == "$P3$":
+                                                input_field.setText("15")
+                                            elif part == "$P4$":
+                                                input_field.setText("5")
+                                            
+                                            container_layout.addWidget(input_field)
+                                            
+                                            # Daftarkan field di data_fields
+                                            field_key = f"tdi_{part}_{header_text}_{current_data_row}"
+                                            self.data_fields[field_key] = input_field
+                                        else:
+                                            # Teks biasa
+                                            text_label = QLabel(part)
+                                            text_label.setFont(QFont("Segoe UI", 11))
+                                            # Tidak ada border pada teks
+                                            container_layout.addWidget(text_label)
+                                    
+                                    container_layout.addStretch()
+                                    
+                                    # Container tidak memiliki border
+                                    container.setStyleSheet("background-color: transparent; border: none;")
+                                    
+                                    # Tambahkan ke grid, span seluruh kolom
+                                    table_grid.addWidget(container, current_data_row, 1, 1, 2)
+                                else:
+                                    # Tidak ada placeholder, tampilkan sebagai teks biasa
+                                    data_label = QLabel(data_text)
+                                    data_label.setFont(QFont("Segoe UI", 11))
+                                    # Tidak ada border pada teks
+                                    data_label.setStyleSheet("padding: 8px; border: none;")
+                                    data_label.setWordWrap(True)
+                                    
+                                    # Tambahkan ke grid, span seluruh kolom
+                                    table_grid.addWidget(data_label, current_data_row, 1, 1, 2)
+                                
+                                current_data_row += 1
+                            
+                            elif col_b.startswith('tdm_'):
+                                data_text_b = col_b[4:].strip()
+                                
+                                data_label_b = QLabel(data_text_b)
+                                data_label_b.setFont(QFont("Segoe UI", 11))
+                                data_label_b.setStyleSheet("""
+                                    padding: 8px;
+                                    border: 1px solid #ddd;
+                                """)
+                                data_label_b.setWordWrap(True)
+                                table_grid.addWidget(data_label_b, current_data_row, 1)
+                                
+                                # Cek kolom C untuk tdm_ pasangan
+                                if len(data_row) > 2 and not pd.isna(data_row.iloc[2]):
+                                    col_c = data_row.iloc[2]
+                                    
+                                    if not isinstance(col_c, str):
+                                        try:
+                                            col_c = str(col_c)
+                                        except:
+                                            col_c = ""
+                                    
+                                    if col_c.startswith('tdm_'):
+                                        data_text_c = col_c[4:].strip()
+                                        
+                                        data_label_c = QLabel(data_text_c)
+                                        data_label_c.setFont(QFont("Segoe UI", 11))
+                                        data_label_c.setStyleSheet("""
+                                            padding: 8px;
+                                            border: 1px solid #ddd;
+                                        """)
+                                        data_label_c.setWordWrap(True)
+                                        table_grid.addWidget(data_label_c, current_data_row, 2)
+                                
+                                current_data_row += 1
+                            
+                            else:
+                                # Data biasa tanpa prefix
+                                data_text = str(col_b).strip()
+                                data_label = QLabel(data_text)
+                                data_label.setFont(QFont("Segoe UI", 11))
+                                data_label.setStyleSheet("""
+                                    padding: 8px;
+                                    border: 1px solid #ddd;
+                                """)
+                                data_label.setWordWrap(True)
+                                table_grid.addWidget(data_label, current_data_row, 1, 1, 2)
+                                current_data_row += 1
+                    
+                    # Update table_row setelah memproses semua data
+                    table_row = current_data_row
+                    
+                    # Simpan header terakhir
+                    last_header = header_text
+            else:
+                # Ini bukan header di kolom A, mungkin baris lanjutan atau bukan bagian tabel
+                # Jika sebelumnya kita dalam tabel tapi sekarang tidak ada header/data yang sesuai,
+                # tandai bahwa kita keluar dari tabel
+                if in_table and not col_a:
+                    in_table = False
+                    table_section = None
+                    table_grid = None
                 
             # Check if it's a section header (sub_)
             if isinstance(first_col, str) and first_col.startswith('sub_'):
