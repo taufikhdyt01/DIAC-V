@@ -1371,11 +1371,21 @@ class BDUGroupView(QMainWindow):
             # Check if it's a field (f_)
             if first_col.startswith('f_'):
                 field_name = first_col[2:].strip()  # Remove 'f_' prefix
+        
+                # Extract display name by removing numeric prefix if present
+                display_name = field_name
+                if field_name and field_name[0].isdigit():
+                    # Remove digit prefix from display name
+                    for i, char in enumerate(field_name):
+                        if not char.isdigit():
+                            display_name = field_name[i:]
+                            break
+                
                 field_key = f"{sheet_name}_{current_section}_{field_count}"
                 field_count += 1
 
                 # Create field label
-                label = QLabel(field_name)
+                label = QLabel(display_name)
                 label.setFont(QFont("Segoe UI", 11))
                 label.setStyleSheet("color: #333; background-color: transparent;")
                 label.setMinimumWidth(250)  # Set minimum width for consistent layout
@@ -1388,7 +1398,7 @@ class BDUGroupView(QMainWindow):
                 # Create input field
                 input_field = QLineEdit()
                 input_field.setFont(QFont("Segoe UI", 11))
-                input_field.setPlaceholderText(f"Enter {field_name}")
+                input_field.setPlaceholderText(f"Enter {display_name}")
                 input_field.setMinimumWidth(200)  # Set minimum width for consistent layout
                 input_field.setStyleSheet("""
                     QLineEdit {
@@ -1612,11 +1622,20 @@ class BDUGroupView(QMainWindow):
             # Check if it's a field dropdown (fd_)
             if first_col.startswith('fd_'):
                 field_name = first_col[3:].strip()  # Remove 'fd_' prefix
+        
+                # Extract display name by removing numeric prefix
+                display_name = field_name
+                if field_name and field_name[0].isdigit():
+                    for i, char in enumerate(field_name):
+                        if not char.isdigit():
+                            display_name = field_name[i:]
+                            break
+                        
                 field_key = f"{sheet_name}_{current_section}_{field_count}"
                 field_count += 1
 
                 # Create field label
-                label = QLabel(field_name)
+                label = QLabel(display_name)
                 label.setFont(QFont("Segoe UI", 11))
                 label.setStyleSheet("color: #333; background-color: transparent;")
                 label.setMinimumWidth(250)  # Set minimum width for consistent layout
@@ -1914,11 +1933,20 @@ class BDUGroupView(QMainWindow):
                 
             # Check if it's a field multiple (fm_)
             if first_col.startswith('fm_'):
-                field_name = first_col[3:].strip()  # Remove 'fm_' prefix
+                field_name = first_col[3:].strip()  # Remove 'fd_' prefix
+        
+                # Extract display name by removing numeric prefix
+                display_name = field_name
+                if field_name and field_name[0].isdigit():
+                    for i, char in enumerate(field_name):
+                        if not char.isdigit():
+                            display_name = field_name[i:]
+                            break
+                        
                 field_key_base = f"{sheet_name}_{current_section}_{field_name}"
                 
                 # Create field label
-                label = QLabel(field_name)
+                label = QLabel(display_name)
                 label.setFont(QFont("Segoe UI", 11))
                 label.setStyleSheet("color: #333; background-color: transparent;")
                 label.setMinimumWidth(250)  # Set minimum width for consistent layout
@@ -1947,7 +1975,7 @@ class BDUGroupView(QMainWindow):
                     input_field.setMinimumWidth(180)
                     
                     # Include the field name in the placeholder text
-                    input_field.setPlaceholderText(f"Enter {field_name} {header}")
+                    input_field.setPlaceholderText(f"Enter {display_name} {header}")
                     
                     input_field.setStyleSheet("""
                         QLineEdit {
@@ -2408,343 +2436,556 @@ class BDUGroupView(QMainWindow):
             return []
         
     def save_sheet_data(self, sheet_name):
-        """Simpan data dari suatu sheet ke file Excel"""
+        """Save the form data back to the Excel file"""
         try:
-            # Validasi file Excel masih ada
-            if not os.path.exists(self.excel_path):
-                QMessageBox.critical(self, "Error", f"File Excel tidak ditemukan: {self.excel_path}")
+            # Check if the sheet name exists
+            if not sheet_name.startswith("DIP_"):
+                QMessageBox.warning(self, "Warning", "Only DIP sheets can be saved.")
                 return
             
-            # Baca file Excel asli untuk mendapatkan struktur
-            excel_data = pd.read_excel(self.excel_path, sheet_name=sheet_name, header=None)
+            import pandas as pd
+            from openpyxl import load_workbook
+            import os
+            import time
             
-            # Buat dictionary untuk menyimpan data yang akan disimpan
-            data_to_save = {}
+            # Check if file exists and is accessible
+            if not os.path.exists(self.excel_path):
+                QMessageBox.critical(self, "Error", f"Excel file not found: {self.excel_path}")
+                return
+                
+            # Check if file is not opened by another process
+            try:
+                # Try to open file in append mode to check if it's locked
+                with open(self.excel_path, 'a'):
+                    pass
+            except PermissionError:
+                QMessageBox.critical(self, "Error", "Excel file is currently opened by another application. Please close it and try again.")
+                return
             
-            # Kumpulkan semua data dari fields
-            for field_key, field_input in self.data_fields.items():
-                # Periksa apakah field ini termasuk dalam sheet yang disimpan
-                if not field_key.startswith(f"{sheet_name}_"):
+            print(f"Starting to save data to sheet: {sheet_name}")
+            
+            # Create a backup of the Excel file
+            backup_path = self.excel_path + ".bak"
+            try:
+                import shutil
+                shutil.copy2(self.excel_path, backup_path)
+                print(f"Backup created at: {backup_path}")
+            except Exception as e:
+                print(f"Warning: Could not create backup: {str(e)}")
+            
+            # Load the Excel workbook with openpyxl
+            wb = load_workbook(self.excel_path)
+            
+            if sheet_name not in wb.sheetnames:
+                QMessageBox.critical(self, "Error", f"Sheet '{sheet_name}' not found in the Excel file.")
+                return
+            
+            # Get the sheet
+            sheet = wb[sheet_name]
+            
+            # Also load with pandas to help us find the field positions
+            df = pd.read_excel(self.excel_path, sheet_name=sheet_name, header=None)
+            
+            # Create a mapping of field IDs to row indices
+            field_to_row = {}
+            
+            # First pass: scan the Excel to build a map of field identifiers to row numbers
+            for row_idx, row in df.iterrows():
+                # Skip empty rows
+                if pd.isna(row).all():
                     continue
                 
-                # Parse field key untuk mendapatkan informasi
-                parts = field_key.split('_')
+                # Get first column value
+                first_col = row.iloc[0] if not pd.isna(row.iloc[0]) else ""
                 
-                # Ambil nilai dari input field
-                if isinstance(field_input, QLineEdit):
-                    value = field_input.text()
-                elif isinstance(field_input, QComboBox):
-                    value = field_input.currentText()
-                elif isinstance(field_input, QDateEdit):
-                    value = field_input.date().toString("yyyy-MM-dd")
-                else:
-                    value = ""
-                
-                # Untuk field multiple (fm_), kita perlu menyimpan data khusus
-                # Format: sheet_name_section_field_name_column_index
-                if len(parts) > 4 and parts[-1].isdigit():
-                    section = parts[1]
-                    
-                    # Handle more complex field names that might contain underscores
-                    if len(parts) > 5:
-                        # Join all parts between section and column index
-                        field_name = "_".join(parts[2:-1])
-                    else:
-                        field_name = parts[2]
-                        
-                    column_index = int(parts[-1])
-                    
-                    # Buat key untuk field multiple
-                    fm_key = f"{section}_{field_name}"
-                    
-                    # Initialize array jika belum ada - with enough slots for all columns
-                    max_columns = 10  # Allocate enough space for multiple columns
-                    if fm_key not in data_to_save:
-                        data_to_save[fm_key] = [None] * max_columns
-                    
-                    # Simpan value ke array sesuai column_index
-                    # Ensure we have enough space in the array
-                    if column_index >= len(data_to_save[fm_key]):
-                        # Extend the array if needed
-                        data_to_save[fm_key].extend([None] * (column_index - len(data_to_save[fm_key]) + 1))
-                    
-                    data_to_save[fm_key][column_index] = value
-                else:
-                    # Untuk field biasa
-                    if len(parts) >= 3:
-                        section = parts[1]
-                        
-                        # Handle field names that might contain underscores
-                        if len(parts) > 3:
-                            # Join all parts after section
-                            field_name = "_".join(parts[2:])
-                        else:
-                            field_name = parts[2]
-                            
-                        data_to_save[f"{section}_{field_name}"] = value
-            
-            # Buat workbook baru dengan openpyxl
-            from openpyxl import load_workbook
-            
-            # Load workbook yang ada
-            workbook = load_workbook(self.excel_path)
-            
-            # Ambil sheet yang akan diupdate
-            if sheet_name in workbook.sheetnames:
-                sheet = workbook[sheet_name]
-                
-                # Proses setiap baris di sheet
-                row_idx = 0
-                for _, row in excel_data.iterrows():
-                    row_idx += 1
-                    
-                    # Skip baris kosong
-                    if pd.isna(row).all():
+                # Convert to string if not already
+                if not isinstance(first_col, str):
+                    try:
+                        first_col = str(first_col)
+                    except:
                         continue
+                
+                # Store the row index for this field
+                if first_col.startswith('f_') or first_col.startswith('fd_') or first_col.startswith('fm_') or first_col.startswith('ft_'):
+                    field_to_row[first_col] = row_idx
                     
-                    # Ambil kolom pertama untuk menentukan tipe
-                    first_col = row.iloc[0] if not pd.isna(row.iloc[0]) else ""
-                    if not isinstance(first_col, str):
-                        try:
-                            first_col = str(first_col)
-                        except:
-                            continue  # Skip if can't convert to string
-                    
-                    # Proses berdasarkan tipe prefix
-                    if first_col.startswith('sub_') or first_col.startswith('fh_') or first_col.startswith('ch_'):
-                        # Jangan ubah baris header
-                        continue
-                    
-                    # Proses field biasa (f_)
-                    if first_col.startswith('f_'):
-                        field_name = first_col[2:].strip()
-                        current_section = self._get_section_for_row(excel_data, row_idx)
+                # Also check right columns for fields
+                for col_idx in range(2, min(len(row), df.shape[1])):
+                    if col_idx < len(row) and not pd.isna(row[col_idx]):
+                        right_col = row.iloc[col_idx] if not pd.isna(row.iloc[col_idx]) else ""
                         
-                        # Cari nilai di data_to_save
-                        key = f"{current_section}_{field_name}"
-                        if key in data_to_save:
-                            # Update nilai di cell kedua
-                            sheet.cell(row=row_idx, column=2).value = data_to_save[key]
-                        
-                        # Also check if there are fields in columns C and beyond
-                        for col_idx in range(2, len(row)):
-                            col_value = row.iloc[col_idx] if not pd.isna(row.iloc[col_idx]) else ""
-                            
-                            # Check for any field type (f_, fd_, fh_) in right columns
-                            if isinstance(col_value, str) and (col_value.startswith('f_') or 
-                                col_value.startswith('fd_') or 
-                                col_value.startswith('fh_')):
-                                
-                                # This is a field in a right column
-                                # Extract the prefix and field name
-                                if col_value.startswith('f_'):
-                                    prefix = col_value[:2]
-                                    right_field_name = col_value[2:].strip()
-                                else:
-                                    prefix = col_value[:3]
-                                    right_field_name = col_value[3:].strip()
-                                
-                                # Skip headers as we don't save them
-                                if prefix == 'fh_':
-                                    continue
-                                    
-                                right_section = self._get_right_section_for_row(excel_data, row_idx, col_idx)
-                                
-                                if not right_section:
-                                    right_section = current_section
-                                    
-                                right_key = f"{right_section}_{right_field_name}"
-                                
-                                if right_key in data_to_save:
-                                    # Update value in the right column's value cell
-                                    sheet.cell(row=row_idx, column=col_idx+1).value = data_to_save[right_key]
-                    
-                    # Proses field dropdown (fd_)
-                    elif first_col.startswith('fd_'):
-                        field_name = first_col[3:].strip()
-                        current_section = self._get_section_for_row(excel_data, row_idx)
-                        
-                        # Cari nilai di data_to_save
-                        key = f"{current_section}_{field_name}"
-                        if key in data_to_save:
-                            # Update nilai di cell kedua
-                            sheet.cell(row=row_idx, column=2).value = data_to_save[key]
-                        
-                        # Also check if there are fields in columns C and beyond
-                        for col_idx in range(2, len(row)):
-                            col_value = row.iloc[col_idx] if not pd.isna(row.iloc[col_idx]) else ""
-                            
-                            # Check for any field type (f_, fd_, fh_) in right columns
-                            if isinstance(col_value, str) and (col_value.startswith('f_') or 
-                                col_value.startswith('fd_') or 
-                                col_value.startswith('fh_')):
-                                
-                                # This is a field in a right column
-                                # Extract the prefix and field name
-                                if col_value.startswith('f_'):
-                                    prefix = col_value[:2]
-                                    right_field_name = col_value[2:].strip()
-                                else:
-                                    prefix = col_value[:3]
-                                    right_field_name = col_value[3:].strip()
-                                
-                                # Skip headers as we don't save them
-                                if prefix == 'fh_':
-                                    continue
-                                    
-                                right_section = self._get_right_section_for_row(excel_data, row_idx, col_idx)
-                                
-                                if not right_section:
-                                    right_section = current_section
-                                    
-                                right_key = f"{right_section}_{right_field_name}"
-                                
-                                if right_key in data_to_save:
-                                    # Update value in the right column's value cell
-                                    sheet.cell(row=row_idx, column=col_idx+1).value = data_to_save[right_key]
-                    
-                    # Proses field multiple (fm_)
-                    elif first_col.startswith('fm_'):
-                        field_name = first_col[3:].strip()
-                        current_section = self._get_section_for_row(excel_data, row_idx)
-                        
-                        # Cari nilai di data_to_save
-                        key = f"{current_section}_{field_name}"
-                        if key in data_to_save:
-                            # Update nilai di semua cells untuk field multiple
-                            values = data_to_save[key]
-                            
-                            # Loop through all possible values (up to 10 or length of values array)
-                            for i in range(min(len(values), 10)):  # limit to prevent index errors
-                                if values[i] is not None:
-                                    # col_idx is i+2 because Excel columns start at 1, and the first column is for the field name
-                                    sheet.cell(row=row_idx, column=i+2).value = values[i]
-                        
-                        # Also check if there are fields in columns C and beyond
-                        for col_idx in range(2, len(row)):
-                            col_value = row.iloc[col_idx] if not pd.isna(row.iloc[col_idx]) else ""
-                            
-                            # Check for any field type in right columns
-                            if isinstance(col_value, str) and (col_value.startswith('f_') or 
-                                col_value.startswith('fd_') or 
-                                col_value.startswith('fm_') or
-                                col_value.startswith('fh_')):
-                                
-                                # This is a field in a right column
-                                # Extract the prefix and field name
-                                if col_value.startswith('f_'):
-                                    prefix = col_value[:2]
-                                    right_field_name = col_value[2:].strip()
-                                else:
-                                    prefix = col_value[:3]
-                                    right_field_name = col_value[3:].strip()
-                                
-                                # Skip headers as we don't save them
-                                if prefix == 'fh_':
-                                    continue
-                                    
-                                right_section = self._get_right_section_for_row(excel_data, row_idx, col_idx)
-                                
-                                if not right_section:
-                                    right_section = current_section
-                                    
-                                right_key = f"{right_section}_{right_field_name}"
-                                
-                                if right_key in data_to_save:
-                                    # For regular fields or dropdowns
-                                    if not col_value.startswith('fm_'):
-                                        sheet.cell(row=row_idx, column=col_idx+1).value = data_to_save[right_key]
-                                    else:
-                                        # For multiple fields
-                                        right_values = data_to_save[right_key]
-                                        
-                                        # Loop through all possible values
-                                        for i in range(min(len(right_values), 5)):  # limit to prevent errors
-                                            if right_values[i] is not None:
-                                                # col_idx+i+1 because we start at the column after the field name
-                                                sheet.cell(row=row_idx, column=col_idx+i+1).value = right_values[i]
-            
-                if '_client' in field_key or '_contractor' in field_key or '_remarks' in field_key:
-                    # Parse parts dari field key untuk mendapatkan informasi lengkap
-                    parts = field_key.split('_')
-                    suffix = parts[-1]  # 'client', 'contractor', atau 'remarks'
-                    
-                    # Dapatkan sheet_name, section, dan base_key
-                    sheet_part = parts[0]
-                    section_part = parts[1]
-                    
-                    # Jika ada banyak underscore dalam task name, kita perlu merekonstruksi dengan benar
-                    if len(parts) > 3:
-                        # Gabungkan semua bagian di tengah untuk mendapatkan task name dengan underscore
-                        task_id_parts = parts[2:-1]  # Ambil semua kecuali sheet, section, dan suffix
-                        task_id = '_'.join(task_id_parts)
-                    else:
-                        # Format sederhana: sheet_section_task_suffix
-                        task_id = parts[2]
-                    
-                    # Cari task name yang sesuai dengan ID ini dalam excel_data
-                    task_name = None
-                    row_idx_to_update = None
-                    
-                    # Scan Excel untuk menemukan baris yang sesuai
-                    for idx, excel_row in excel_data.iterrows():
-                        # Skip baris kosong
-                        if pd.isna(excel_row).all():
-                            continue
-                            
-                        first_col = excel_row.iloc[0] if not pd.isna(excel_row.iloc[0]) else ""
-                        if not isinstance(first_col, str):
+                        # Convert to string if needed
+                        if not isinstance(right_col, str):
                             try:
-                                first_col = str(first_col)
+                                right_col = str(right_col)
                             except:
                                 continue
-                                
-                        # Periksa apakah ini adalah item table (ft_)
-                        if first_col.startswith('ft_'):
-                            task_name_in_excel = first_col[3:].strip()
-                            current_task_id = f"{sheet_part}_{section_part}_{idx}"
+                        
+                        # Store the field position
+                        if right_col.startswith('f_') or right_col.startswith('fd_') or right_col.startswith('fm_'):
+                            field_to_row[f"right_{col_idx}_{right_col}"] = row_idx
+            
+            print(f"Found {len(field_to_row)} fields in the Excel sheet")
+            
+            # Build a reverse mapping from widgets to field identifiers
+            widget_to_field = {}
+            
+            # Find all widgets that contain field labels in their placeholder text or current text
+            for key, widget in self.data_fields.items():
+                if key.startswith(sheet_name):  # Only process widgets for this sheet
+                    field_text = None
+                    
+                    if isinstance(widget, QLineEdit):
+                        # For regular text fields, check placeholder text
+                        placeholder = widget.placeholderText()
+                        if placeholder:
+                            # Extract field name from placeholder (e.g., "Enter Company Name" -> "Company Name")
+                            if "Enter " in placeholder:
+                                field_text = placeholder.replace("Enter ", "")
+                    
+                    elif isinstance(widget, QComboBox):
+                        # For dropdowns, no reliable way to get field name from the widget itself
+                        pass
+                    
+                    # If we found a field text, store the mapping
+                    if field_text:
+                        # Try to find a matching field in our field_to_row map
+                        for field_id, row_idx in field_to_row.items():
+                            if field_id.startswith('f_'):
+                                field_name = field_id[2:].strip()
+                                if field_name == field_text:
+                                    widget_to_field[widget] = field_id
+                                    break
+                            elif field_id.startswith('fd_'):
+                                field_name = field_id[3:].strip()
+                                if field_name == field_text:
+                                    widget_to_field[widget] = field_id
+                                    break
+            
+            print(f"Mapped {len(widget_to_field)} widgets to specific fields")
+            
+            # Track changes
+            changes_made = 0
+            changes_log = []
+            
+            # Process each row in the Excel file and update values directly
+            for row_idx, row in df.iterrows():
+                # Skip empty rows
+                if pd.isna(row).all():
+                    continue
+                
+                # Get the field identifier from this row
+                first_col = row.iloc[0] if not pd.isna(row.iloc[0]) else ""
+                
+                # Convert to string if needed
+                if not isinstance(first_col, str):
+                    try:
+                        first_col = str(first_col)
+                    except:
+                        continue
+                
+                # Process based on field type
+                if first_col.startswith('f_'):
+                    # Standard field
+                    field_name = first_col[2:].strip()
+                    
+                    # Find the input field widget for this row
+                    current_section = self._get_section_for_row(df, row_idx)
+                    field_count = 0
+                    found_widget = None
+                    
+                    # First, try the most direct way to find the field widget
+                    while field_count < 100 and not found_widget:
+                        field_key = f"{sheet_name}_{current_section}_{field_count}"
+                        if field_key in self.data_fields:
+                            widget = self.data_fields[field_key]
+                            if isinstance(widget, QLineEdit):
+                                placeholder = widget.placeholderText()
+                                if placeholder and field_name in placeholder:
+                                    found_widget = widget
+                                    break
+                        field_count += 1
+                    
+                    # If we found a widget, get its value and save it
+                    if found_widget:
+                        value = found_widget.text()
+                        
+                        # Write to column B (index 1)
+                        target_cell = sheet.cell(row=row_idx+1, column=2)  # +1 because Excel is 1-indexed
+                        old_value = target_cell.value
+                        target_cell.value = value
+                        
+                        changes_made += 1
+                        changes_log.append(f"Row {row_idx+1}, Col B: {old_value} -> {value}")
+                        print(f"Updated cell B{row_idx+1} ({field_name}): {old_value} -> {value}")
+                
+                elif first_col.startswith('fd_'):
+                    # Dropdown field
+                    field_name = first_col[3:].strip()
+                    
+                    # Find the dropdown widget for this row
+                    current_section = self._get_section_for_row(df, row_idx)
+                    field_count = 0
+                    found_widget = None
+                    
+                    # Try to find the matching dropdown
+                    while field_count < 100 and not found_widget:
+                        field_key = f"{sheet_name}_{current_section}_{field_count}"
+                        if field_key in self.data_fields:
+                            widget = self.data_fields[field_key]
+                            if isinstance(widget, QComboBox):
+                                # Best we can do is check if this is the right dropdown count in the section
+                                found_widget = widget
+                                break
+                        field_count += 1
+                    
+                    # If we found a widget, get its value and save it
+                    if found_widget:
+                        value = found_widget.currentText()
+                        
+                        # Write to column B (index 1)
+                        target_cell = sheet.cell(row=row_idx+1, column=2)
+                        old_value = target_cell.value
+                        target_cell.value = value
+                        
+                        changes_made += 1
+                        changes_log.append(f"Row {row_idx+1}, Col B: {old_value} -> {value}")
+                        print(f"Updated cell B{row_idx+1} ({field_name}): {old_value} -> {value}")
+                
+                elif first_col.startswith('fm_'):
+                    # Multiple field
+                    field_name = first_col[3:].strip()
+                    
+                    # Find the field widgets for this row
+                    current_section = self._get_section_for_row(df, row_idx)
+                    field_base = f"{sheet_name}_{current_section}_{field_name}"
+                    field_key_0 = f"{field_base}_0"
+                    field_key_1 = f"{field_base}_1"
+                    
+                    # Also try index-based keys
+                    if field_key_0 not in self.data_fields or field_key_1 not in self.data_fields:
+                        for i in range(100):
+                            test_base = f"{sheet_name}_{current_section}_{i}"
+                            test_key_0 = f"{test_base}_0"
+                            test_key_1 = f"{test_base}_1"
                             
-                            # Jika ini adalah baris yang kita cari berdasarkan indeks baris
-                            if str(idx) == task_id or current_task_id == f"{sheet_part}_{section_part}_{task_id}":
-                                row_idx_to_update = idx + 1  # +1 karena Excel row mulai dari 1
-                                task_name = task_name_in_excel
+                            if test_key_0 in self.data_fields and test_key_1 in self.data_fields:
+                                # Found possible match
+                                field_key_0 = test_key_0
+                                field_key_1 = test_key_1
                                 break
                     
-                    # Jika menemukan baris yang cocok
-                    if row_idx_to_update is not None:
-                        # Tentukan kolom berdasarkan jenis field
-                        col_idx = None
-                        value = None
-                        
-                        if suffix == 'client':
-                            col_idx = 1  # Kolom B
-                            value = 'ü' if field_input.isChecked() else ''
-                        elif suffix == 'contractor':
-                            col_idx = 2  # Kolom C
-                            value = 'ü' if field_input.isChecked() else ''
-                        elif suffix == 'remarks':
-                            col_idx = 3  # Kolom D
-                            value = field_input.text()
-                        
-                        # Update nilai di cell Excel
-                        if col_idx is not None:
-                            sheet.cell(row=row_idx_to_update, column=col_idx+1).value = value
+                    # Process first field (Name)
+                    if field_key_0 in self.data_fields:
+                        widget_0 = self.data_fields[field_key_0]
+                        if isinstance(widget_0, QLineEdit):
+                            value_0 = widget_0.text()
                             
-                # Simpan workbook
-                workbook.save(self.excel_path)
+                            # Write to column B (index 1)
+                            target_cell_0 = sheet.cell(row=row_idx+1, column=2)
+                            old_value_0 = target_cell_0.value
+                            target_cell_0.value = value_0
+                            
+                            changes_made += 1
+                            changes_log.append(f"Row {row_idx+1}, Col B: {old_value_0} -> {value_0}")
+                            print(f"Updated cell B{row_idx+1} ({field_name} Name): {old_value_0} -> {value_0}")
+                    
+                    # Process second field (Phone/Email)
+                    if field_key_1 in self.data_fields:
+                        widget_1 = self.data_fields[field_key_1]
+                        if isinstance(widget_1, QLineEdit):
+                            value_1 = widget_1.text()
+                            
+                            # Write to column C (index 2)
+                            target_cell_1 = sheet.cell(row=row_idx+1, column=3)
+                            old_value_1 = target_cell_1.value
+                            target_cell_1.value = value_1
+                            
+                            changes_made += 1
+                            changes_log.append(f"Row {row_idx+1}, Col C: {old_value_1} -> {value_1}")
+                            print(f"Updated cell C{row_idx+1} ({field_name} Phone/Email): {old_value_1} -> {value_1}")
                 
-                # Tampilkan pesan sukses
-                QMessageBox.information(self, "Sukses", f"Data dalam sheet {sheet_name} berhasil disimpan!")
+                elif first_col.startswith('ft_'):
+                    # Table item
+                    field_name = first_col[3:].strip()
+                    
+                    # Find widgets for this row
+                    current_section = self._get_section_for_row(df, row_idx)
+                    base_key = f"{sheet_name}_{current_section}_{row_idx}"
+                    client_key = f"{base_key}_client"
+                    contractor_key = f"{base_key}_contractor"
+                    remarks_key = f"{base_key}_remarks"
+                    
+                    # Try alternative key format if not found
+                    if client_key not in self.data_fields:
+                        for i in range(100):
+                            test_base = f"{sheet_name}_{current_section}_{i}"
+                            test_client = f"{test_base}_client"
+                            test_contractor = f"{test_base}_contractor"
+                            test_remarks = f"{test_base}_remarks"
+                            
+                            if test_client in self.data_fields:
+                                client_key = test_client
+                                contractor_key = test_contractor
+                                remarks_key = test_remarks
+                                break
+                    
+                    # Save client checkbox
+                    if client_key in self.data_fields:
+                        client_widget = self.data_fields[client_key]
+                        if isinstance(client_widget, QCheckBox):
+                            client_value = 'ü' if client_widget.isChecked() else ''
+                            
+                            # Write to column B (index 1)
+                            target_cell_client = sheet.cell(row=row_idx+1, column=2)
+                            old_value_client = target_cell_client.value
+                            target_cell_client.value = client_value
+                            
+                            changes_made += 1
+                            changes_log.append(f"Row {row_idx+1}, Col B: {old_value_client} -> {client_value}")
+                            print(f"Updated cell B{row_idx+1} ({field_name} Client): {old_value_client} -> {client_value}")
+                    
+                    # Save contractor checkbox
+                    if contractor_key in self.data_fields:
+                        contractor_widget = self.data_fields[contractor_key]
+                        if isinstance(contractor_widget, QCheckBox):
+                            contractor_value = 'ü' if contractor_widget.isChecked() else ''
+                            
+                            # Write to column C (index 2)
+                            target_cell_contractor = sheet.cell(row=row_idx+1, column=3)
+                            old_value_contractor = target_cell_contractor.value
+                            target_cell_contractor.value = contractor_value
+                            
+                            changes_made += 1
+                            changes_log.append(f"Row {row_idx+1}, Col C: {old_value_contractor} -> {contractor_value}")
+                            print(f"Updated cell C{row_idx+1} ({field_name} Contractor): {old_value_contractor} -> {contractor_value}")
+                    
+                    # Save remarks
+                    if remarks_key in self.data_fields:
+                        remarks_widget = self.data_fields[remarks_key]
+                        if isinstance(remarks_widget, QLineEdit):
+                            remarks_value = remarks_widget.text()
+                            
+                            # Write to column D (index 3)
+                            target_cell_remarks = sheet.cell(row=row_idx+1, column=4)
+                            old_value_remarks = target_cell_remarks.value
+                            target_cell_remarks.value = remarks_value
+                            
+                            changes_made += 1
+                            changes_log.append(f"Row {row_idx+1}, Col D: {old_value_remarks} -> {remarks_value}")
+                            print(f"Updated cell D{row_idx+1} ({field_name} Remarks): {old_value_remarks} -> {remarks_value}")
                 
-                # Reload data
-                self.load_excel_data()
-            else:
-                QMessageBox.warning(self, "Peringatan", f"Sheet {sheet_name} tidak ditemukan dalam file Excel.")
-        
+                # Process right column fields
+                for col_idx in range(2, min(len(row), df.shape[1])):
+                    if col_idx < len(row) and not pd.isna(row[col_idx]):
+                        right_col = row.iloc[col_idx] if not pd.isna(row.iloc[col_idx]) else ""
+                        
+                        # Convert to string if needed
+                        if not isinstance(right_col, str):
+                            try:
+                                right_col = str(right_col)
+                            except:
+                                continue
+                        
+                        # Process right column field
+                        if right_col.startswith('f_') or right_col.startswith('fd_') or right_col.startswith('fm_'):
+                            # Get right section
+                            right_section = self._get_right_section_for_row(df, row_idx, col_idx)
+                            if not right_section:
+                                right_section = self._get_section_for_row(df, row_idx)
+                            
+                            # Process regular field or dropdown
+                            if right_col.startswith('f_') or right_col.startswith('fd_'):
+                                # Extract field name
+                                field_name = right_col[2:].strip() if right_col.startswith('f_') else right_col[3:].strip()
+                                
+                                # Try to find matching widget
+                                field_count = 0
+                                found_widget = None
+                                
+                                # Try to find the matching widget in right section
+                                while field_count < 100 and not found_widget:
+                                    field_key = f"{sheet_name}_{right_section}_{field_count}"
+                                    if field_key in self.data_fields:
+                                        widget = self.data_fields[field_key]
+                                        
+                                        if (isinstance(widget, QLineEdit) and right_col.startswith('f_')) or \
+                                        (isinstance(widget, QComboBox) and right_col.startswith('fd_')):
+                                            found_widget = widget
+                                            break
+                                    
+                                    field_count += 1
+                                
+                                # If widget found, save value
+                                if found_widget:
+                                    value = ""
+                                    if isinstance(found_widget, QLineEdit):
+                                        value = found_widget.text()
+                                    elif isinstance(found_widget, QComboBox):
+                                        value = found_widget.currentText()
+                                    
+                                    # Write to column after the field (col_idx + 2)
+                                    target_col = col_idx + 2
+                                    target_cell = sheet.cell(row=row_idx+1, column=target_col)
+                                    old_value = target_cell.value
+                                    target_cell.value = value
+                                    
+                                    changes_made += 1
+                                    col_letter = chr(64 + target_col)  # Convert column index to letter (A=1, B=2, etc.)
+                                    changes_log.append(f"Row {row_idx+1}, Col {col_letter}: {old_value} -> {value}")
+                                    print(f"Updated cell {col_letter}{row_idx+1} (Right {field_name}): {old_value} -> {value}")
+                            
+                            # Process multiple field
+                            elif right_col.startswith('fm_'):
+                                field_name = right_col[3:].strip()
+                                
+                                # Try to find matching widgets
+                                field_base = f"{sheet_name}_{right_section}_{field_name}"
+                                field_key_0 = f"{field_base}_0"
+                                field_key_1 = f"{field_base}_1"
+                                
+                                # Try alternative key format if not found
+                                if field_key_0 not in self.data_fields or field_key_1 not in self.data_fields:
+                                    for i in range(100):
+                                        test_base = f"{sheet_name}_{right_section}_{i}"
+                                        test_key_0 = f"{test_base}_0"
+                                        test_key_1 = f"{test_base}_1"
+                                        
+                                        if test_key_0 in self.data_fields and test_key_1 in self.data_fields:
+                                            field_key_0 = test_key_0
+                                            field_key_1 = test_key_1
+                                            break
+                                
+                                # Process first field
+                                if field_key_0 in self.data_fields:
+                                    widget_0 = self.data_fields[field_key_0]
+                                    if isinstance(widget_0, QLineEdit):
+                                        value_0 = widget_0.text()
+                                        
+                                        # Write to next column (col_idx + 2)
+                                        target_col_0 = col_idx + 2
+                                        target_cell_0 = sheet.cell(row=row_idx+1, column=target_col_0)
+                                        old_value_0 = target_cell_0.value
+                                        target_cell_0.value = value_0
+                                        
+                                        changes_made += 1
+                                        col_letter_0 = chr(64 + target_col_0)
+                                        changes_log.append(f"Row {row_idx+1}, Col {col_letter_0}: {old_value_0} -> {value_0}")
+                                        print(f"Updated cell {col_letter_0}{row_idx+1} (Right {field_name} Name): {old_value_0} -> {value_0}")
+                                
+                                # Process second field
+                                if field_key_1 in self.data_fields:
+                                    widget_1 = self.data_fields[field_key_1]
+                                    if isinstance(widget_1, QLineEdit):
+                                        value_1 = widget_1.text()
+                                        
+                                        # Write to column after the first (col_idx + 3)
+                                        target_col_1 = col_idx + 3
+                                        target_cell_1 = sheet.cell(row=row_idx+1, column=target_col_1)
+                                        old_value_1 = target_cell_1.value
+                                        target_cell_1.value = value_1
+                                        
+                                        changes_made += 1
+                                        col_letter_1 = chr(64 + target_col_1)
+                                        changes_log.append(f"Row {row_idx+1}, Col {col_letter_1}: {old_value_1} -> {value_1}")
+                                        print(f"Updated cell {col_letter_1}{row_idx+1} (Right {field_name} Phone/Email): {old_value_1} -> {value_1}")
+                            
+                            # Only process the first field in this column
+                            break
+            
+            # Save the workbook
+            print("Attempting to save workbook...")
+            try:
+                wb.save(self.excel_path)
+                print(f"Workbook saved successfully to: {self.excel_path}")
+                
+                # Show success message
+                QMessageBox.information(
+                    self, 
+                    "Save Successful", 
+                    f"Data successfully saved to {sheet_name} with {changes_made} changes."
+                )
+                
+                # Write detailed log to file for debugging
+                log_path = os.path.join(os.path.dirname(self.excel_path), "save_changes_log.txt")
+                with open(log_path, 'w') as log_file:
+                    log_file.write(f"Save operation at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    log_file.write(f"Excel file: {self.excel_path}\n")
+                    log_file.write(f"Sheet: {sheet_name}\n")
+                    log_file.write(f"Total changes: {changes_made}\n\n")
+                    log_file.write("Detailed changes:\n")
+                    for change in changes_log:
+                        log_file.write(f"- {change}\n")
+                
+                # Important: Force application to process events before reloading
+                QApplication.processEvents()
+                
+                # Reload the data to reflect changes - just reload the current tab
+                current_tab_index = self.tab_widget.currentIndex()
+                current_tab_text = self.tab_widget.tabText(current_tab_index)
+                
+                print(f"Reloading data for tab: {current_tab_text}")
+                
+                # Only reload the data for the current sheet to avoid freezing
+                if sheet_name in self.sheet_tabs:
+                    try:
+                        # Get the tab's scroll area and its widget
+                        scroll_area = self.tab_widget.widget(current_tab_index)
+                        if isinstance(scroll_area, QScrollArea):
+                            # Save scroll position
+                            scroll_pos = scroll_area.verticalScrollBar().value()
+                            
+                            # Clear and reload just this sheet
+                            df = pd.read_excel(self.excel_path, sheet_name=sheet_name, header=None)
+                            
+                            sheet_widget = scroll_area.widget()
+                            if sheet_widget:
+                                sheet_layout = sheet_widget.layout()
+                                if sheet_layout:
+                                    # Clear existing layout
+                                    while sheet_layout.count():
+                                        item = sheet_layout.takeAt(0)
+                                        widget = item.widget()
+                                        if widget:
+                                            widget.deleteLater()
+                                    
+                                    # Recreate sheet content
+                                    self.process_sheet_data(df, sheet_name, sheet_layout)
+                                    
+                                    # Restore scroll position
+                                    QApplication.processEvents()
+                                    scroll_area.verticalScrollBar().setValue(scroll_pos)
+                                    
+                                    print(f"Successfully reloaded tab: {current_tab_text}")
+                    except Exception as e:
+                        print(f"Error reloading tab {current_tab_text}: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+                
+            except PermissionError:
+                QMessageBox.critical(
+                    self, 
+                    "Permission Error", 
+                    "Could not save the file. Make sure it is not open in Excel or another program."
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self, 
+                    "Error Saving File", 
+                    f"Could not save the file: {str(e)}"
+                )
+                print(f"Error saving workbook: {str(e)}")
+            
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Gagal menyimpan data: {str(e)}")
-            print(f"Error saving sheet data: {str(e)}")
-    
+            QMessageBox.critical(
+                self, 
+                "Error Saving Data", 
+                f"An error occurred while processing data: {str(e)}"
+            )
+            print(f"Error in save_sheet_data: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
     def _get_right_section_for_row(self, df, row_idx, col_idx):
         """Helper untuk mendapatkan section dari kolom kanan untuk baris tertentu"""
         # Start from the top and look for 'sub_' in the specified column
