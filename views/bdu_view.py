@@ -2509,12 +2509,23 @@ class BDUGroupView(QMainWindow):
                 if first_col.startswith('f_') or first_col.startswith('fd_') or first_col.startswith('fm_') or first_col.startswith('ft_'):
                     field_to_row[first_col] = row_idx
                     
-                    # Specifically identify Industry and Sub-Industry rows
-                    if first_col == 'fd_Industry Classification':
-                        industry_row = row_idx
-                    elif first_col == 'fd_Sub Industry Specification':
-                        sub_industry_row = row_idx
+                    # Extract the field name without prefix
+                    if first_col.startswith('f_'):
+                        field_name = first_col[2:].strip()
+                    elif first_col.startswith('fd_') or first_col.startswith('fm_') or first_col.startswith('ft_'):
+                        field_name = first_col[3:].strip()
+                    else:
+                        field_name = first_col
+                        
+                    # Store the original field identifier with row index for easy lookup
+                    field_to_row[f"row_{row_idx}"] = first_col
                     
+                    # Specifically identify Industry and Sub-Industry rows
+                    if "Industry Classification" in field_name:
+                        industry_row = row_idx
+                    elif "Sub Industry Specification" in field_name:
+                        sub_industry_row = row_idx
+                
                 # Also check right columns for fields
                 for col_idx in range(2, min(len(row), df.shape[1])):
                     if col_idx < len(row) and not pd.isna(row[col_idx]):
@@ -2530,6 +2541,7 @@ class BDUGroupView(QMainWindow):
                         # Store the field position
                         if right_col.startswith('f_') or right_col.startswith('fd_') or right_col.startswith('fm_'):
                             field_to_row[f"right_{col_idx}_{right_col}"] = row_idx
+                            field_to_row[f"right_row_{row_idx}_col_{col_idx}"] = right_col
             
             print(f"Found {len(field_to_row)} fields in the Excel sheet")
             
@@ -2572,6 +2584,78 @@ class BDUGroupView(QMainWindow):
             changes_made = 0
             changes_log = []
             
+            # Create mapping of row index to widgets for direct access
+            row_to_widget = {}
+            processed_widgets = set()  # Track widgets we've already processed
+            
+            # Pre-map widgets to Excel rows for more direct access
+            for row_idx in range(len(df)):
+                row_key = f"row_{row_idx}"
+                if row_key in field_to_row:
+                    field_id = field_to_row[row_key]
+                    
+                    # Get the field name and check for numeric prefix
+                    field_name = ""
+                    if field_id.startswith('f_'):
+                        field_name = field_id[2:].strip()
+                    elif field_id.startswith('fd_') or field_id.startswith('fm_') or field_id.startswith('ft_'):
+                        field_name = field_id[3:].strip()
+                    
+                    # Extract display name by removing numeric prefix if present
+                    display_name = field_name
+                    numeric_prefix = ""
+                    if field_name and field_name[0].isdigit():
+                        for i, char in enumerate(field_name):
+                            if not char.isdigit():
+                                display_name = field_name[i:]
+                                numeric_prefix = field_name[:i]
+                                break
+                    
+                    # Find widget for this specific row
+                    current_section = self._get_section_for_row(df, row_idx)
+                    
+                    # For field widgets, match them to rows  
+                    for field_idx in range(100):  # Try reasonable number of fields
+                        field_key = f"{sheet_name}_{current_section}_{field_idx}"
+                        
+                        if field_key in self.data_fields and field_key not in processed_widgets:
+                            widget = self.data_fields[field_key]
+                            
+                            # Check if widget type matches field type
+                            widget_matches = False
+                            
+                            if field_id.startswith('f_') and isinstance(widget, QLineEdit):
+                                # For regular input fields, check placeholder text
+                                placeholder = widget.placeholderText()
+                                if placeholder and display_name in placeholder:
+                                    widget_matches = True
+                            
+                            elif field_id.startswith('fd_') and isinstance(widget, QComboBox):
+                                # For dropdowns we need to be careful as they don't have a placeholder
+                                # Try to match industry/sub-industry first
+                                if display_name == "Industry Classification" and widget is industry_dropdown:
+                                    widget_matches = True
+                                elif display_name == "Sub Industry Specification" and widget is sub_industry_dropdown:
+                                    widget_matches = True
+                                elif widget is not industry_dropdown and widget is not sub_industry_dropdown:
+                                    # Take the next available dropdown that isn't already matched
+                                    widget_matches = True
+                                    
+                            elif field_id.startswith('fm_'):
+                                # For multi-fields, we need to handle the pair of fields
+                                # We'll check this in a separate loop
+                                pass
+                                
+                            elif field_id.startswith('ft_'):
+                                # For table items, we need to handle checkbox combinations
+                                # We'll handle this in a separate loop
+                                pass
+                            
+                            if widget_matches:
+                                row_to_widget[row_idx] = widget
+                                processed_widgets.add(field_key)
+                                break
+            
             # Process each row in the Excel file and update values directly
             for row_idx, row in df.iterrows():
                 # Skip empty rows
@@ -2593,22 +2677,43 @@ class BDUGroupView(QMainWindow):
                     # Standard field
                     field_name = first_col[2:].strip()
                     
-                    # Find the input field widget for this row
-                    current_section = self._get_section_for_row(df, row_idx)
-                    field_count = 0
+                    # Extract display name by removing numeric prefix
+                    display_name = field_name
+                    numeric_prefix = ""
+                    if field_name and field_name[0].isdigit():
+                        for i, char in enumerate(field_name):
+                            if not char.isdigit():
+                                display_name = field_name[i:]
+                                numeric_prefix = field_name[:i]
+                                break
+                    
+                    # Find the input field widget for this specific row
                     found_widget = None
                     
-                    # First, try the most direct way to find the field widget
-                    while field_count < 100 and not found_widget:
-                        field_key = f"{sheet_name}_{current_section}_{field_count}"
-                        if field_key in self.data_fields:
-                            widget = self.data_fields[field_key]
-                            if isinstance(widget, QLineEdit):
-                                placeholder = widget.placeholderText()
-                                if placeholder and field_name in placeholder:
-                                    found_widget = widget
-                                    break
-                        field_count += 1
+                    # First try direct row-to-widget mapping
+                    if row_idx in row_to_widget:
+                        found_widget = row_to_widget[row_idx]
+                    
+                    # If not found using direct mapping, try traditional approach
+                    if not found_widget:
+                        current_section = self._get_section_for_row(df, row_idx)
+                        field_count = 0
+                        
+                        # Try to find widgets based on placeholderText containing the display name
+                        while field_count < 100 and not found_widget:
+                            field_key = f"{sheet_name}_{current_section}_{field_count}"
+                            if field_key in self.data_fields:
+                                widget = self.data_fields[field_key]
+                                if isinstance(widget, QLineEdit):
+                                    placeholder = widget.placeholderText()
+                                    if placeholder and display_name in placeholder:
+                                        # If this is a row with a numeric prefix field, make sure we haven't
+                                        # already matched this widget to another row with the same display name
+                                        if field_key not in processed_widgets:
+                                            found_widget = widget
+                                            processed_widgets.add(field_key)
+                                            break
+                            field_count += 1
                     
                     # If we found a widget, get its value and save it
                     if found_widget:
@@ -2620,15 +2725,25 @@ class BDUGroupView(QMainWindow):
                         target_cell.value = value
                         
                         changes_made += 1
-                        changes_log.append(f"Row {row_idx+1}, Col B: {old_value} -> {value}")
-                        print(f"Updated cell B{row_idx+1} ({field_name}): {old_value} -> {value}")
+                        changes_log.append(f"Updated cell B{row_idx+1} ({display_name}): {old_value} -> {value}")
+                        print(f"Updated cell B{row_idx+1} ({display_name}): {old_value} -> {value}")
                 
                 elif first_col.startswith('fd_'):
                     # Dropdown field
                     field_name = first_col[3:].strip()
                     
+                    # Extract display name by removing numeric prefix
+                    display_name = field_name
+                    numeric_prefix = ""
+                    if field_name and field_name[0].isdigit():
+                        for i, char in enumerate(field_name):
+                            if not char.isdigit():
+                                display_name = field_name[i:]
+                                numeric_prefix = field_name[:i]
+                                break
+                    
                     # Special handling for Industry Classification and Sub Industry Specification
-                    if field_name == "Industry Classification" and industry_dropdown:
+                    if display_name == "Industry Classification" and industry_dropdown:
                         # Save Industry Classification value
                         industry_value = industry_dropdown.currentText()
                         
@@ -2638,10 +2753,10 @@ class BDUGroupView(QMainWindow):
                         target_cell.value = industry_value
                         
                         changes_made += 1
-                        changes_log.append(f"Row {row_idx+1}, Col B: {old_value} -> {industry_value}")
+                        changes_log.append(f"Updated cell B{row_idx+1} (Industry Classification): {old_value} -> {industry_value}")
                         print(f"Updated cell B{row_idx+1} (Industry Classification): {old_value} -> {industry_value}")
                     
-                    elif field_name == "Sub Industry Specification" and sub_industry_dropdown:
+                    elif display_name == "Sub Industry Specification" and sub_industry_dropdown:
                         # Save Sub Industry Specification value
                         sub_industry_value = sub_industry_dropdown.currentText()
                         
@@ -2651,30 +2766,39 @@ class BDUGroupView(QMainWindow):
                         target_cell.value = sub_industry_value
                         
                         changes_made += 1
-                        changes_log.append(f"Row {row_idx+1}, Col B: {old_value} -> {sub_industry_value}")
+                        changes_log.append(f"Updated cell B{row_idx+1} (Sub Industry Specification): {old_value} -> {sub_industry_value}")
                         print(f"Updated cell B{row_idx+1} (Sub Industry Specification): {old_value} -> {sub_industry_value}")
                     
                     else:
                         # For other dropdown fields, find the widget for this row
-                        current_section = self._get_section_for_row(df, row_idx)
-                        field_count = 0
                         found_widget = None
                         
-                        # Try to find the matching dropdown
-                        while field_count < 100 and not found_widget:
-                            field_key = f"{sheet_name}_{current_section}_{field_count}"
-                            if field_key in self.data_fields:
-                                widget = self.data_fields[field_key]
-                                if isinstance(widget, QComboBox):
-                                    # Skip if this is one of our already handled dropdowns
-                                    if (widget is industry_dropdown) or (widget is sub_industry_dropdown):
-                                        field_count += 1
-                                        continue
-                                    
-                                    # For other dropdowns, we take the next available one
-                                    found_widget = widget
-                                    break
-                            field_count += 1
+                        # First try direct row-to-widget mapping
+                        if row_idx in row_to_widget:
+                            found_widget = row_to_widget[row_idx]
+                        
+                        # If not found, try traditional approach
+                        if not found_widget:
+                            current_section = self._get_section_for_row(df, row_idx)
+                            field_count = 0
+                            
+                            # Try to find the matching dropdown
+                            while field_count < 100 and not found_widget:
+                                field_key = f"{sheet_name}_{current_section}_{field_count}"
+                                if field_key in self.data_fields:
+                                    widget = self.data_fields[field_key]
+                                    if isinstance(widget, QComboBox):
+                                        # Skip if this is one of our already handled dropdowns
+                                        if (widget is industry_dropdown) or (widget is sub_industry_dropdown):
+                                            field_count += 1
+                                            continue
+                                        
+                                        # For dropdowns without clear identifiers, only match if not already processed
+                                        if field_key not in processed_widgets:
+                                            found_widget = widget
+                                            processed_widgets.add(field_key)
+                                            break
+                                field_count += 1
                         
                         # If we found a widget, get its value and save it
                         if found_widget:
@@ -2686,85 +2810,131 @@ class BDUGroupView(QMainWindow):
                             target_cell.value = value
                             
                             changes_made += 1
-                            changes_log.append(f"Row {row_idx+1}, Col B: {old_value} -> {value}")
-                            print(f"Updated cell B{row_idx+1} ({field_name}): {old_value} -> {value}")
+                            changes_log.append(f"Updated cell B{row_idx+1} ({display_name}): {old_value} -> {value}")
+                            print(f"Updated cell B{row_idx+1} ({display_name}): {old_value} -> {value}")
                 
                 elif first_col.startswith('fm_'):
                     # Multiple field
                     field_name = first_col[3:].strip()
                     
+                    # Extract display name by removing numeric prefix
+                    display_name = field_name
+                    numeric_prefix = ""
+                    if field_name and field_name[0].isdigit():
+                        for i, char in enumerate(field_name):
+                            if not char.isdigit():
+                                display_name = field_name[i:]
+                                numeric_prefix = field_name[:i]
+                                break
+                    
                     # Find the field widgets for this row
                     current_section = self._get_section_for_row(df, row_idx)
+                    
+                    # We need to find both widgets (Name and Phone/Email) for this field
+                    found_key_base = None
+                    
+                    # First try to find widgets using the full field name
                     field_base = f"{sheet_name}_{current_section}_{field_name}"
                     field_key_0 = f"{field_base}_0"
                     field_key_1 = f"{field_base}_1"
                     
-                    # Also try index-based keys
-                    if field_key_0 not in self.data_fields or field_key_1 not in self.data_fields:
+                    if field_key_0 in self.data_fields and field_key_1 in self.data_fields:
+                        found_key_base = field_base
+                    else:
+                        # Try to find based on section and index
                         for i in range(100):
                             test_base = f"{sheet_name}_{current_section}_{i}"
                             test_key_0 = f"{test_base}_0"
                             test_key_1 = f"{test_base}_1"
                             
                             if test_key_0 in self.data_fields and test_key_1 in self.data_fields:
-                                # Found possible match
-                                field_key_0 = test_key_0
-                                field_key_1 = test_key_1
-                                break
-                    
-                    # Process first field (Name)
-                    if field_key_0 in self.data_fields:
-                        widget_0 = self.data_fields[field_key_0]
-                        if isinstance(widget_0, QLineEdit):
-                            value_0 = widget_0.text()
+                                # Check if these widgets match our expected field (check placeholders)
+                                widget_0 = self.data_fields[test_key_0]
+                                widget_1 = self.data_fields[test_key_1]
+                                
+                                if isinstance(widget_0, QLineEdit) and isinstance(widget_1, QLineEdit):
+                                    # Check if the placeholder contains our display name
+                                    placeholder_0 = widget_0.placeholderText()
+                                    placeholder_1 = widget_1.placeholderText()
+                                    
+                                    if (placeholder_0 and display_name in placeholder_0) or \
+                                    (placeholder_1 and display_name in placeholder_1):
+                                        # Make sure we haven't processed this pair yet
+                                        if test_key_0 not in processed_widgets and test_key_1 not in processed_widgets:
+                                            found_key_base = test_base
+                                            processed_widgets.add(test_key_0)
+                                            processed_widgets.add(test_key_1)
+                                            break
                             
-                            # Write to column B (index 1)
-                            target_cell_0 = sheet.cell(row=row_idx+1, column=2)
-                            old_value_0 = target_cell_0.value
-                            target_cell_0.value = value_0
-                            
-                            changes_made += 1
-                            changes_log.append(f"Row {row_idx+1}, Col B: {old_value_0} -> {value_0}")
-                            print(f"Updated cell B{row_idx+1} ({field_name} Name): {old_value_0} -> {value_0}")
-                    
-                    # Process second field (Phone/Email)
-                    if field_key_1 in self.data_fields:
-                        widget_1 = self.data_fields[field_key_1]
-                        if isinstance(widget_1, QLineEdit):
-                            value_1 = widget_1.text()
-                            
-                            # Write to column C (index 2)
-                            target_cell_1 = sheet.cell(row=row_idx+1, column=3)
-                            old_value_1 = target_cell_1.value
-                            target_cell_1.value = value_1
-                            
-                            changes_made += 1
-                            changes_log.append(f"Row {row_idx+1}, Col C: {old_value_1} -> {value_1}")
-                            print(f"Updated cell C{row_idx+1} ({field_name} Phone/Email): {old_value_1} -> {value_1}")
+                    # Process the fields if we found a match
+                    if found_key_base:
+                        # Process first field (Name)
+                        field_key_0 = f"{found_key_base}_0"
+                        field_key_1 = f"{found_key_base}_1"
+                        
+                        if field_key_0 in self.data_fields:
+                            widget_0 = self.data_fields[field_key_0]
+                            if isinstance(widget_0, QLineEdit):
+                                value_0 = widget_0.text()
+                                
+                                # Write to column B (index 1)
+                                target_cell_0 = sheet.cell(row=row_idx+1, column=2)
+                                old_value_0 = target_cell_0.value
+                                target_cell_0.value = value_0
+                                
+                                changes_made += 1
+                                changes_log.append(f"Updated cell B{row_idx+1} ({display_name} Name): {old_value_0} -> {value_0}")
+                                print(f"Updated cell B{row_idx+1} ({display_name} Name): {old_value_0} -> {value_0}")
+                        
+                        # Process second field (Phone/Email)
+                        if field_key_1 in self.data_fields:
+                            widget_1 = self.data_fields[field_key_1]
+                            if isinstance(widget_1, QLineEdit):
+                                value_1 = widget_1.text()
+                                
+                                # Write to column C (index 2)
+                                target_cell_1 = sheet.cell(row=row_idx+1, column=3)
+                                old_value_1 = target_cell_1.value
+                                target_cell_1.value = value_1
+                                
+                                changes_made += 1
+                                changes_log.append(f"Updated cell C{row_idx+1} ({display_name} Phone/Email): {old_value_1} -> {value_1}")
+                                print(f"Updated cell C{row_idx+1} ({display_name} Phone/Email): {old_value_1} -> {value_1}")
                 
                 elif first_col.startswith('ft_'):
                     # Table item
                     field_name = first_col[3:].strip()
                     
-                    # Find widgets for this row
+                    # Find widgets for this specific row
                     current_section = self._get_section_for_row(df, row_idx)
+                    
+                    # Try the most direct mapping first
                     base_key = f"{sheet_name}_{current_section}_{row_idx}"
                     client_key = f"{base_key}_client"
                     contractor_key = f"{base_key}_contractor"
                     remarks_key = f"{base_key}_remarks"
                     
-                    # Try alternative key format if not found
+                    # If not found, try to search by field name or index
                     if client_key not in self.data_fields:
+                        # Try to iterate through possible indices to find an unprocessed set
                         for i in range(100):
                             test_base = f"{sheet_name}_{current_section}_{i}"
                             test_client = f"{test_base}_client"
                             test_contractor = f"{test_base}_contractor"
                             test_remarks = f"{test_base}_remarks"
                             
-                            if test_client in self.data_fields:
+                            if test_client in self.data_fields and \
+                            test_client not in processed_widgets and \
+                            test_contractor not in processed_widgets and \
+                            test_remarks not in processed_widgets:
                                 client_key = test_client
                                 contractor_key = test_contractor
                                 remarks_key = test_remarks
+                                
+                                # Mark these widgets as processed
+                                processed_widgets.add(test_client)
+                                processed_widgets.add(test_contractor)
+                                processed_widgets.add(test_remarks)
                                 break
                     
                     # Save client checkbox
@@ -2779,7 +2949,7 @@ class BDUGroupView(QMainWindow):
                             target_cell_client.value = client_value
                             
                             changes_made += 1
-                            changes_log.append(f"Row {row_idx+1}, Col B: {old_value_client} -> {client_value}")
+                            changes_log.append(f"Updated cell B{row_idx+1} ({field_name} Client): {old_value_client} -> {client_value}")
                             print(f"Updated cell B{row_idx+1} ({field_name} Client): {old_value_client} -> {client_value}")
                     
                     # Save contractor checkbox
@@ -2794,7 +2964,7 @@ class BDUGroupView(QMainWindow):
                             target_cell_contractor.value = contractor_value
                             
                             changes_made += 1
-                            changes_log.append(f"Row {row_idx+1}, Col C: {old_value_contractor} -> {contractor_value}")
+                            changes_log.append(f"Updated cell C{row_idx+1} ({field_name} Contractor): {old_value_contractor} -> {contractor_value}")
                             print(f"Updated cell C{row_idx+1} ({field_name} Contractor): {old_value_contractor} -> {contractor_value}")
                     
                     # Save remarks
@@ -2809,12 +2979,14 @@ class BDUGroupView(QMainWindow):
                             target_cell_remarks.value = remarks_value
                             
                             changes_made += 1
-                            changes_log.append(f"Row {row_idx+1}, Col D: {old_value_remarks} -> {remarks_value}")
+                            changes_log.append(f"Updated cell D{row_idx+1} ({field_name} Remarks): {old_value_remarks} -> {remarks_value}")
                             print(f"Updated cell D{row_idx+1} ({field_name} Remarks): {old_value_remarks} -> {remarks_value}")
                 
                 # Process right column fields
+                right_field_processed = {}  # Track which right fields we've processed by column index
+                
                 for col_idx in range(2, min(len(row), df.shape[1])):
-                    if col_idx < len(row) and not pd.isna(row[col_idx]):
+                    if col_idx < len(row) and not pd.isna(row[col_idx]) and col_idx not in right_field_processed:
                         right_col = row.iloc[col_idx] if not pd.isna(row.iloc[col_idx]) else ""
                         
                         # Convert to string if needed
@@ -2826,32 +2998,58 @@ class BDUGroupView(QMainWindow):
                         
                         # Process right column field
                         if right_col.startswith('f_') or right_col.startswith('fd_') or right_col.startswith('fm_'):
-                            # Get right section
+                            # Get right section name
                             right_section = self._get_right_section_for_row(df, row_idx, col_idx)
                             if not right_section:
                                 right_section = self._get_section_for_row(df, row_idx)
                             
+                            # Extract field name
+                            field_name = ""
+                            if right_col.startswith('f_'):
+                                field_name = right_col[2:].strip()
+                            elif right_col.startswith('fd_') or right_col.startswith('fm_'):
+                                field_name = right_col[3:].strip()
+                            
+                            # Extract display name by removing numeric prefix
+                            display_name = field_name
+                            numeric_prefix = ""
+                            if field_name and field_name[0].isdigit():
+                                for i, char in enumerate(field_name):
+                                    if not char.isdigit():
+                                        display_name = field_name[i:]
+                                        numeric_prefix = field_name[:i]
+                                        break
+                            
                             # Process regular field or dropdown
                             if right_col.startswith('f_') or right_col.startswith('fd_'):
-                                # Extract field name
-                                field_name = right_col[2:].strip() if right_col.startswith('f_') else right_col[3:].strip()
-                                
-                                # Try to find matching widget
-                                field_count = 0
+                                # Try to find matching widget for this specific right field
                                 found_widget = None
                                 
-                                # Try to find the matching widget in right section
-                                while field_count < 100 and not found_widget:
-                                    field_key = f"{sheet_name}_{right_section}_{field_count}"
-                                    if field_key in self.data_fields:
+                                # Create a unique key for this right field based on row and column
+                                right_field_key = f"right_row_{row_idx}_col_{col_idx}"
+                                
+                                # Try to look through all widgets to find an unprocessed match
+                                for i in range(100):
+                                    field_key = f"{sheet_name}_{right_section}_{i}"
+                                    if field_key in self.data_fields and field_key not in processed_widgets:
                                         widget = self.data_fields[field_key]
                                         
+                                        # Check if widget type matches field type
                                         if (isinstance(widget, QLineEdit) and right_col.startswith('f_')) or \
                                         (isinstance(widget, QComboBox) and right_col.startswith('fd_')):
-                                            found_widget = widget
-                                            break
-                                    
-                                    field_count += 1
+                                            
+                                            # For QLineEdit, check placeholder text
+                                            if isinstance(widget, QLineEdit):
+                                                placeholder = widget.placeholderText()
+                                                if placeholder and display_name in placeholder:
+                                                    found_widget = widget
+                                                    processed_widgets.add(field_key)
+                                                    break
+                                            # For QComboBox, just match the next one
+                                            else:
+                                                found_widget = widget
+                                                processed_widgets.add(field_key)
+                                                break
                                 
                                 # If widget found, save value
                                 if found_widget:
@@ -2867,68 +3065,85 @@ class BDUGroupView(QMainWindow):
                                     old_value = target_cell.value
                                     target_cell.value = value
                                     
+                                    # Mark this column as processed
+                                    right_field_processed[col_idx] = True
+                                    
                                     changes_made += 1
                                     col_letter = chr(64 + target_col)  # Convert column index to letter (A=1, B=2, etc.)
-                                    changes_log.append(f"Row {row_idx+1}, Col {col_letter}: {old_value} -> {value}")
-                                    print(f"Updated cell {col_letter}{row_idx+1} (Right {field_name}): {old_value} -> {value}")
+                                    changes_log.append(f"Updated cell {col_letter}{row_idx+1} (Right {display_name}): {old_value} -> {value}")
+                                    print(f"Updated cell {col_letter}{row_idx+1} (Right {display_name}): {old_value} -> {value}")
                             
                             # Process multiple field
                             elif right_col.startswith('fm_'):
-                                field_name = right_col[3:].strip()
+                                # Find available unprocessed pair of widgets for this right multi-field
+                                found_key_base = None
                                 
-                                # Try to find matching widgets
-                                field_base = f"{sheet_name}_{right_section}_{field_name}"
-                                field_key_0 = f"{field_base}_0"
-                                field_key_1 = f"{field_base}_1"
+                                # Search for unprocessed widget pairs that match this field
+                                for i in range(100):
+                                    test_base = f"{sheet_name}_{right_section}_{i}"
+                                    test_key_0 = f"{test_base}_0"
+                                    test_key_1 = f"{test_base}_1"
+                                    
+                                    if test_key_0 in self.data_fields and test_key_1 in self.data_fields and \
+                                    test_key_0 not in processed_widgets and test_key_1 not in processed_widgets:
+                                        # Check if widget placeholders match our field
+                                        widget_0 = self.data_fields[test_key_0]
+                                        widget_1 = self.data_fields[test_key_1]
+                                        
+                                        if isinstance(widget_0, QLineEdit) and isinstance(widget_1, QLineEdit):
+                                            placeholder_0 = widget_0.placeholderText()
+                                            placeholder_1 = widget_1.placeholderText()
+                                            
+                                            if (placeholder_0 and display_name in placeholder_0) or \
+                                            (placeholder_1 and display_name in placeholder_1):
+                                                found_key_base = test_base
+                                                processed_widgets.add(test_key_0)
+                                                processed_widgets.add(test_key_1)
+                                                break
                                 
-                                # Try alternative key format if not found
-                                if field_key_0 not in self.data_fields or field_key_1 not in self.data_fields:
-                                    for i in range(100):
-                                        test_base = f"{sheet_name}_{right_section}_{i}"
-                                        test_key_0 = f"{test_base}_0"
-                                        test_key_1 = f"{test_base}_1"
-                                        
-                                        if test_key_0 in self.data_fields and test_key_1 in self.data_fields:
-                                            field_key_0 = test_key_0
-                                            field_key_1 = test_key_1
-                                            break
-                                
-                                # Process first field
-                                if field_key_0 in self.data_fields:
-                                    widget_0 = self.data_fields[field_key_0]
-                                    if isinstance(widget_0, QLineEdit):
-                                        value_0 = widget_0.text()
-                                        
-                                        # Write to next column (col_idx + 2)
-                                        target_col_0 = col_idx + 2
-                                        target_cell_0 = sheet.cell(row=row_idx+1, column=target_col_0)
-                                        old_value_0 = target_cell_0.value
-                                        target_cell_0.value = value_0
-                                        
-                                        changes_made += 1
-                                        col_letter_0 = chr(64 + target_col_0)
-                                        changes_log.append(f"Row {row_idx+1}, Col {col_letter_0}: {old_value_0} -> {value_0}")
-                                        print(f"Updated cell {col_letter_0}{row_idx+1} (Right {field_name} Name): {old_value_0} -> {value_0}")
-                                
-                                # Process second field
-                                if field_key_1 in self.data_fields:
-                                    widget_1 = self.data_fields[field_key_1]
-                                    if isinstance(widget_1, QLineEdit):
-                                        value_1 = widget_1.text()
-                                        
-                                        # Write to column after the first (col_idx + 3)
-                                        target_col_1 = col_idx + 3
-                                        target_cell_1 = sheet.cell(row=row_idx+1, column=target_col_1)
-                                        old_value_1 = target_cell_1.value
-                                        target_cell_1.value = value_1
-                                        
-                                        changes_made += 1
-                                        col_letter_1 = chr(64 + target_col_1)
-                                        changes_log.append(f"Row {row_idx+1}, Col {col_letter_1}: {old_value_1} -> {value_1}")
-                                        print(f"Updated cell {col_letter_1}{row_idx+1} (Right {field_name} Phone/Email): {old_value_1} -> {value_1}")
-                            
-                            # Only process the first field in this column
-                            break
+                                # Process the fields if we found a match
+                                if found_key_base:
+                                    # Process first field
+                                    field_key_0 = f"{found_key_base}_0"
+                                    field_key_1 = f"{found_key_base}_1"
+                                    
+                                    if field_key_0 in self.data_fields:
+                                        widget_0 = self.data_fields[field_key_0]
+                                        if isinstance(widget_0, QLineEdit):
+                                            value_0 = widget_0.text()
+                                            
+                                            # Write to next column (col_idx + 2)
+                                            target_col_0 = col_idx + 2
+                                            target_cell_0 = sheet.cell(row=row_idx+1, column=target_col_0)
+                                            old_value_0 = target_cell_0.value
+                                            target_cell_0.value = value_0
+                                            
+                                            changes_made += 1
+                                            col_letter_0 = chr(64 + target_col_0)
+                                            changes_log.append(f"Updated cell {col_letter_0}{row_idx+1} (Right {display_name} Name): {old_value_0} -> {value_0}")
+                                            print(f"Updated cell {col_letter_0}{row_idx+1} (Right {display_name} Name): {old_value_0} -> {value_0}")
+                                    
+                                    # Process second field
+                                    if field_key_1 in self.data_fields:
+                                        widget_1 = self.data_fields[field_key_1]
+                                        if isinstance(widget_1, QLineEdit):
+                                            value_1 = widget_1.text()
+                                            
+                                            # Write to column after the first (col_idx + 3)
+                                            target_col_1 = col_idx + 3
+                                            target_cell_1 = sheet.cell(row=row_idx+1, column=target_col_1)
+                                            old_value_1 = target_cell_1.value
+                                            target_cell_1.value = value_1
+                                            
+                                            changes_made += 1
+                                            col_letter_1 = chr(64 + target_col_1)
+                                            changes_log.append(f"Updated cell {col_letter_1}{row_idx+1} (Right {display_name} Phone/Email): {old_value_1} -> {value_1}")
+                                            print(f"Updated cell {col_letter_1}{row_idx+1} (Right {display_name} Phone/Email): {old_value_1} -> {value_1}")
+                                    
+                                    # Mark this column as processed along with the next one (for the second field)
+                                    right_field_processed[col_idx] = True
+                                    if col_idx + 1 < df.shape[1]:
+                                        right_field_processed[col_idx + 1] = True
             
             # Save the workbook
             print("Attempting to save workbook...")
@@ -3022,7 +3237,7 @@ class BDUGroupView(QMainWindow):
             print(f"Error in save_sheet_data: {str(e)}")
             import traceback
             traceback.print_exc()
-                    
+                                    
     def _get_right_section_for_row(self, df, row_idx, col_idx):
         """Helper untuk mendapatkan section dari kolom kanan untuk baris tertentu"""
         # Start from the top and look for 'sub_' in the specified column
