@@ -2509,6 +2509,12 @@ class BDUGroupView(QMainWindow):
                 if first_col.startswith('f_') or first_col.startswith('fd_') or first_col.startswith('fm_') or first_col.startswith('ft_'):
                     field_to_row[first_col] = row_idx
                     
+                    # Specifically identify Industry and Sub-Industry rows
+                    if first_col == 'fd_Industry Classification':
+                        industry_row = row_idx
+                    elif first_col == 'fd_Sub Industry Specification':
+                        sub_industry_row = row_idx
+                    
                 # Also check right columns for fields
                 for col_idx in range(2, min(len(row), df.shape[1])):
                     if col_idx < len(row) and not pd.isna(row[col_idx]):
@@ -2527,42 +2533,40 @@ class BDUGroupView(QMainWindow):
             
             print(f"Found {len(field_to_row)} fields in the Excel sheet")
             
-            # Build a reverse mapping from widgets to field identifiers
-            widget_to_field = {}
+            # Find industry and sub-industry dropdown widgets
+            industry_dropdown = None
+            sub_industry_dropdown = None
             
-            # Find all widgets that contain field labels in their placeholder text or current text
+            # Track the widget indices to make sure we match them properly
+            industry_index = -1
+            sub_industry_index = -1
+            
+            # Find dropdowns for Industry and Sub-Industry by going through all widgets
             for key, widget in self.data_fields.items():
-                if key.startswith(sheet_name):  # Only process widgets for this sheet
-                    field_text = None
-                    
-                    if isinstance(widget, QLineEdit):
-                        # For regular text fields, check placeholder text
-                        placeholder = widget.placeholderText()
-                        if placeholder:
-                            # Extract field name from placeholder (e.g., "Enter Company Name" -> "Company Name")
-                            if "Enter " in placeholder:
-                                field_text = placeholder.replace("Enter ", "")
-                    
-                    elif isinstance(widget, QComboBox):
-                        # For dropdowns, no reliable way to get field name from the widget itself
-                        pass
-                    
-                    # If we found a field text, store the mapping
-                    if field_text:
-                        # Try to find a matching field in our field_to_row map
-                        for field_id, row_idx in field_to_row.items():
-                            if field_id.startswith('f_'):
-                                field_name = field_id[2:].strip()
-                                if field_name == field_text:
-                                    widget_to_field[widget] = field_id
-                                    break
-                            elif field_id.startswith('fd_'):
-                                field_name = field_id[3:].strip()
-                                if field_name == field_text:
-                                    widget_to_field[widget] = field_id
-                                    break
-            
-            print(f"Mapped {len(widget_to_field)} widgets to specific fields")
+                if not key.startswith(sheet_name):
+                    continue  # Skip widgets from other sheets
+                
+                if isinstance(widget, QComboBox):
+                    # Extract current section and field index
+                    parts = key.split('_')
+                    if len(parts) >= 3:
+                        try:
+                            field_index = int(parts[-1])
+                            # Assuming industry comes before sub-industry
+                            if field_index > industry_index:
+                                # First dropdown after index is industry
+                                if industry_dropdown is None:
+                                    industry_dropdown = widget
+                                    industry_index = field_index
+                                    print(f"Found Industry dropdown with key {key}")
+                                # Second dropdown after index is sub-industry    
+                                elif sub_industry_dropdown is None:
+                                    sub_industry_dropdown = widget
+                                    sub_industry_index = field_index
+                                    print(f"Found Sub-Industry dropdown with key {key}")
+                        except ValueError:
+                            # Not an integer index
+                            pass
             
             # Track changes
             changes_made = 0
@@ -2623,34 +2627,67 @@ class BDUGroupView(QMainWindow):
                     # Dropdown field
                     field_name = first_col[3:].strip()
                     
-                    # Find the dropdown widget for this row
-                    current_section = self._get_section_for_row(df, row_idx)
-                    field_count = 0
-                    found_widget = None
-                    
-                    # Try to find the matching dropdown
-                    while field_count < 100 and not found_widget:
-                        field_key = f"{sheet_name}_{current_section}_{field_count}"
-                        if field_key in self.data_fields:
-                            widget = self.data_fields[field_key]
-                            if isinstance(widget, QComboBox):
-                                # Best we can do is check if this is the right dropdown count in the section
-                                found_widget = widget
-                                break
-                        field_count += 1
-                    
-                    # If we found a widget, get its value and save it
-                    if found_widget:
-                        value = found_widget.currentText()
+                    # Special handling for Industry Classification and Sub Industry Specification
+                    if field_name == "Industry Classification" and industry_dropdown:
+                        # Save Industry Classification value
+                        industry_value = industry_dropdown.currentText()
                         
                         # Write to column B (index 1)
                         target_cell = sheet.cell(row=row_idx+1, column=2)
                         old_value = target_cell.value
-                        target_cell.value = value
+                        target_cell.value = industry_value
                         
                         changes_made += 1
-                        changes_log.append(f"Row {row_idx+1}, Col B: {old_value} -> {value}")
-                        print(f"Updated cell B{row_idx+1} ({field_name}): {old_value} -> {value}")
+                        changes_log.append(f"Row {row_idx+1}, Col B: {old_value} -> {industry_value}")
+                        print(f"Updated cell B{row_idx+1} (Industry Classification): {old_value} -> {industry_value}")
+                    
+                    elif field_name == "Sub Industry Specification" and sub_industry_dropdown:
+                        # Save Sub Industry Specification value
+                        sub_industry_value = sub_industry_dropdown.currentText()
+                        
+                        # Write to column B (index 1)
+                        target_cell = sheet.cell(row=row_idx+1, column=2)
+                        old_value = target_cell.value
+                        target_cell.value = sub_industry_value
+                        
+                        changes_made += 1
+                        changes_log.append(f"Row {row_idx+1}, Col B: {old_value} -> {sub_industry_value}")
+                        print(f"Updated cell B{row_idx+1} (Sub Industry Specification): {old_value} -> {sub_industry_value}")
+                    
+                    else:
+                        # For other dropdown fields, find the widget for this row
+                        current_section = self._get_section_for_row(df, row_idx)
+                        field_count = 0
+                        found_widget = None
+                        
+                        # Try to find the matching dropdown
+                        while field_count < 100 and not found_widget:
+                            field_key = f"{sheet_name}_{current_section}_{field_count}"
+                            if field_key in self.data_fields:
+                                widget = self.data_fields[field_key]
+                                if isinstance(widget, QComboBox):
+                                    # Skip if this is one of our already handled dropdowns
+                                    if (widget is industry_dropdown) or (widget is sub_industry_dropdown):
+                                        field_count += 1
+                                        continue
+                                    
+                                    # For other dropdowns, we take the next available one
+                                    found_widget = widget
+                                    break
+                            field_count += 1
+                        
+                        # If we found a widget, get its value and save it
+                        if found_widget:
+                            value = found_widget.currentText()
+                            
+                            # Write to column B (index 1)
+                            target_cell = sheet.cell(row=row_idx+1, column=2)
+                            old_value = target_cell.value
+                            target_cell.value = value
+                            
+                            changes_made += 1
+                            changes_log.append(f"Row {row_idx+1}, Col B: {old_value} -> {value}")
+                            print(f"Updated cell B{row_idx+1} ({field_name}): {old_value} -> {value}")
                 
                 elif first_col.startswith('fm_'):
                     # Multiple field
@@ -2985,7 +3022,7 @@ class BDUGroupView(QMainWindow):
             print(f"Error in save_sheet_data: {str(e)}")
             import traceback
             traceback.print_exc()
-            
+                    
     def _get_right_section_for_row(self, df, row_idx, col_idx):
         """Helper untuk mendapatkan section dari kolom kanan untuk baris tertentu"""
         # Start from the top and look for 'sub_' in the specified column
