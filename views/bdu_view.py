@@ -295,6 +295,9 @@ class BDUGroupView(QMainWindow):
         # Bersihkan dropdown anak
         child_dropdown.clear()
         
+        # Simpan nilai sub-industry saat ini agar bisa digunakan nanti
+        current_sub_industry = getattr(child_dropdown, "_last_value", None)
+        
         # Isi dengan nilai-nilai yang sesuai berdasarkan pilihan pada dropdown utama
         if parent_value in INDUSTRY_SUBTYPE_MAPPING:
             child_dropdown.addItems(INDUSTRY_SUBTYPE_MAPPING[parent_value])
@@ -368,6 +371,14 @@ class BDUGroupView(QMainWindow):
                     error_layout.addWidget(error_label)
 
                     self.tab_widget.addTab(error_widget, display_name)
+                    
+            # Setelah selesai memuat semua sheet dan tab, tambahkan kode untuk menyimpan nilai yang saat ini dipilih
+            for sheet_name, sheet_widget in self.sheet_tabs.items():
+                # Cari dropdown Sub Industry
+                for key, widget in self.data_fields.items():
+                    if isinstance(widget, QComboBox) and key.startswith(sheet_name):
+                        # Simpan nilai saat ini ke dalam property widget
+                        widget._last_value = widget.currentText()
 
         except Exception as e:
             self.loading_label.setText(f"Error loading data: {str(e)}")
@@ -2338,6 +2349,28 @@ class BDUGroupView(QMainWindow):
             industry_value = industry_dropdown.currentText()
             if industry_value:
                 self.update_dependent_dropdown(industry_value, sub_industry_dropdown)
+                
+                # Cari nilai sub-industry yang tersimpan di Excel
+                sub_industry_value = None
+                sub_industry_row = None
+                
+                # Cari baris yang berisi 'fd_Sub Industry Specification'
+                for row_idx, row in df.iterrows():
+                    if pd.isna(row.iloc[0]):
+                        continue
+                        
+                    first_col = str(row.iloc[0]).strip() if not pd.isna(row.iloc[0]) else ""
+                    if first_col == 'fd_Sub Industry Specification':
+                        sub_industry_row = row_idx
+                        # Ambil nilai dari kolom B (indeks 1)
+                        if len(row) > 1 and not pd.isna(row.iloc[1]):
+                            sub_industry_value = str(row.iloc[1]).strip()
+                        break
+                
+                # Jika nilai sub-industry ditemukan, set ke dropdown
+                if sub_industry_value and sub_industry_value in [sub_industry_dropdown.itemText(i) for i in range(sub_industry_dropdown.count())]:
+                    sub_industry_dropdown.setCurrentText(sub_industry_value)
+                    print(f"Setting Sub Industry dropdown to saved value: {sub_industry_value}")
 
         # Process any excel images that may exist in this sheet
         if section_layout:
