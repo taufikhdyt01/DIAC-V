@@ -2920,18 +2920,23 @@ class BDUGroupView(QMainWindow):
                 
                 elif field_type == 'ft_':
                     # Table item (checkboxes and remarks)
+                    # Keep track of which table items we've processed
+                    processed_table_items = getattr(self, '_processed_table_items', set())
+                    
+                    # For each row, find the FIRST unprocessed matching widget set
                     found_base_key = None
                     
-                    # Look for client, contractor, and remarks widgets
-                    for i in range(100):
+                    for i in range(100):  # Try different indexes
                         base_key = f"{sheet_name}_{section_name}_{i}"
                         client_key = f"{base_key}_client"
                         contractor_key = f"{base_key}_contractor"
                         remarks_key = f"{base_key}_remarks"
                         
+                        # Check if all three widgets exist and none of them are already processed
                         if (client_key in self.data_fields and 
                             contractor_key in self.data_fields and 
-                            remarks_key in self.data_fields):
+                            remarks_key in self.data_fields and
+                            base_key not in processed_table_items):
                             
                             client_widget = self.data_fields[client_key]
                             contractor_widget = self.data_fields[contractor_key]
@@ -2965,7 +2970,11 @@ class BDUGroupView(QMainWindow):
                                 }
                                 
                                 found_base_key = base_key
+                                processed_table_items.add(base_key)  # Mark this widget set as processed
                                 break
+                    
+                    # Store the processed items for later use
+                    self._processed_table_items = processed_table_items
             
             # Now, handle right column fields (Columns C/D, E/F, etc.)
             for row_idx in range(len(df)):
@@ -3220,6 +3229,146 @@ class BDUGroupView(QMainWindow):
                 changes_log.append(f"Updated cell {col_letter}{excel_row} ({display_name}): {old_value} -> {value}")
                 print(f"Updated cell {col_letter}{excel_row} ({display_name}): {old_value} -> {value}")
             
+            # Create special mapping for tdi_ fields with placeholders
+            placeholder_widgets = {}
+
+            # First, scan the Excel file to find cells with tdi_ and $P placeholders
+            for row_idx, row in df.iterrows():
+                if pd.isna(row).all():
+                    continue
+                    
+                # Check each column in the row
+                for col_idx in range(len(row)):
+                    cell_value = row.iloc[col_idx] if col_idx < len(row) and not pd.isna(row.iloc[col_idx]) else ""
+                    
+                    # Convert to string if needed
+                    if not isinstance(cell_value, str):
+                        try:
+                            cell_value = str(cell_value)
+                        except:
+                            continue
+                            
+                    # Check if it's a tdi_ cell with placeholder
+                    if cell_value.startswith('tdi_') and ('$P1$' in cell_value or '$P2$' in cell_value or 
+                                                        '$P3$' in cell_value or '$P4$' in cell_value):
+                        # Store this cell location for later processing
+                        cell_key = f"row_{row_idx}_col_{col_idx}"
+                        placeholder_widgets[cell_key] = {
+                            'cell_value': cell_value,
+                            'row': row_idx,
+                            'col': col_idx,
+                            'placeholders': []
+                        }
+                        
+                        # Find all placeholders in this cell
+                        import re
+                        placeholders = re.findall(r'\$P\d+\$', cell_value)
+                        placeholder_widgets[cell_key]['placeholders'] = placeholders
+
+            # Now match up the input fields with the placeholders
+            for cell_key, info in placeholder_widgets.items():
+                row_idx = info['row']
+                col_idx = info['col']
+                cell_text = info['cell_value']
+                header_text = ""
+                
+                # Try to find the header for this row
+                # First, look for a header in the same row (for th_ fields)
+                if col_idx > 0:  # If not in first column
+                    header_cell = df.iloc[row_idx, 0] if not pd.isna(df.iloc[row_idx, 0]) else ""
+                    if isinstance(header_cell, str) and (header_cell.startswith('th_') or header_cell.startswith('thr_')):
+                        if header_cell.startswith('th_'):
+                            header_text = header_cell[3:].strip()  # Remove 'th_' prefix
+                        else:
+                            header_text = header_cell[4:].strip()  # Remove 'thr_' prefix
+                
+                # Now find matching input fields for each placeholder
+                placeholders = info['placeholders']
+                
+                # Look through all input fields to find matches
+                for key, widget in self.data_fields.items():
+                    # For each placeholder in this cell
+                    for placeholder in placeholders:
+                        # The key for input fields related to these placeholders follows this pattern
+                        placeholder_key = f"tdi_{placeholder}_{header_text}"
+                        placeholder_key_with_row = f"tdi_{placeholder}_{header_text}_{row_idx}"
+                        
+                        # Check both possible key patterns
+                        if (key == placeholder_key or key == placeholder_key_with_row) and isinstance(widget, QLineEdit):
+                            # Found a match!
+                            value = widget.text()
+                            
+                            # Add to our cell-to-widget mapping for the placeholder
+                            # We'll replace the placeholder in the cell value later
+                            if 'placeholder_inputs' not in placeholder_widgets[cell_key]:
+                                placeholder_widgets[cell_key]['placeholder_inputs'] = {}
+                                
+                            placeholder_widgets[cell_key]['placeholder_inputs'][placeholder] = {
+                                'widget': widget,
+                                'value': value,
+                                'key': key
+                            }
+                            
+                            print(f"Matched placeholder {placeholder} in row {row_idx}, col {col_idx} to widget {key} with value: {value}")
+                            break  # Found a match for this placeholder
+
+            # Now process all cells with placeholders
+            # We'll add this after the regular cell processing
+
+            # Store replacements for later processing
+            placeholder_replacements = []
+
+            # After regular cell processing is complete, handle placeholder cells
+            for cell_key, info in placeholder_widgets.items():
+                row_idx = info['row']
+                col_idx = info['col']
+                cell_text = info['cell_value']
+                
+                # Skip if no input widgets were found
+                if 'placeholder_inputs' not in info:
+                    continue
+                    
+                # Get Excel coordinates
+                excel_row = row_idx + 1
+                excel_col = col_idx + 1
+                col_letter = chr(64 + excel_col)  # Convert to A1 notation
+                
+                # Make a copy of the original text to modify
+                new_text = cell_text
+                
+                # Replace each placeholder with its input value
+                for placeholder, input_info in info['placeholder_inputs'].items():
+                    value = input_info['value']
+                    new_text = new_text.replace(placeholder, value)
+                
+                # Remove the 'tdi_' prefix from the beginning for Excel
+                if new_text.startswith('tdi_'):
+                    new_text = new_text[4:]
+                
+                # Store for later processing to avoid modifying the sheet while iterating
+                placeholder_replacements.append({
+                    'row': excel_row,
+                    'col': excel_col, 
+                    'value': new_text,
+                    'original': sheet.cell(row=excel_row, column=excel_col).value
+                })
+
+            # Now apply all placeholder replacements
+            for replacement in placeholder_replacements:
+                target_cell = sheet.cell(row=replacement['row'], column=replacement['col'])
+                old_value = replacement['original']
+                new_value = replacement['value']
+                
+                # Update the cell
+                target_cell.value = new_value
+                
+                # Log the change
+                col_letter = chr(64 + replacement['col'])
+                cell_address = f"{col_letter}{replacement['row']}"
+                changes_made += 1
+                changes_log.append(f"Updated placeholder cell {cell_address}: {old_value} -> {new_value}")
+                print(f"Updated placeholder cell {cell_address}: {old_value} -> {new_value}")
+                        
             # Save the workbook
             print("Attempting to save workbook...")
             try:
