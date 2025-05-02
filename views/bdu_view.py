@@ -2468,6 +2468,7 @@ class BDUGroupView(QMainWindow):
             print(f"Error saat membaca data validation: {str(e)}")
             return []
         
+    # Kode Baru
     def save_sheet_data(self, sheet_name):
         """Save the form data back to the Excel file"""
         try:
@@ -2721,22 +2722,65 @@ class BDUGroupView(QMainWindow):
                 # Find the matching widget based on field type
                 if field_type == 'f_':
                     # Regular input field
-                    # Look for a QLineEdit with this name in the placeholder
-                    for key, widget in self.data_fields.items():
-                        if not key.startswith(sheet_name):
-                            continue
-                            
-                        if isinstance(widget, QLineEdit) and key not in cell_to_widget_map.values():
-                            placeholder = widget.placeholderText()
-                            if placeholder and display_name in placeholder:
-                                cell_key = f"row_{row_idx}_col_1"  # Column B
-                                cell_to_widget_map[cell_key] = {
-                                    'widget': widget,
-                                    'key': key,
-                                    'type': 'text'
-                                }
-                                break
-                
+                    field_id = first_col  # Simpan field identifier asli (dengan angka)
+                    original_field_name = field_name.strip()  # Simpan nama field asli (dengan angka)
+                    
+                    # Buat key khusus untuk pencocokan widget
+                    widget_key_prefix = f"{sheet_name}_{section_name}_"
+                    possible_keys = []
+                    
+                    # Coba berbagai kemungkinan kunci
+                    for i in range(100):
+                        possible_keys.append(f"{widget_key_prefix}{i}")
+                        possible_keys.append(f"{widget_key_prefix}{original_field_name}_{i}")
+                        possible_keys.append(f"{widget_key_prefix}{display_name}_{i}")
+                    
+                    # Tambahkan kunci berdasarkan nomor baris
+                    possible_keys.append(f"{widget_key_prefix}{row_idx}")
+                    
+                    # Coba semua kunci tersebut secara berurutan
+                    found_widget = None
+                    found_key = None
+                    
+                    for test_key in possible_keys:
+                        if test_key in self.data_fields:
+                            widget = self.data_fields[test_key]
+                            if (isinstance(widget, QLineEdit) and 
+                                test_key not in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]):
+                                
+                                placeholder = widget.placeholderText()
+                                # Prioritaskan kecocokan yang lebih spesifik
+                                if placeholder:
+                                    # Kecocokan paling spesifik: memuat field ID lengkap (dengan prefix angka)
+                                    if field_id in placeholder:
+                                        found_widget = widget
+                                        found_key = test_key
+                                        break
+                                    # Kecocokan level kedua: memuat nama field asli (dengan angka)
+                                    elif original_field_name in placeholder:
+                                        found_widget = widget
+                                        found_key = test_key
+                                        # Jangan break, karena masih mencari kecocokan terbaik
+                                    # Kecocokan level ketiga: memuat display name (tanpa angka)
+                                    elif display_name in placeholder and not found_widget:
+                                        found_widget = widget
+                                        found_key = test_key
+                                        # Jangan break, karena masih mencari kecocokan yang lebih baik
+                    
+                    # Jika widget ditemukan, petakan
+                    if found_widget:
+                        cell_key = f"row_{row_idx}_col_1"  # Column B
+                        cell_to_widget_map[cell_key] = {
+                            'widget': found_widget,
+                            'key': found_key,
+                            'type': 'text',
+                            'display_name': display_name,
+                            'original_field': original_field_name,
+                            'field_id': field_id
+                        }
+                    else:
+                        print(f"Warning: Could not find widget for field: {field_id}")
+                                        
                 elif field_type == 'fd_':
                     # Dropdown field - requires special handling
                     # For Industry Classification
@@ -2798,42 +2842,78 @@ class BDUGroupView(QMainWindow):
                     # Multiple field (e.g., Name and Phone/Email)
                     found_base_key = None
                     
-                    # Look for a pair of QLineEdit widgets for this field
-                    for i in range(100):
-                        base_key = f"{sheet_name}_{section_name}_{i}"
-                        key_0 = f"{base_key}_0"
-                        key_1 = f"{base_key}_1"
+                    # Cari berdasarkan nama bidang, dan juga coba variasi lain
+                    field_base = f"{sheet_name}_{section_name}_{field_name}"
+                    field_key_0 = f"{field_base}_0"
+                    field_key_1 = f"{field_base}_1"
+                    
+                    # Coba cari widget berdasarkan nama bidang lengkap terlebih dahulu
+                    if field_key_0 in self.data_fields and field_key_1 in self.data_fields:
+                        found_key_base = field_base
+                        widget_0 = self.data_fields[field_key_0]
+                        widget_1 = self.data_fields[field_key_1]
                         
-                        if key_0 in self.data_fields and key_1 in self.data_fields:
-                            widget_0 = self.data_fields[key_0]
-                            widget_1 = self.data_fields[key_1]
+                        # Map both widgets
+                        cell_key_0 = f"row_{row_idx}_col_1"  # Column B
+                        cell_key_1 = f"row_{row_idx}_col_2"  # Column C
+                        
+                        cell_to_widget_map[cell_key_0] = {
+                            'widget': widget_0,
+                            'key': field_key_0,
+                            'type': 'text'
+                        }
+                        
+                        cell_to_widget_map[cell_key_1] = {
+                            'widget': widget_1,
+                            'key': field_key_1,
+                            'type': 'text'
+                        }
+                    else:
+                        # Jika tidak ditemukan, cari berdasarkan indeks dan placeholder
+                        for i in range(100):
+                            test_base = f"{sheet_name}_{section_name}_{i}"
+                            test_key_0 = f"{test_base}_0"
+                            test_key_1 = f"{test_base}_1"
                             
-                            if isinstance(widget_0, QLineEdit) and isinstance(widget_1, QLineEdit):
-                                # Check if placeholders contain the display name
-                                placeholder_0 = widget_0.placeholderText()
-                                placeholder_1 = widget_1.placeholderText()
+                            if test_key_0 in self.data_fields and test_key_1 in self.data_fields:
+                                widget_0 = self.data_fields[test_key_0]
+                                widget_1 = self.data_fields[test_key_1]
                                 
-                                if ((placeholder_0 and display_name in placeholder_0) or 
-                                    (placeholder_1 and display_name in placeholder_1)):
+                                # Skip jika sudah dipetakan
+                                if (test_key_0 in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info] or
+                                    test_key_1 in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]):
+                                    continue
+                                
+                                if isinstance(widget_0, QLineEdit) and isinstance(widget_1, QLineEdit):
+                                    # Periksa placeholder dengan kriteria yang lebih longgar
+                                    placeholder_0 = widget_0.placeholderText()
+                                    placeholder_1 = widget_1.placeholderText()
+                                    
+                                    # Gunakan pendekatan lebih fleksibel untuk mencocokkan placeholder
+                                    # Periksa jika nama tampilan ada di salah satu placeholder
+                                    # atau jika kita belum memetakan cukup banyak widget fm_
+                                    if ((placeholder_0 and display_name in placeholder_0) or 
+                                        (placeholder_1 and display_name in placeholder_1) or
+                                        len([k for k in cell_to_widget_map.keys() if '_col_2' in k]) < 10):  # Pastikan kita memetakan cukup banyak widget fm_
                                         
-                                    # Map both widgets
-                                    cell_key_0 = f"row_{row_idx}_col_1"  # Column B
-                                    cell_key_1 = f"row_{row_idx}_col_2"  # Column C
-                                    
-                                    cell_to_widget_map[cell_key_0] = {
-                                        'widget': widget_0,
-                                        'key': key_0,
-                                        'type': 'text'
-                                    }
-                                    
-                                    cell_to_widget_map[cell_key_1] = {
-                                        'widget': widget_1,
-                                        'key': key_1,
-                                        'type': 'text'
-                                    }
-                                    
-                                    found_base_key = base_key
-                                    break
+                                        # Map kedua widget
+                                        cell_key_0 = f"row_{row_idx}_col_1"  # Column B
+                                        cell_key_1 = f"row_{row_idx}_col_2"  # Column C
+                                        
+                                        cell_to_widget_map[cell_key_0] = {
+                                            'widget': widget_0,
+                                            'key': test_key_0,
+                                            'type': 'text'
+                                        }
+                                        
+                                        cell_to_widget_map[cell_key_1] = {
+                                            'widget': widget_1,
+                                            'key': test_key_1,
+                                            'type': 'text'
+                                        }
+                                        
+                                        found_base_key = test_base
+                                        break
                     
                     if not found_base_key:
                         print(f"Warning: Could not find widgets for multiple field: {display_name}")
@@ -3084,7 +3164,17 @@ class BDUGroupView(QMainWindow):
                 elif widget_type == 'dropdown' and isinstance(widget, QComboBox):
                     value = widget.currentText()
                 elif widget_type == 'checkbox' and isinstance(widget, QCheckBox):
+                    # Use 'ü' for checked boxes, empty string for unchecked
                     value = 'ü' if widget.isChecked() else ''
+                    
+                    # Get the cell to update
+                    target_cell = sheet.cell(row=excel_row, column=excel_col)
+                    old_value = target_cell.value
+                    target_cell.value = value
+                    
+                    # Set the font to Wingdings for checkbox cells
+                    from openpyxl.styles import Font
+                    target_cell.font = Font(name='Wingdings', size=11)
                 else:
                     continue  # Skip invalid combinations
                 
@@ -3222,6 +3312,7 @@ class BDUGroupView(QMainWindow):
             print(f"Error in save_sheet_data: {str(e)}")
             import traceback
             traceback.print_exc()
+    
     
     def _get_right_section_for_row(self, df, row_idx, col_idx):
         """Helper untuk mendapatkan section dari kolom kanan untuk baris tertentu"""
