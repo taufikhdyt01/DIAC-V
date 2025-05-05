@@ -31,7 +31,9 @@ SEISMIC_ZONE_DESCRIPTIONS = {
     "ZONE-1": "2.5 or less. Usually not felt, but can be recorded by seismographs",
     "ZONE-2": "2.5 - 5.4. Often felt, but causes only minor damage",
     "ZONE-3": "5.5 - 6.0. Can cause slight damage to buildings and other structures",
-    "ZONE-4": "6.6 - 6.9. Can cause significant damage in populated areas"
+    "ZONE-4": "6.6 - 6.9. Can cause significant damage in populated areas",
+    "Zone-5": "7.0 - 7.9. Major earthquake with serious damage.",
+    "Zone-6": "8.0 or larger. Great earthquake. Can destroy communities near the epicenter."
 }
 
 WIND_SPEED_DESCRIPTIONS = {
