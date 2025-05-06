@@ -6,3 +6,6 @@ xlrd==2.0.1
 pillow==10.0.1
 bcrypt==4.0.1
 qtawesome==1.2.3
+python-docx==0.8.11
+docx2pdf==0.1.8
+PyMuPDF==1.22.5

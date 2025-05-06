@@ -7,8 +7,11 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QSizePolicy, QScrollArea, QApplication, QMenu, QAction,
                              QTabWidget, QLineEdit, QComboBox, QTableWidget, QTableWidgetItem,
                              QHeaderView, QMessageBox, QFileDialog, QDateEdit, QCheckBox)
-from PyQt5.QtGui import QPixmap, QIcon, QFont, QColor, QPalette, QCursor
-from PyQt5.QtCore import Qt, QSize, pyqtSignal, QPoint, QDate
+from PyQt5.QtGui import QPixmap, QIcon, QFont, QColor, QPalette, QCursor, QImage
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QPoint, QDate, QThread
+import tempfile
+import shutil
+import subprocess
 
 # Import local modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -45,6 +48,212 @@ WIND_SPEED_DESCRIPTIONS = {
     "LEVEL-6": "10,0 m/s"
 }
 
+# Pengecekan opsional untuk modul docx2pdf
+HAS_DOCX2PDF = False
+try:
+    import docx2pdf
+    HAS_DOCX2PDF = True
+except ImportError:
+    pass
+
+# Pengecekan opsional untuk modul PyMuPDF (fitz)
+HAS_PYMUPDF = False
+try:
+    import fitz
+    HAS_PYMUPDF = True
+except ImportError:
+    pass
+
+# Kelas thread untuk mengkonversi dokumen Word ke gambar thumbnail
+class ThumbnailGeneratorThread(QThread):
+    # Signal saat thumbnail siap
+    thumbnail_ready = pyqtSignal(int, QPixmap)
+    finished = pyqtSignal()
+    error = pyqtSignal(str)
+    
+    def __init__(self, file_path, max_pages=100):  # Ubah max_pages menjadi 100
+        super().__init__()
+        self.file_path = file_path
+        self.max_pages = max_pages
+        self.temp_dir = None
+        
+    def run(self):
+        try:
+            # Buat direktori sementara
+            self.temp_dir = tempfile.mkdtemp()
+            
+            # Konversi Word ke PDF jika itu docx dan modul docx2pdf tersedia
+            _, ext = os.path.splitext(self.file_path)
+            if ext.lower() == '.docx' and HAS_DOCX2PDF:
+                pdf_path = os.path.join(self.temp_dir, "temp.pdf")
+                docx2pdf.convert(self.file_path, pdf_path)
+                
+                # Gunakan PDF untuk menghasilkan thumbnail jika PyMuPDF tersedia
+                if HAS_PYMUPDF:
+                    self.generate_thumbnails_from_pdf(pdf_path)
+                else:
+                    self.generate_thumbnails_alternative()
+            else:
+                # Gunakan pendekatan alternatif untuk file non-PDF dan jika docx2pdf tidak tersedia
+                self.generate_thumbnails_alternative()
+                
+            self.finished.emit()
+        except Exception as e:
+            self.error.emit(str(e))
+        finally:
+            # Bersihkan direktori sementara saat selesai
+            if self.temp_dir and os.path.exists(self.temp_dir):
+                try:
+                    shutil.rmtree(self.temp_dir)
+                except:
+                    pass
+
+    def generate_thumbnails_from_pdf(self, pdf_path):
+        """Menghasilkan thumbnail dari file PDF menggunakan PyMuPDF jika tersedia"""
+        try:
+            # Pastikan PyMuPDF tersedia
+            if not HAS_PYMUPDF:
+                self.error.emit("PyMuPDF (modul fitz) tidak tersedia. Menggunakan metode alternatif.")
+                self.generate_thumbnails_alternative()
+                return
+                
+            doc = fitz.open(pdf_path)
+            # Proses semua halaman tanpa batasan 10
+            for page_num in range(min(self.max_pages, doc.page_count)):
+                page = doc.load_page(page_num)
+                
+                # Render halaman sebagai gambar
+                pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
+                img_data = pix.samples
+                
+                # Buat QImage dari data piksel
+                img = QImage(img_data, pix.width, pix.height, pix.stride, QImage.Format_RGB888)
+                pixmap = QPixmap.fromImage(img)
+                
+                # Kirim thumbnail ke UI
+                self.thumbnail_ready.emit(page_num, pixmap)
+            
+            doc.close()
+        except Exception as e:
+            self.error.emit(f"Error PyMuPDF: {str(e)}. Menggunakan metode alternatif.")
+            self.generate_thumbnails_alternative()
+    
+    def generate_thumbnails_alternative(self):
+        """Metode alternatif untuk menghasilkan thumbnail sederhana"""
+        try:
+            import docx
+            
+            # Buat thumbnail sederhana yang menunjukkan judul dokumen dan beberapa baris teks
+            doc = docx.Document(self.file_path)
+            
+            # Hitung jumlah halaman (perkiraan)
+            total_paragraphs = len(doc.paragraphs)
+            estimated_pages = max(1, total_paragraphs // 20)  # Asumsikan ~20 paragraf per halaman
+            
+            # Tampilkan semua halaman yang diperkirakan, tanpa dibatasi 10
+            for page_num in range(min(self.max_pages, estimated_pages)):
+                # Buat gambar kosong
+                width, height = 800, 1000
+                img = QImage(width, height, QImage.Format_RGB888)
+                img.fill(Qt.white)
+                
+                # Buat objek painter
+                painter = QtGui.QPainter(img)
+                painter.setFont(QFont("Arial", 12))
+                
+                # Gambar judul dokumen
+                painter.setFont(QFont("Arial", 16, QFont.Bold))
+                painter.drawText(40, 40, "Page {}".format(page_num + 1))
+                
+                # Gambar beberapa teks dari dokumen
+                painter.setFont(QFont("Arial", 11))
+                
+                y_pos = 80
+                start_para = page_num * 20
+                end_para = min(start_para + 20, total_paragraphs)
+                
+                for i in range(start_para, end_para):
+                    text = doc.paragraphs[i].text
+                    if text:
+                        wrapped_text = self.wrap_text(painter, text, width - 80)
+                        for line in wrapped_text:
+                            painter.drawText(40, y_pos, line)
+                            y_pos += 20
+                            if y_pos > height - 40:
+                                break
+                    y_pos += 10
+                    if y_pos > height - 40:
+                        break
+                
+                painter.end()
+                
+                # Konversi ke QPixmap
+                pixmap = QPixmap.fromImage(img)
+                
+                # Kirim thumbnail ke UI
+                self.thumbnail_ready.emit(page_num, pixmap)
+        except Exception as e:
+            self.error.emit(f"Gagal membuat thumbnail alternatif: {str(e)}")
+            
+            # Buat thumbnail sangat sederhana sebagai fallback terakhir
+            self.generate_simple_fallback(estimated_pages=min(100, estimated_pages))  # Tingkatkan jumlah halaman
+    
+    def generate_simple_fallback(self, estimated_pages=100):
+        """Membuat thumbnail sederhana sebagai fallback terakhir"""
+        try:
+            for page_num in range(min(self.max_pages, estimated_pages)):
+                # Buat gambar kosong
+                width, height = 800, 1000
+                img = QImage(width, height, QImage.Format_RGB888)
+                img.fill(Qt.white)
+                
+                # Buat objek painter
+                painter = QtGui.QPainter(img)
+                
+                # Gambar judul dokumen
+                painter.setFont(QFont("Arial", 16, QFont.Bold))
+                painter.drawText(40, 40, "Page {}".format(page_num + 1))
+                
+                # Gambar pesan kesalahan atau info
+                painter.setFont(QFont("Arial", 12))
+                painter.drawText(40, 80, "Pratinjau dokumen tidak tersedia.")
+                painter.drawText(40, 110, "Silakan gunakan tombol 'Open in Word'")
+                painter.drawText(40, 140, "untuk membuka dokumen langsung di Word.")
+                
+                # Gambar ikon dokumen besar di tengah
+                painter.setFont(QFont("Arial", 100))
+                painter.drawText(width/2 - 80, height/2, "📄")
+                
+                painter.end()
+                
+                # Konversi ke QPixmap
+                pixmap = QPixmap.fromImage(img)
+                
+                # Kirim thumbnail ke UI
+                self.thumbnail_ready.emit(page_num, pixmap)
+        except Exception as e:
+            self.error.emit(f"Gagal membuat thumbnail fallback: {str(e)}")
+    
+    def wrap_text(self, painter, text, max_width):
+        """Membantu memotong teks untuk muat dalam lebar tertentu"""
+        words = text.split()
+        lines = []
+        current_line = ""
+        
+        for word in words:
+            test_line = current_line + " " + word if current_line else word
+            width = painter.fontMetrics().horizontalAdvance(test_line)
+            
+            if width <= max_width:
+                current_line = test_line
+            else:
+                lines.append(current_line)
+                current_line = word
+        
+        if current_line:
+            lines.append(current_line)
+            
+        return lines
 class BDUGroupView(QMainWindow):
     """View untuk BDU Group"""
     back_to_dashboard = pyqtSignal()
@@ -327,6 +536,13 @@ class BDUGroupView(QMainWindow):
             xl = pd.ExcelFile(self.excel_path)
             sheet_names = xl.sheet_names
 
+            # Variabel untuk melacak posisi proposal sheet dalam daftar
+            proposal_sheet_index = -1
+            for i, sheet_name in enumerate(sheet_names):
+                if sheet_name == "DATA_PROPOSAL":
+                    proposal_sheet_index = i
+                    break
+
             # Filter sheets to only include those starting with DATA_ or DIP_
             filtered_sheets = [sheet for sheet in sheet_names if sheet.startswith("DATA_") or sheet.startswith("DIP_")]
 
@@ -348,30 +564,72 @@ class BDUGroupView(QMainWindow):
 
                 try:
                     df = pd.read_excel(self.excel_path, sheet_name=sheet_name, header=None)
-
-                    scroll_area = QScrollArea()
-                    scroll_area.setWidgetResizable(True)
-
-                    sheet_widget = QWidget()
-                    sheet_layout = QVBoxLayout(sheet_widget)
-                    sheet_layout.setContentsMargins(15, 15, 15, 15)
-
-                    # Process the sheet data
-                    self.process_sheet_data(df, sheet_name, sheet_layout)
-
-                    scroll_area.setWidget(sheet_widget)
-                    self.tab_widget.addTab(scroll_area, display_name)
-                    self.sheet_tabs[sheet_name] = sheet_widget
+                    
+                    # Khusus untuk DATA_PROPOSAL
+                    if sheet_name == "DATA_PROPOSAL":
+                        # Check apakah cell A1 ada dan berisi file path
+                        if not df.empty and not pd.isna(df.iloc[0, 0]):
+                            word_file_path = str(df.iloc[0, 0]).strip()
+                            
+                            # Buat tab PROPOSAL dengan tampilan dokumen Word
+                            scroll_area = QScrollArea()
+                            scroll_area.setWidgetResizable(True)
+                            
+                            # Buat widget untuk proposal dengan margin minimal
+                            proposal_widget = QWidget()
+                            proposal_layout = QVBoxLayout(proposal_widget)
+                            proposal_layout.setContentsMargins(0, 0, 0, 0)
+                            
+                            # Process the Word document
+                            if self.process_proposal_document(word_file_path):
+                                # Add the proposal document widget
+                                if hasattr(self, 'proposal_document_widget'):
+                                    proposal_layout.addWidget(self.proposal_document_widget)
+                            
+                            scroll_area.setWidget(proposal_widget)
+                            self.tab_widget.addTab(scroll_area, display_name)
+                            self.sheet_tabs[sheet_name] = proposal_widget
+                        else:
+                            # Jika tidak ada path file Word, tampilkan sebagai tabel biasa
+                            scroll_area = QScrollArea()
+                            scroll_area.setWidgetResizable(True)
+                            
+                            sheet_widget = QWidget()
+                            sheet_layout = QVBoxLayout(sheet_widget)
+                            sheet_layout.setContentsMargins(15, 15, 15, 15)
+                            
+                            # Process the sheet data
+                            self.process_sheet_data(df, sheet_name, sheet_layout)
+                            
+                            scroll_area.setWidget(sheet_widget)
+                            self.tab_widget.addTab(scroll_area, display_name)
+                            self.sheet_tabs[sheet_name] = sheet_widget
+                    else:
+                        # Regular processing for other sheets
+                        scroll_area = QScrollArea()
+                        scroll_area.setWidgetResizable(True)
+                        
+                        sheet_widget = QWidget()
+                        sheet_layout = QVBoxLayout(sheet_widget)
+                        sheet_layout.setContentsMargins(15, 15, 15, 15)
+                        
+                        # Process the sheet data
+                        self.process_sheet_data(df, sheet_name, sheet_layout)
+                        
+                        scroll_area.setWidget(sheet_widget)
+                        self.tab_widget.addTab(scroll_area, display_name)
+                        self.sheet_tabs[sheet_name] = sheet_widget
+                        
                 except Exception as e:
                     print(f"Error processing sheet {sheet_name}: {str(e)}")
                     # Create an error tab for this sheet
                     error_widget = QWidget()
                     error_layout = QVBoxLayout(error_widget)
-
+                    
                     error_label = QLabel(f"Error loading {sheet_name}: {str(e)}")
                     error_label.setStyleSheet("color: #E74C3C;")
                     error_layout.addWidget(error_label)
-
+                    
                     self.tab_widget.addTab(error_widget, display_name)
                     
             # Setelah selesai memuat semua sheet dan tab, tambahkan kode untuk menyimpan nilai yang saat ini dipilih
@@ -381,13 +639,321 @@ class BDUGroupView(QMainWindow):
                     if isinstance(widget, QComboBox) and key.startswith(sheet_name):
                         # Simpan nilai saat ini ke dalam property widget
                         widget._last_value = widget.currentText()
-
+            
+            # Hapus pesan loading status bar  
+            self.statusBar().clearMessage()
+                
         except Exception as e:
             self.loading_label.setText(f"Error loading data: {str(e)}")
             self.loading_label.setStyleSheet("color: #E74C3C; margin: 20px;")
             self.loading_label.setVisible(True)
             print(f"Error loading Excel data: {str(e)}")
-    
+            
+    # Tambahkan fungsi untuk menjalankan generate-proposal.py
+    def run_generate_proposal(self):
+        """Fungsi untuk menjalankan script generate-proposal.py"""
+        try:
+            # Path ke file generate-proposal.py
+            module_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "modules", "generate-proposal.py")
+            
+            # Periksa apakah file ada
+            if not os.path.exists(module_path):
+                QMessageBox.critical(
+                    self, 
+                    "Error", 
+                    f"File generate-proposal.py tidak ditemukan di folder modules."
+                )
+                return
+            
+            # Tampilkan pesan sedang memproses
+            self.statusBar().showMessage("Sedang menghasilkan proposal...")
+            
+            # Jalankan script sebagai proses terpisah
+            python_exe = sys.executable  # Path Python yang sedang digunakan
+            
+            # Jalankan proses
+            process = subprocess.Popen(
+                [python_exe, module_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            # Buat thread untuk menunggu proses selesai
+            class ProcessWaiterThread(QThread):
+                finished_signal = pyqtSignal(bool, str)
+                
+                def __init__(self, process):
+                    super().__init__()
+                    self.process = process
+                    
+                def run(self):
+                    # Tunggu proses selesai
+                    stdout, stderr = self.process.communicate()
+                    success = self.process.returncode == 0
+                    
+                    # Kirim hasil
+                    if success:
+                        self.finished_signal.emit(True, stdout.decode('utf-8', errors='ignore'))
+                    else:
+                        self.finished_signal.emit(False, stderr.decode('utf-8', errors='ignore'))
+            
+            # Buat dan jalankan thread
+            self.process_thread = ProcessWaiterThread(process)
+            self.process_thread.finished_signal.connect(self.on_generate_proposal_finished)
+            self.process_thread.start()
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self, 
+                "Error", 
+                f"Gagal menjalankan generate-proposal.py: {str(e)}"
+            )
+            self.statusBar().clearMessage()
+            print(f"Error menjalankan generate-proposal.py: {str(e)}")
+
+    def on_generate_proposal_finished(self, success, output):
+        """Handler ketika proses generate proposal selesai"""
+        if success:
+            QMessageBox.information(
+                self,
+                "Sukses",
+                "Proposal berhasil digenerate. Silakan refresh halaman untuk melihat hasilnya."
+            )
+            print("Output generate-proposal.py:", output)
+        else:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Gagal menghasilkan proposal: {output}"
+            )
+            print("Error generate-proposal.py:", output)
+        
+        # Hapus pesan status
+        self.statusBar().clearMessage()
+
+    def process_proposal_document(self, file_path):
+        """Memproses dan menampilkan dokumen Word sebagai thumbnail"""
+        try:
+            # Periksa apakah file ada
+            if not os.path.exists(file_path):
+                print(f"Dokumen Word tidak ditemukan: {file_path}")
+                return False
+                
+            # Dapatkan ekstensi file
+            _, ext = os.path.splitext(file_path)
+            ext = ext.lower()
+            
+            # Periksa apakah itu dokumen Word
+            if ext not in ['.docx', '.doc']:
+                print(f"Bukan dokumen Word: {file_path}")
+                return False
+
+            # Simpan path dokumen untuk digunakan nanti
+            self.proposal_document_path = file_path
+                
+            # Buat widget untuk menampilkan dokumen
+            document_widget = QWidget()
+            document_layout = QVBoxLayout(document_widget)
+            document_layout.setContentsMargins(0, 0, 0, 0)
+            
+            # Buat widget info file - layout lebih kompak daripada versi sebelumnya
+            file_header = QWidget()
+            file_header.setStyleSheet("background-color: white; border: 1px solid #ddd; border-radius: 4px;")
+            file_header_layout = QHBoxLayout(file_header)
+            file_header_layout.setContentsMargins(10, 5, 10, 5)  # Margin yang lebih kecil
+            
+            # Ikon file
+            file_icon = QLabel("📄")
+            file_icon.setFont(QFont("Segoe UI", 14))
+            file_icon.setStyleSheet("color: #3498DB;")
+            
+            # Nama file
+            file_name = os.path.basename(file_path)
+            file_label = QLabel(f"{file_name}")
+            file_label.setFont(QFont("Segoe UI", 11))
+            file_label.setStyleSheet("color: #333;")
+            
+            # Tombol buka
+            open_btn = QPushButton("Open in Word")
+            open_btn.setFont(QFont("Segoe UI", 10))
+            open_btn.setCursor(Qt.PointingHandCursor)
+            open_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {SECONDARY_COLOR};
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 5px 10px;
+                }}
+                QPushButton:hover {{
+                    background-color: #2980B9;
+                }}
+            """)
+            
+            # Hubungkan tombol untuk membuka file
+            open_btn.clicked.connect(lambda: self.open_document(file_path))
+            
+            # Tambahkan tombol Generate Proposal
+            generate_btn = QPushButton("Generate Proposal")
+            generate_btn.setFont(QFont("Segoe UI", 10))
+            generate_btn.setCursor(Qt.PointingHandCursor)
+            generate_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #27ae60;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 5px 10px;
+                    margin-left: 5px;
+                }}
+                QPushButton:hover {{
+                    background-color: #2ecc71;
+                }}
+            """)
+            
+            # Hubungkan tombol untuk menjalankan generate-proposal.py
+            generate_btn.clicked.connect(self.run_generate_proposal)
+            
+            # Tambahkan widget ke layout header
+            file_header_layout.addWidget(file_icon)
+            file_header_layout.addWidget(file_label)
+            file_header_layout.addStretch()
+            file_header_layout.addWidget(generate_btn)  # Tambahkan tombol generate
+            file_header_layout.addWidget(open_btn)
+            
+            document_layout.addWidget(file_header)
+            
+            # Area gulir untuk thumbnail
+            scroll_area = QScrollArea()
+            scroll_area.setWidgetResizable(True)
+            scroll_area.setStyleSheet("""
+                QScrollArea {
+                    border: 1px solid #ddd;
+                    background-color: #f9f9f9;
+                    border-radius: 4px;
+                }
+            """)
+            
+            # Container untuk thumbnail
+            thumbnail_container = QWidget()
+            thumbnail_layout = QVBoxLayout(thumbnail_container)
+            thumbnail_layout.setAlignment(Qt.AlignHCenter)
+            thumbnail_layout.setSpacing(20)
+            
+            # Label loading
+            loading_label = QLabel("Sedang memuat pratinjau dokumen...")
+            loading_label.setFont(QFont("Segoe UI", 12))
+            loading_label.setAlignment(Qt.AlignCenter)
+            loading_label.setStyleSheet("color: #666; margin: 20px;")
+            thumbnail_layout.addWidget(loading_label)
+            
+            # Simpan referensi layout thumbnail untuk digunakan nanti
+            self.thumbnail_layout = thumbnail_layout
+            self.loading_label = loading_label
+            
+            # Tambahkan container ke area gulir
+            scroll_area.setWidget(thumbnail_container)
+            document_layout.addWidget(scroll_area, 1)  # Give stretch factor 1 to make it expand
+            
+            # Simpan widget untuk digunakan nanti
+            self.proposal_document_widget = document_widget
+            
+            # Mulai thread generator thumbnail (dengan jumlah halaman maksimal yang lebih besar)
+            self.thumbnail_thread = ThumbnailGeneratorThread(file_path, max_pages=100)
+            self.thumbnail_thread.thumbnail_ready.connect(self.add_thumbnail)
+            self.thumbnail_thread.finished.connect(self.generation_finished)
+            self.thumbnail_thread.error.connect(self.generation_error)
+            self.thumbnail_thread.start()
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error memproses dokumen Word: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+    def add_thumbnail(self, page_num, pixmap):
+        """Menambahkan thumbnail ke UI"""
+        try:
+            # Hapus label loading saat thumbnail pertama ditambahkan
+            if page_num == 0 and self.loading_label:
+                self.loading_label.setVisible(False)
+            
+            # Buat frame untuk thumbnail
+            thumbnail_frame = QFrame()
+            thumbnail_frame.setFrameShape(QFrame.StyledPanel)
+            thumbnail_frame.setStyleSheet("""
+                QFrame {
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                    background-color: white;
+                    padding: 10px;
+                }
+            """)
+            frame_layout = QVBoxLayout(thumbnail_frame)
+            
+            # Tambahkan label halaman
+            page_label = QLabel(f"Page {page_num + 1}")
+            page_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
+            page_label.setAlignment(Qt.AlignCenter)
+            frame_layout.addWidget(page_label)
+            
+            # Skala thumbnail untuk fit dalam lebar 600px
+            scaled_pixmap = pixmap.scaledToWidth(600, Qt.SmoothTransformation)
+            
+            # Buat label untuk thumbnail
+            thumbnail_label = QLabel()
+            thumbnail_label.setPixmap(scaled_pixmap)
+            thumbnail_label.setAlignment(Qt.AlignCenter)
+            thumbnail_label.setStyleSheet("background-color: white;")
+            frame_layout.addWidget(thumbnail_label)
+            
+            # Tambahkan thumbnail ke layout
+            self.thumbnail_layout.addWidget(thumbnail_frame)
+        except Exception as e:
+            print(f"Error menambahkan thumbnail: {str(e)}")
+
+    def generation_finished(self):
+        """Dipanggil saat generasi thumbnail selesai"""
+        try:
+            # Hapus label loading jika masih ada
+            if self.loading_label:
+                self.loading_label.setVisible(False)
+                
+        except Exception as e:
+            print(f"Error dalam generation_finished: {str(e)}")
+
+    def generation_error(self, error_message):
+        """Dipanggil jika ada error saat generasi thumbnail"""
+        try:
+            if self.loading_label:
+                self.loading_label.setText(f"Error saat memuat pratinjau: {error_message}")
+                self.loading_label.setStyleSheet("color: #E74C3C; margin: 20px;")
+        except Exception as e:
+            print(f"Error dalam generation_error: {str(e)}")
+
+    def open_document(self, file_path):
+        """Membuka dokumen di aplikasi aslinya"""
+        try:
+            # Untuk Windows
+            if sys.platform == 'win32':
+                os.startfile(file_path)
+            # Untuk macOS
+            elif sys.platform == 'darwin':
+                subprocess.call(('open', file_path))
+            # Untuk Linux
+            else:
+                subprocess.call(('xdg-open', file_path))
+                
+            print(f"Membuka dokumen: {file_path}")
+        except Exception as e:
+            QMessageBox.critical(
+                self, 
+                "Error Membuka File", 
+                f"Tidak dapat membuka file: {str(e)}"
+            )
+            print(f"Error membuka dokumen: {str(e)}")
+                    
     def get_validation_values(self, excel_path, sheet_name, cell_address):
         """Mengambil nilai dari data validation di sebuah sel Excel"""
         from openpyxl import load_workbook
