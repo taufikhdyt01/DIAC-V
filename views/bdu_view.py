@@ -1,5 +1,6 @@
 import os
 import sys
+import io
 import pandas as pd
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
@@ -649,19 +650,19 @@ class BDUGroupView(QMainWindow):
             self.loading_label.setVisible(True)
             print(f"Error loading Excel data: {str(e)}")
             
-    # Tambahkan fungsi untuk menjalankan generate-proposal.py
     def run_generate_proposal(self):
-        """Fungsi untuk menjalankan script generate-proposal.py"""
+        """Fungsi untuk menjalankan script generate_proposal.py"""
         try:
-            # Path ke file generate-proposal.py
-            module_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "modules", "generate-proposal.py")
+            # Path ke file generate_proposal.py (perhatikan underscore bukan hyphen)
+            module_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                    "modules", "generate_proposal.py")
             
             # Periksa apakah file ada
             if not os.path.exists(module_path):
                 QMessageBox.critical(
                     self, 
                     "Error", 
-                    f"File generate-proposal.py tidak ditemukan di folder modules."
+                    f"File generate_proposal.py tidak ditemukan di folder modules."
                 )
                 return
             
@@ -706,11 +707,11 @@ class BDUGroupView(QMainWindow):
             QMessageBox.critical(
                 self, 
                 "Error", 
-                f"Gagal menjalankan generate-proposal.py: {str(e)}"
+                f"Gagal menjalankan generate_proposal.py: {str(e)}"
             )
             self.statusBar().clearMessage()
-            print(f"Error menjalankan generate-proposal.py: {str(e)}")
-
+            print(f"Error menjalankan generate_proposal.py: {str(e)}")        
+    
     def on_generate_proposal_finished(self, success, output):
         """Handler ketika proses generate proposal selesai"""
         if success:
@@ -841,7 +842,7 @@ class BDUGroupView(QMainWindow):
             thumbnail_layout.setSpacing(20)
             
             # Label loading
-            loading_label = QLabel("Sedang memuat pratinjau dokumen...")
+            loading_label = QLabel("Loading preview document...")
             loading_label.setFont(QFont("Segoe UI", 12))
             loading_label.setAlignment(Qt.AlignCenter)
             loading_label.setStyleSheet("color: #666; margin: 20px;")
