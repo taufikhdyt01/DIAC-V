@@ -1867,9 +1867,19 @@ class BDUGroupView(QMainWindow):
                                     
                                     # Get options for dropdown
                                     options = []
-                                    if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
-                                        options_str = str(row.iloc[col_idx + 1]).strip()
-                                        options = [opt.strip() for opt in options_str.split(',')]
+                                    right_cell_col = col_idx + 1
+                                    right_cell_address = f"{chr(ord('A') + right_cell_col)}{index + 1}"
+
+                                    # Get validation values first
+                                    right_validation_options = self.get_validation_values(self.excel_path, sheet_name, right_cell_address)
+
+                                    if right_validation_options:
+                                        options = right_validation_options
+                                    else:
+                                        # Fallback if data validation not found
+                                        if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
+                                            options_str = str(row.iloc[col_idx + 1]).strip()
+                                            options = [opt.strip() for opt in options_str.split(',')]
                                     
                                     # Add options and set default
                                     right_input_field.addItems(options)
