@@ -23,6 +23,9 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
     - excel_path: Path ke file Excel yang berisi data
     - template_path: Path ke template Word
     - output_path: Path untuk menyimpan hasil output Word
+    
+    Returns:
+    - bool: True jika berhasil, False jika gagal
     """
     print(f"Membuka file Excel: {excel_path}")
     print(f"Membuka template Word: {template_path}")
@@ -52,7 +55,7 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
         print(f"Berhasil membuka file Excel. Sheet yang tersedia: {workbook.sheetnames}")
     except Exception as e:
         print(f"Error saat membuka file Excel: {e}")
-        return
+        return False
     
     # Fungsi untuk mendapatkan nilai sel dan memproses prefix
     def get_cell_value(sheet_name, cell_ref):
@@ -98,7 +101,7 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
         print(f"Berhasil membuka template Word. Memiliki {len(doc.paragraphs)} paragraf dan {len(doc.tables)} tabel.")
     except Exception as e:
         print(f"Error saat membuka template Word: {e}")
-        return
+        return False
     
     # Pola untuk mendeteksi placeholder, mis: {{Sheet1.A1}} atau {{DATE.NOW}}
     # Modified pattern to support both Excel references and date placeholders
@@ -307,11 +310,15 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
     try:
         doc.save(output_path)
         print(f"Dokumen berhasil dihasilkan: {output_path}")
+        success = True
     except Exception as e:
         print(f"Error saat menyimpan dokumen Word: {e}")
+        success = False
     
     # Tutup workbook Excel
     workbook.close()
+    
+    return success
 
 # Fungsi utama yang bisa dipanggil dari aplikasi lain
 def generate_proposal(excel_path, template_path, output_path):
@@ -322,8 +329,42 @@ def generate_proposal(excel_path, template_path, output_path):
     - excel_path: Path ke file Excel yang berisi data
     - template_path: Path ke template Word
     - output_path: Path untuk menyimpan hasil output Word
+    
+    Returns:
+    - bool: True jika berhasil, False jika gagal
     """
-    excel_to_word_by_cell(excel_path, template_path, output_path)
+    success = excel_to_word_by_cell(excel_path, template_path, output_path)
+    
+    # Jika berhasil generate proposal, update sel A1 pada sheet DATA_PROPOSAL
+    if success:
+        try:
+            # Buka workbook Excel yang sama
+            wb = openpyxl.load_workbook(excel_path)
+            
+            # Cek apakah sheet DATA_PROPOSAL ada
+            if 'DATA_PROPOSAL' in wb.sheetnames:
+                sheet = wb['DATA_PROPOSAL']
+                
+                # Dapatkan path relatif dari output_path
+                root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                relative_path = os.path.relpath(output_path, root_dir)
+                
+                # Konversi ke format path Windows dengan backslash
+                relative_path = relative_path.replace('/', '\\')
+                
+                # Update sel A1 dengan path relatif
+                sheet['A1'] = relative_path
+                print(f"Menyimpan path relatif '{relative_path}' ke sel A1 di sheet DATA_PROPOSAL")
+                
+                # Simpan workbook
+                wb.save(excel_path)
+                print(f"Berhasil memperbarui file Excel: {excel_path}")
+            else:
+                print("Sheet DATA_PROPOSAL tidak ditemukan di file Excel")
+        except Exception as e:
+            print(f"Error saat memperbarui sel A1 di sheet DATA_PROPOSAL: {e}")
+    
+    return success
 
 # Jika script ini dijalankan secara langsung (bukan diimport)
 if __name__ == "__main__":
@@ -354,4 +395,6 @@ if __name__ == "__main__":
         print(f"KESALAHAN: File template Word '{template_file}' tidak ditemukan!")
     else:
         print(f"Mulai memproses file...")
-        excel_to_word_by_cell(excel_file, template_file, output_file)
+        # Panggil generate_proposal alih-alih excel_to_word_by_cell langsung
+        # agar sel A1 pada DATA_PROPOSAL diperbarui
+        generate_proposal(excel_file, template_file, output_file)

@@ -517,6 +517,14 @@ class BDUGroupView(QMainWindow):
             # Jika tidak ada mapping, tambahkan placeholder atau biarkan kosong
             child_dropdown.addItem("-- Select Sub Industry --")
             
+    def get_absolute_path(self, relative_path):
+        """Konversi path relatif menjadi absolut relatif terhadap root project"""
+        if os.path.isabs(relative_path):
+            return relative_path
+        
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(project_root, relative_path)
+    
     def load_excel_data(self):
         """Load data from SET_BDU.xlsx"""
         try:
@@ -569,42 +577,127 @@ class BDUGroupView(QMainWindow):
                     # Khusus untuk DATA_PROPOSAL
                     if sheet_name == "DATA_PROPOSAL":
                         # Check apakah cell A1 ada dan berisi file path
+                        file_exists = False
+                        relative_word_file_path = ""
+                        
                         if not df.empty and not pd.isna(df.iloc[0, 0]):
-                            word_file_path = str(df.iloc[0, 0]).strip()
-                            
-                            # Buat tab PROPOSAL dengan tampilan dokumen Word
-                            scroll_area = QScrollArea()
-                            scroll_area.setWidgetResizable(True)
-                            
-                            # Buat widget untuk proposal dengan margin minimal
-                            proposal_widget = QWidget()
-                            proposal_layout = QVBoxLayout(proposal_widget)
-                            proposal_layout.setContentsMargins(0, 0, 0, 0)
-                            
-                            # Process the Word document
-                            if self.process_proposal_document(word_file_path):
+                            relative_word_file_path = str(df.iloc[0, 0]).strip()
+                            # Konversi ke path absolut untuk pengecekan file
+                            absolute_word_file_path = self.get_absolute_path(relative_word_file_path)
+                            file_exists = os.path.exists(absolute_word_file_path)
+                        
+                        # Buat tab PROPOSAL dengan tampilan yang sesuai
+                        scroll_area = QScrollArea()
+                        scroll_area.setWidgetResizable(True)
+                        
+                        # Buat widget untuk proposal
+                        proposal_widget = QWidget()
+                        proposal_layout = QVBoxLayout(proposal_widget)
+                        proposal_layout.setContentsMargins(10, 10, 10, 0)
+                        proposal_layout.setSpacing(0)
+                        
+                        # Jika file ada, langsung proses dokumen
+                        if file_exists:
+                            # Process the Word document - simpan path relatif untuk referensi, tapi gunakan path absolut untuk proses
+                            self.proposal_relative_path = relative_word_file_path
+                            if self.process_proposal_document(absolute_word_file_path):
                                 # Add the proposal document widget
                                 if hasattr(self, 'proposal_document_widget'):
                                     proposal_layout.addWidget(self.proposal_document_widget)
-                            
-                            scroll_area.setWidget(proposal_widget)
-                            self.tab_widget.addTab(scroll_area, display_name)
-                            self.sheet_tabs[sheet_name] = proposal_widget
                         else:
-                            # Jika tidak ada path file Word, tampilkan sebagai tabel biasa
-                            scroll_area = QScrollArea()
-                            scroll_area.setWidgetResizable(True)
+                            # Jika file TIDAK ada, tampilkan header dengan icon dan tombol
+                            # Container untuk header file yang tidak ada
+                            top_container = QWidget()
+                            top_layout = QHBoxLayout(top_container)
+                            top_layout.setContentsMargins(0, 0, 0, 0)
                             
-                            sheet_widget = QWidget()
-                            sheet_layout = QVBoxLayout(sheet_widget)
-                            sheet_layout.setContentsMargins(15, 15, 15, 15)
+                            # Panel kiri untuk ikon dan label
+                            left_panel = QWidget()
+                            left_panel.setMaximumWidth(300)
+                            left_layout = QHBoxLayout(left_panel)
+                            left_layout.setContentsMargins(0, 0, 0, 0)
+                            left_layout.setSpacing(5)
                             
-                            # Process the sheet data
-                            self.process_sheet_data(df, sheet_name, sheet_layout)
+                            # Ikon file
+                            file_icon = QLabel("📄")
+                            file_icon.setFont(QFont("Segoe UI", 14))
+                            file_icon.setStyleSheet("color: #3498DB; background-color: transparent;")
+                            left_layout.addWidget(file_icon)
                             
-                            scroll_area.setWidget(sheet_widget)
-                            self.tab_widget.addTab(scroll_area, display_name)
-                            self.sheet_tabs[sheet_name] = sheet_widget
+                            # Label status proposal
+                            file_label = QLabel("Proposal Not Generated")
+                            file_label.setFont(QFont("Segoe UI", 11))
+                            file_label.setStyleSheet("color: #333; background-color: transparent;")
+                            left_layout.addWidget(file_label)
+                            left_layout.addStretch()
+                            
+                            # Panel kanan untuk tombol
+                            right_panel = QWidget()
+                            right_layout = QHBoxLayout(right_panel)
+                            right_layout.setContentsMargins(0, 0, 0, 0)
+                            right_layout.setAlignment(Qt.AlignRight | Qt.AlignTop)
+                            
+                            # Tambahkan tombol Run Projection
+                            run_projection_btn = QPushButton("Run Projection")
+                            run_projection_btn.setFont(QFont("Segoe UI", 10))
+                            run_projection_btn.setCursor(Qt.PointingHandCursor)
+                            run_projection_btn.setStyleSheet(f"""
+                                QPushButton {{
+                                    background-color: #3498db;
+                                    color: white;
+                                    border: none;
+                                    border-radius: 4px;
+                                    padding: 5px 10px;
+                                    margin-right: 5px;
+                                }}
+                                QPushButton:hover {{
+                                    background-color: #2980b9;
+                                }}
+                            """)
+                            # Connect to function if needed
+                            # run_projection_btn.clicked.connect(self.run_projection)
+                            right_layout.addWidget(run_projection_btn)
+                            
+                            # Tambahkan tombol Generate Proposal
+                            generate_btn = QPushButton("Generate Proposal")
+                            generate_btn.setFont(QFont("Segoe UI", 10))
+                            generate_btn.setCursor(Qt.PointingHandCursor)
+                            generate_btn.setStyleSheet(f"""
+                                QPushButton {{
+                                    background-color: #27ae60;
+                                    color: white;
+                                    border: none;
+                                    border-radius: 4px;
+                                    padding: 5px 10px;
+                                }}
+                                QPushButton:hover {{
+                                    background-color: #2ecc71;
+                                }}
+                            """)
+                            generate_btn.clicked.connect(self.run_generate_proposal)
+                            right_layout.addWidget(generate_btn)
+                            
+                            # Menyusun panel kiri dan kanan
+                            top_layout.addWidget(left_panel)
+                            top_layout.addWidget(right_panel)
+                            
+                            # Tambahkan container utama ke layout proposal
+                            proposal_layout.addWidget(top_container)
+                            
+                            # Tambahkan instruksi yang singkat
+                            info_label = QLabel("Click 'Generate Proposal' button to create a new proposal document.")
+                            info_label.setAlignment(Qt.AlignCenter)
+                            info_label.setFont(QFont("Segoe UI", 10))
+                            info_label.setStyleSheet("color: #666;")
+                            info_label.setMaximumHeight(20)
+                            proposal_layout.addWidget(info_label)
+                            
+                            # Tambahkan spacer
+                            proposal_layout.addStretch(1)
+                        
+                        scroll_area.setWidget(proposal_widget)
+                        self.tab_widget.addTab(scroll_area, display_name)
+                        self.sheet_tabs[sheet_name] = proposal_widget
                     else:
                         # Regular processing for other sheets
                         scroll_area = QScrollArea()
@@ -735,33 +828,40 @@ class BDUGroupView(QMainWindow):
     def process_proposal_document(self, file_path):
         """Memproses dan menampilkan dokumen Word sebagai thumbnail"""
         try:
+            # Pastikan path adalah absolut
+            abs_file_path = self.get_absolute_path(file_path)
+            
             # Periksa apakah file ada
-            if not os.path.exists(file_path):
-                print(f"Dokumen Word tidak ditemukan: {file_path}")
+            if not os.path.exists(abs_file_path):
+                print(f"Dokumen Word tidak ditemukan: {abs_file_path}")
                 return False
                 
             # Dapatkan ekstensi file
-            _, ext = os.path.splitext(file_path)
+            _, ext = os.path.splitext(abs_file_path)
             ext = ext.lower()
             
             # Periksa apakah itu dokumen Word
             if ext not in ['.docx', '.doc']:
-                print(f"Bukan dokumen Word: {file_path}")
+                print(f"Bukan dokumen Word: {abs_file_path}")
                 return False
 
-            # Simpan path dokumen untuk digunakan nanti
-            self.proposal_document_path = file_path
+            # Simpan path dokumen untuk digunakan nanti - gunakan path relatif
+            if not os.path.isabs(file_path):
+                self.proposal_document_path = file_path
+            else:
+                # Jika path absolut, simpan sebagai path absolut
+                self.proposal_document_path = abs_file_path
                 
             # Buat widget untuk menampilkan dokumen
             document_widget = QWidget()
             document_layout = QVBoxLayout(document_widget)
             document_layout.setContentsMargins(0, 0, 0, 0)
             
-            # Buat widget info file - layout lebih kompak daripada versi sebelumnya
+            # Buat widget info file - layout lebih kompak 
             file_header = QWidget()
             file_header.setStyleSheet("background-color: white; border: 1px solid #ddd; border-radius: 4px;")
             file_header_layout = QHBoxLayout(file_header)
-            file_header_layout.setContentsMargins(10, 5, 10, 5)  # Margin yang lebih kecil
+            file_header_layout.setContentsMargins(10, 5, 10, 5)
             
             # Ikon file
             file_icon = QLabel("📄")
@@ -773,6 +873,45 @@ class BDUGroupView(QMainWindow):
             file_label = QLabel(f"{file_name}")
             file_label.setFont(QFont("Segoe UI", 11))
             file_label.setStyleSheet("color: #333;")
+            
+            # Tombol Run Projection
+            run_projection_btn = QPushButton("Re-run Projection")
+            run_projection_btn.setFont(QFont("Segoe UI", 10))
+            run_projection_btn.setCursor(Qt.PointingHandCursor)
+            run_projection_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #3498db;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 5px 10px;
+                    margin-right: 5px;
+                }}
+                QPushButton:hover {{
+                    background-color: #2980b9;
+                }}
+            """)
+            # Connect to function if needed
+            # run_projection_btn.clicked.connect(self.run_projection)
+            
+            # Tombol Generate Proposal
+            generate_btn = QPushButton("Regenerate Proposal")
+            generate_btn.setFont(QFont("Segoe UI", 10))
+            generate_btn.setCursor(Qt.PointingHandCursor)
+            generate_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #27ae60;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 5px 10px;
+                    margin-right: 5px;
+                }}
+                QPushButton:hover {{
+                    background-color: #2ecc71;
+                }}
+            """)
+            generate_btn.clicked.connect(self.run_generate_proposal)
             
             # Tombol buka
             open_btn = QPushButton("Open in Word")
@@ -791,35 +930,15 @@ class BDUGroupView(QMainWindow):
                 }}
             """)
             
-            # Hubungkan tombol untuk membuka file
+            # Hubungkan tombol untuk membuka file - gunakan path absolut
             open_btn.clicked.connect(lambda: self.open_document(file_path))
-            
-            # Tambahkan tombol Generate Proposal
-            generate_btn = QPushButton("Generate Proposal")
-            generate_btn.setFont(QFont("Segoe UI", 10))
-            generate_btn.setCursor(Qt.PointingHandCursor)
-            generate_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: #27ae60;
-                    color: white;
-                    border: none;
-                    border-radius: 4px;
-                    padding: 5px 10px;
-                    margin-left: 5px;
-                }}
-                QPushButton:hover {{
-                    background-color: #2ecc71;
-                }}
-            """)
-            
-            # Hubungkan tombol untuk menjalankan generate-proposal.py
-            generate_btn.clicked.connect(self.run_generate_proposal)
             
             # Tambahkan widget ke layout header
             file_header_layout.addWidget(file_icon)
             file_header_layout.addWidget(file_label)
             file_header_layout.addStretch()
-            file_header_layout.addWidget(generate_btn)  # Tambahkan tombol generate
+            file_header_layout.addWidget(run_projection_btn)
+            file_header_layout.addWidget(generate_btn)
             file_header_layout.addWidget(open_btn)
             
             document_layout.addWidget(file_header)
@@ -873,6 +992,7 @@ class BDUGroupView(QMainWindow):
             import traceback
             traceback.print_exc()
             return False
+        
     def add_thumbnail(self, page_num, pixmap):
         """Menambahkan thumbnail ke UI"""
         try:
@@ -936,17 +1056,20 @@ class BDUGroupView(QMainWindow):
     def open_document(self, file_path):
         """Membuka dokumen di aplikasi aslinya"""
         try:
+            # Konversi ke path absolut
+            abs_file_path = self.get_absolute_path(file_path)
+                
             # Untuk Windows
             if sys.platform == 'win32':
-                os.startfile(file_path)
+                os.startfile(abs_file_path)
             # Untuk macOS
             elif sys.platform == 'darwin':
-                subprocess.call(('open', file_path))
+                subprocess.call(('open', abs_file_path))
             # Untuk Linux
             else:
-                subprocess.call(('xdg-open', file_path))
-                
-            print(f"Membuka dokumen: {file_path}")
+                subprocess.call(('xdg-open', abs_file_path))
+                    
+            print(f"Membuka dokumen: {abs_file_path}")
         except Exception as e:
             QMessageBox.critical(
                 self, 
