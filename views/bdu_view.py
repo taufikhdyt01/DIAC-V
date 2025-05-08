@@ -655,7 +655,7 @@ class BDUGroupView(QMainWindow):
                                 }}
                             """)
                             # Connect to function if needed
-                            # run_projection_btn.clicked.connect(self.run_projection)
+                            run_projection_btn.clicked.connect(self.run_projection)
                             right_layout.addWidget(run_projection_btn)
                             
                             # Tambahkan tombol Generate Proposal
@@ -742,6 +742,711 @@ class BDUGroupView(QMainWindow):
             self.loading_label.setStyleSheet("color: #E74C3C; margin: 20px;")
             self.loading_label.setVisible(True)
             print(f"Error loading Excel data: {str(e)}")
+            
+    def run_projection(self):
+        """Fungsi untuk menjalankan projection dari data BDU ke ANAPAK ke PUMP dan kembali ke BDU"""
+        try:
+            import os
+            import pandas as pd
+            from openpyxl import load_workbook
+            import time
+            import sys
+            import subprocess
+            from PyQt5.QtWidgets import QApplication, QMessageBox
+            
+            # Path data folder relatif terhadap folder proyek
+            data_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+            
+            # Path ke file-file Excel
+            set_bdu_path = os.path.join(data_folder, "SET_BDU.xlsx")
+            sbt_anapak_path = os.path.join(data_folder, "SBT_ANAPAK.xlsx")
+            sbt_pump_path = os.path.join(data_folder, "SBT_PUMP.xlsm")
+            all_udf_path = os.path.join(data_folder, "ALL_UDF.py")
+            
+            # Pastikan file yang dibutuhkan ada
+            missing_files = []
+            for file_path in [set_bdu_path, sbt_anapak_path, sbt_pump_path, all_udf_path]:
+                if not os.path.exists(file_path):
+                    missing_files.append(os.path.basename(file_path))
+            
+            if missing_files:
+                QMessageBox.critical(
+                    self, 
+                    "File Tidak Ditemukan", 
+                    f"Beberapa file berikut tidak ditemukan di folder data:\n{', '.join(missing_files)}"
+                )
+                return
+            
+            # Tampilkan pesan status
+            self.statusBar().showMessage("Menjalankan projection - Transfer data dari SET_BDU ke SBT_ANAPAK...")
+            QApplication.processEvents()
+            
+            # PROSES 1: Transfer data dari SET_BDU ke SBT_ANAPAK
+            # Buka workbook SET_BDU untuk membaca data
+            wb_bdu = load_workbook(set_bdu_path, data_only=True)
+            
+            # Ambil data yang diperlukan dari DIP_Technical Information
+            sheet_dip = wb_bdu["DIP_Technical Information"]
+            values_to_transfer = {
+                'C37': sheet_dip['B9'].value,  # B9 -> C37
+                'C38': sheet_dip['B10'].value, # B10 -> C38
+                'C39': sheet_dip['B11'].value, # B11 -> C39
+                'C40': sheet_dip['B12'].value, # B12 -> C40
+                'C41': sheet_dip['B13'].value, # B13 -> C41
+                'C42': sheet_dip['B16'].value, # B16 -> C42
+                'C43': sheet_dip['B17'].value, # B17 -> C43
+                'C46': sheet_dip['B21'].value  # B21 -> C46
+            }
+            
+            # Tutup workbook SET_BDU
+            wb_bdu.close()
+            
+            # Buka dan update workbook SBT_ANAPAK
+            wb_anapak = load_workbook(sbt_anapak_path)
+            sheet_anapak = wb_anapak["ANAPAK"]
+            
+            # Pindahkan data ke SBT_ANAPAK
+            for cell_addr, value in values_to_transfer.items():
+                sheet_anapak[cell_addr] = value
+            
+            # Simpan SBT_ANAPAK
+            wb_anapak.save(sbt_anapak_path)
+            wb_anapak.close()
+            
+            # LANGKAH BARU: Buka SBT_ANAPAK dengan Excel dan paksa kalkulasi
+            self.statusBar().showMessage("Menjalankan projection - Mengkalkulasi SBT_ANAPAK...")
+            QApplication.processEvents()
+            
+            try:
+                # Buat VBS script untuk membuka dan mengkalkulasi SBT_ANAPAK
+                import tempfile
+                
+                # Buat file VBS temporal
+                vbs_calc_file = tempfile.NamedTemporaryFile(delete=False, suffix='.vbs')
+                vbs_calc_path = vbs_calc_file.name
+                
+                # Tulis skrip VBS untuk membuka Excel, mengkalkulasi, dan menyimpan
+                vbs_calc_script = f'''
+                Set objExcel = CreateObject("Excel.Application")
+                objExcel.DisplayAlerts = False
+                objExcel.Visible = False
+                
+                ' Buka file SBT_ANAPAK.xlsx
+                Set objWorkbook = objExcel.Workbooks.Open("{sbt_anapak_path}")
+                
+                ' Paksa kalkulasi untuk semua sheet
+                objExcel.CalculateFullRebuild
+                objWorkbook.Application.Calculate
+                
+                ' Simpan dan tutup
+                objWorkbook.Save
+                objWorkbook.Close
+                objExcel.Quit
+                
+                Set objWorkbook = Nothing
+                Set objExcel = Nothing
+                '''
+                
+                vbs_calc_file.write(vbs_calc_script.encode('utf-8'))
+                vbs_calc_file.close()
+                
+                # Jalankan script VBS
+                if sys.platform == 'win32':
+                    subprocess.call(['cscript.exe', '//nologo', vbs_calc_path])
+                else:
+                    QMessageBox.warning(
+                        self, 
+                        "Warning", 
+                        "Menjalankan VBScript di platform non-Windows tidak didukung."
+                    )
+                
+                # Hapus file VBS sementara
+                try:
+                    os.unlink(vbs_calc_path)
+                except:
+                    pass
+                
+                # Tunggu sebentar untuk memastikan file tersimpan
+                time.sleep(2)
+                
+            except Exception as e:
+                QMessageBox.warning(
+                    self, 
+                    "Warning", 
+                    f"Gagal menjalankan kalkulasi otomatis SBT_ANAPAK: {str(e)}\nMelanjutkan proses..."
+                )
+            
+            self.statusBar().showMessage("Menjalankan projection - Transfer data dari SBT_ANAPAK ke SBT_PUMP...")
+            QApplication.processEvents()
+            
+            # PROSES 2: Ambil data dari SBT_ANAPAK untuk dimasukkan ke SBT_PUMP
+            # Buka lagi SBT_ANAPAK untuk ambil data terbaru setelah perhitungan
+            wb_anapak = load_workbook(sbt_anapak_path, data_only=True)
+            sheet_anapak = wb_anapak["ANAPAK"]
+            
+            # Ambil nilai dari SBT_ANAPAK.ANAPAK.I66 dan K67
+            value_i66 = sheet_anapak['I66'].value
+            value_k67 = sheet_anapak['K67'].value
+            
+            # Tampilkan nilai untuk debugging
+            print(f"DEBUG: Nilai dari SBT_ANAPAK.ANAPAK.I66: {value_i66}")
+            print(f"DEBUG: Nilai dari SBT_ANAPAK.ANAPAK.K67: {value_k67}")
+            
+            # Periksa apakah nilai masih None
+            if value_i66 is None or value_k67 is None:
+                # Tampilkan pesan dan minta pengguna untuk membuka file secara manual
+                QMessageBox.warning(
+                    self,
+                    "Nilai Kosong",
+                    "Sel I66 dan/atau K67 di file SBT_ANAPAK.xlsx masih kosong setelah kalkulasi. "
+                    "Hal ini mungkin karena:\n\n"
+                    "1. File SBT_ANAPAK memerlukan kalkulasi manual\n"
+                    "2. Rumus di I66/K67 perlu diperbarui\n\n"
+                    "Klik OK untuk melanjutkan proses dengan nilai kosong, atau Cancel untuk berhenti. "
+                    "Anda juga bisa membuka file SBT_ANAPAK.xlsx secara manual, memastikan nilainya "
+                    "terkalkulasi, lalu menjalankan proyeksi ini lagi.",
+                    QMessageBox.Ok | QMessageBox.Cancel
+                ) 
+                
+                response = QMessageBox.question(
+                    self,
+                    "Buka SBT_ANAPAK secara manual?",
+                    "Apakah Anda ingin membuka SBT_ANAPAK.xlsx secara manual untuk memeriksa kalkulasi?",
+                    QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+                )
+                
+                if response == QMessageBox.Cancel:
+                    wb_anapak.close()
+                    self.statusBar().clearMessage()
+                    return
+                elif response == QMessageBox.Yes:
+                    # Buka file Excel secara manual
+                    if sys.platform == 'win32':
+                        os.startfile(sbt_anapak_path)
+                    else:
+                        if sys.platform == 'darwin':  # macOS
+                            subprocess.call(['open', sbt_anapak_path])
+                        else:  # Linux
+                            subprocess.call(['xdg-open', sbt_anapak_path])
+                    
+                    # Tanyakan apakah pengguna ingin melanjutkan setelah memeriksa file
+                    continue_response = QMessageBox.question(
+                        self,
+                        "Lanjutkan Proses?",
+                        "Setelah Anda memeriksa dan menyimpan file SBT_ANAPAK.xlsx, "
+                        "apakah Anda ingin melanjutkan proses?",
+                        QMessageBox.Yes | QMessageBox.No
+                    )
+                    
+                    if continue_response == QMessageBox.No:
+                        wb_anapak.close()
+                        self.statusBar().clearMessage()
+                        return
+                    
+                    # Buka kembali file yang mungkin telah diubah manual
+                    wb_anapak.close()
+                    wb_anapak = load_workbook(sbt_anapak_path, data_only=True)
+                    sheet_anapak = wb_anapak["ANAPAK"]
+                    
+                    # Ambil nilai yang diperbarui
+                    value_i66 = sheet_anapak['I66'].value
+                    value_k67 = sheet_anapak['K67'].value
+                    
+                    print(f"DEBUG setelah pembaruan manual: Nilai dari SBT_ANAPAK.ANAPAK.I66: {value_i66}")
+                    print(f"DEBUG setelah pembaruan manual: Nilai dari SBT_ANAPAK.ANAPAK.K67: {value_k67}")
+            
+            wb_anapak.close()
+            
+            # Gunakan nilai default jika masih None
+            if value_i66 is None:
+                value_i66 = 0
+                print("DEBUG: Menggunakan nilai default 0 untuk I66 karena nilainya None")
+            
+            if value_k67 is None:
+                value_k67 = 0
+                print("DEBUG: Menggunakan nilai default 0 untuk K67 karena nilainya None")
+            
+            # PERBAIKAN: Transfer data dari SBT_ANAPAK ke SBT_PUMP menggunakan openpyxl saja
+            # (tidak menggunakan VBScript yang menyebabkan error)
+            try:
+                self.statusBar().showMessage("Mentransfer data dari SBT_ANAPAK ke SBT_PUMP menggunakan openpyxl...")
+                QApplication.processEvents()
+                
+                # Cek sheet names di SBT_PUMP sebelum membuka
+                try:
+                    # Load workbook untuk melihat sheet names
+                    temp_wb = load_workbook(sbt_pump_path, read_only=True)
+                    sheet_names = temp_wb.sheetnames
+                    print(f"DEBUG: Sheet names di SBT_PUMP.xlsm: {sheet_names}")
+                    temp_wb.close()
+                except Exception as e:
+                    print(f"DEBUG: Error saat memeriksa sheet names: {str(e)}")
+                
+                # Buka SBT_PUMP.xlsm
+                wb_pump = load_workbook(sbt_pump_path, keep_vba=True)
+                
+                # Cari sheet 'DATA INPUT' dengan case insensitive match jika perlu
+                target_sheet_name = "DATA INPUT"
+                found_sheet = False
+                
+                for sheet_name in wb_pump.sheetnames:
+                    if sheet_name.upper() == target_sheet_name.upper():
+                        target_sheet_name = sheet_name  # Gunakan nama sheet yang benar
+                        found_sheet = True
+                        break
+                
+                if not found_sheet:
+                    QMessageBox.critical(
+                        self,
+                        "Error",
+                        f"Sheet 'DATA INPUT' tidak ditemukan di file SBT_PUMP.xlsm. "
+                        f"Sheet yang tersedia: {', '.join(wb_pump.sheetnames)}"
+                    )
+                    wb_pump.close()
+                    return
+                
+                # Gunakan nama sheet yang ditemukan
+                sheet_pump = wb_pump[target_sheet_name]
+                
+                # Transfer data ke SBT_PUMP
+                sheet_pump['B13'] = value_i66
+                sheet_pump['B14'] = value_k67
+                
+                # Log untuk debugging
+                print(f"DEBUG: Menulis nilai {value_i66} ke SBT_PUMP.{target_sheet_name}.B13")
+                print(f"DEBUG: Menulis nilai {value_k67} ke SBT_PUMP.{target_sheet_name}.B14")
+                
+                # Simpan SBT_PUMP
+                wb_pump.save(sbt_pump_path)
+                wb_pump.close()
+                
+                # Tunggu sedikit untuk memastikan file tersimpan
+                time.sleep(1)
+                
+                # Verifikasi nilai telah tersimpan
+                verify_wb = load_workbook(sbt_pump_path, data_only=True)
+                verify_sheet = verify_wb[target_sheet_name]
+                
+                verify_b13 = verify_sheet['B13'].value
+                verify_b14 = verify_sheet['B14'].value
+                
+                print(f"DEBUG: Verifikasi - Nilai di SBT_PUMP.{target_sheet_name}.B13: {verify_b13}")
+                print(f"DEBUG: Verifikasi - Nilai di SBT_PUMP.{target_sheet_name}.B14: {verify_b14}")
+                
+                verify_wb.close()
+                
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Gagal mentransfer data ke SBT_PUMP: {str(e)}"
+                )
+                print(f"DEBUG: Error saat transfer data ke SBT_PUMP: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                return
+            
+            self.statusBar().showMessage("Menjalankan projection - Menjalankan macro GENERATE_REPORT di SBT_PUMP...")
+            QApplication.processEvents()
+            
+            # PROSES 3: Menjalankan macro di SBT_PUMP
+            self.statusBar().showMessage("Menjalankan projection - Menjalankan macro GENERATE_REPORT di SBT_PUMP...")
+            QApplication.processEvents()
+
+            try:
+                # Import modul xlwings
+                import xlwings as xw
+                
+                self.statusBar().showMessage("Menjalankan projection - Mengimpor UDF dan menjalankan macro...")
+                QApplication.processEvents()
+                
+                # Nonaktifkan tampilan Excel (berjalan di background)
+                app = xw.App(visible=False)
+                app.display_alerts = False
+                
+                # Pastikan macro diaktifkan
+                app.api.AutomationSecurity = 1  # msoAutomationSecurityLow
+                
+                # Buka workbook SBT_PUMP
+                wb = xw.Book(sbt_pump_path)
+                
+                # Metode alternatif untuk mengimpor UDF - Menggunakan RunPython
+                # Buat modul sementara untuk mengimpor UDF
+                import tempfile
+                import importlib.util
+                
+                # Buat file Python sementara untuk mengimpor ALL_UDF
+                temp_py = tempfile.NamedTemporaryFile(delete=False, suffix='.py')
+                temp_py_path = temp_py.name
+                
+                # Isi file dengan kode untuk mengimpor semua fungsi dari ALL_UDF.py
+                with open(temp_py_path, 'w') as f:
+                    f.write(f"""
+            import sys
+            import os
+
+            # Tambahkan direktori ALL_UDF ke sys.path
+            sys.path.append(os.path.dirname(r'{all_udf_path}'))
+
+            # Import ALL_UDF
+            from {os.path.splitext(os.path.basename(all_udf_path))[0]} import *
+
+            def main():
+                print("UDF berhasil diimpor")
+
+            if __name__ == '__main__':
+                main()
+            """)
+                
+                # Jalankan file Python sementara menggunakan RunPython
+                try:
+                    print(f"DEBUG: Mencoba mengimpor UDF dari {all_udf_path}")
+                    xw.Book(sbt_pump_path).api.Application.Run("ImportPythonUDFs")
+                    print("DEBUG: Berhasil mengimpor UDF")
+                except Exception as udf_err:
+                    print(f"DEBUG: Error mengimpor UDF dengan RunPython: {str(udf_err)}")
+                    pass  # Lanjut ke langkah berikutnya jika gagal
+                
+                # Tunggu sebentar
+                time.sleep(2)
+                
+                # Jalankan langsung macro GENERATE_REPORT
+                try:
+                    print("DEBUG: Menjalankan macro GENERATE_REPORT")
+                    wb.api.Application.Run("'SBT_PUMP.xlsm'!GENERATE_REPORT")
+                except Exception as macro_err:
+                    print(f"DEBUG: Error menjalankan macro dengan metode pertama: {str(macro_err)}")
+                    # Coba metode alternatif jika metode pertama gagal
+                    try:
+                        wb.api.Application.Run("GENERATE_REPORT")
+                    except Exception as alt_macro_err:
+                        print(f"DEBUG: Error menjalankan macro dengan metode alternatif: {str(alt_macro_err)}")
+                        raise  # Re-raise exception untuk ditangani oleh blok except di luar
+                
+                # Tunggu macro selesai dijalankan
+                time.sleep(5)
+                
+                # Simpan workbook
+                wb.save()
+                
+                # Tutup workbook dan application
+                wb.close()
+                app.quit()
+                
+                # Hapus file Python sementara
+                try:
+                    os.unlink(temp_py_path)
+                except:
+                    pass
+                
+                self.statusBar().showMessage("Macro GENERATE_REPORT berhasil dijalankan")
+                print("DEBUG: Macro GENERATE_REPORT berhasil dijalankan")
+                
+            except ImportError:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    "Module xlwings tidak ditemukan. Silakan install dengan menjalankan 'pip install xlwings'."
+                )
+                return
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Gagal menjalankan macro GENERATE_REPORT: {str(e)}"
+                )
+                print(f"DEBUG: Error saat menjalankan macro: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                
+                # Alternatif menggunakan COM langsung dengan pywin32
+                try:
+                    self.statusBar().showMessage("Mencoba alternatif menggunakan pywin32...")
+                    QApplication.processEvents()
+                    
+                    # Gunakan pywin32 untuk menjalankan macro secara langsung
+                    import win32com.client
+                    
+                    excel = win32com.client.Dispatch("Excel.Application")
+                    excel.Visible = False
+                    excel.DisplayAlerts = False
+                    
+                    # Pastikan makro diizinkan
+                    excel.AutomationSecurity = 1  # msoAutomationSecurityLow
+                    
+                    # Buka workbook
+                    wb = excel.Workbooks.Open(sbt_pump_path)
+                    
+                    # Jalankan VBA untuk mengaktifkan makro jika diperlukan
+                    excel.Run("Application.AutomationSecurity=1")
+                    
+                    # Coba jalankan macro
+                    print("DEBUG: Menjalankan macro dengan pywin32")
+                    try:
+                        excel.Run("'SBT_PUMP.xlsm'!GENERATE_REPORT")
+                    except:
+                        # Jika gagal, coba tanpa nama file
+                        try:
+                            excel.Run("GENERATE_REPORT")
+                        except Exception as win32_err:
+                            print(f"DEBUG: Error menjalankan macro dengan pywin32: {str(win32_err)}")
+                    
+                    # Simpan dan tutup
+                    wb.Save()
+                    wb.Close()
+                    excel.Quit()
+                    
+                    self.statusBar().showMessage("Macro GENERATE_REPORT berhasil dijalankan dengan metode alternatif")
+                    print("DEBUG: Macro GENERATE_REPORT berhasil dijalankan dengan metode alternatif")
+                    
+                except Exception as win_err:
+                    print(f"DEBUG: Error pada metode pywin32: {str(win_err)}")
+                    
+                    # Terakhir, coba dengan VBScript
+                    try:
+                        self.statusBar().showMessage("Mencoba alternatif dengan VBScript...")
+                        QApplication.processEvents()
+                        
+                        import tempfile
+                        vbs_file = tempfile.NamedTemporaryFile(delete=False, suffix='.vbs')
+                        vbs_path = vbs_file.name
+                        
+                        vbs_script = f'''
+                        Set objExcel = CreateObject("Excel.Application")
+                        objExcel.DisplayAlerts = False
+                        objExcel.Visible = False
+                        objExcel.AutomationSecurity = 1  ' msoAutomationSecurityLow
+                        
+                        ' Buka file SBT_PUMP.xlsm
+                        Set objWorkbook = objExcel.Workbooks.Open("{sbt_pump_path}")
+                        
+                        On Error Resume Next
+                        ' Jalankan macro GENERATE_REPORT
+                        objExcel.Run "GENERATE_REPORT"
+                        
+                        If Err.Number <> 0 Then
+                            Err.Clear
+                            ' Coba dengan nama workbook yang spesifik
+                            objExcel.Run "'SBT_PUMP.xlsm'!GENERATE_REPORT"
+                        End If
+                        
+                        ' Tunggu sebentar untuk memastikan macro selesai
+                        WScript.Sleep 5000
+                        
+                        ' Simpan dan tutup
+                        objWorkbook.Save
+                        objWorkbook.Close
+                        objExcel.Quit
+                        
+                        Set objWorkbook = Nothing
+                        Set objExcel = Nothing
+                        '''
+                        
+                        vbs_file.write(vbs_script.encode('utf-8'))
+                        vbs_file.close()
+                        
+                        # Jalankan script VBS
+                        if sys.platform == 'win32':
+                            subprocess.call(['cscript.exe', '//nologo', vbs_path])
+                            print("DEBUG: Menjalankan macro dengan VBScript sebagai alternatif terakhir")
+                        else:
+                            QMessageBox.warning(
+                                self, 
+                                "Warning", 
+                                "Menjalankan VBScript di platform non-Windows tidak didukung."
+                            )
+                        
+                        # Hapus file VBS sementara
+                        try:
+                            os.unlink(vbs_path)
+                        except:
+                            pass
+                        
+                        # Tunggu sebentar
+                        time.sleep(2)
+                        
+                    except Exception as alt_e:
+                        QMessageBox.critical(
+                            self,
+                            "Error",
+                            f"Gagal menjalankan macro dengan semua metode alternatif: {str(alt_e)}"
+                        )
+                        print(f"DEBUG: Error pada semua metode: {str(alt_e)}")
+                        import traceback
+                        traceback.print_exc()
+                        return
+            
+            self.statusBar().showMessage("Menjalankan projection - Transfer data dari SBT_ANAPAK dan SBT_PUMP ke SET_BDU...")
+            QApplication.processEvents()
+            
+            # PROSES 4: Transfer data dari SBT_ANAPAK dan SBT_PUMP kembali ke SET_BDU
+            # Buka SBT_ANAPAK untuk mendapatkan data output
+            try:
+                wb_anapak_output = load_workbook(sbt_anapak_path, data_only=True)
+                
+                # Pastikan sheet DATA_OUTPUT ada
+                if "DATA_OUTPUT" not in wb_anapak_output.sheetnames:
+                    QMessageBox.critical(
+                        self, 
+                        "Error", 
+                        "Sheet DATA_OUTPUT tidak ditemukan di file SBT_ANAPAK.xlsx"
+                    )
+                    wb_anapak_output.close()
+                    return
+                    
+                sheet_output = wb_anapak_output["DATA_OUTPUT"]
+                
+                # Ambil nilai dari sheet DATA_OUTPUT
+                output_values = {}
+                
+                # Gunakan try-except untuk setiap sel untuk menangani kemungkinan kesalahan
+                try:
+                    output_values['B3'] = sheet_output['C20'].value  # C20 -> B3
+                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C20: {sheet_output['C20'].value}")
+                except Exception as e:
+                    print(f"DEBUG: Error saat mengambil C20: {str(e)}")
+                    output_values['B3'] = None
+                    
+                try:
+                    output_values['B4'] = sheet_output['C21'].value  # C21 -> B4
+                    output_values['B5'] = sheet_output['C22'].value  # C22 -> B5
+                    output_values['B6'] = sheet_output['C23'].value  # C23 -> B6
+                    output_values['B7'] = sheet_output['C24'].value  # C24 -> B7
+                    output_values['B8'] = sheet_output['C25'].value  # C25 -> B8
+                    output_values['B10'] = sheet_output['C30'].value # C30 -> B10
+                    output_values['B11'] = sheet_output['C31'].value # C31 -> B11
+                    
+                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C21: {sheet_output['C21'].value}")
+                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C22: {sheet_output['C22'].value}")
+                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C23: {sheet_output['C23'].value}")
+                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C24: {sheet_output['C24'].value}")
+                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C25: {sheet_output['C25'].value}")
+                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C30: {sheet_output['C30'].value}")
+                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C31: {sheet_output['C31'].value}")
+                except Exception as e:
+                    print(f"DEBUG: Error saat mengambil beberapa nilai dari DATA_OUTPUT: {str(e)}")
+                
+                wb_anapak_output.close()
+                
+                # Buka lagi SBT_PUMP untuk mendapatkan data dari DATA INPUT dan DATA ENGINE
+                wb_pump_input = load_workbook(sbt_pump_path, data_only=True)
+                
+                # Cari sheet 'DATA INPUT' dengan case insensitive match jika perlu
+                data_input_sheet_name = "DATA INPUT"
+                found_data_input = False
+                
+                for sheet_name in wb_pump_input.sheetnames:
+                    if sheet_name.upper() == data_input_sheet_name.upper():
+                        data_input_sheet_name = sheet_name  # Gunakan nama sheet yang benar
+                        found_data_input = True
+                        break
+                
+                if found_data_input:
+                    sheet_pump_input = wb_pump_input[data_input_sheet_name]
+                    # Tambahkan data dari SBT_PUMP.DATA INPUT
+                    try:
+                        output_values['B13'] = sheet_pump_input['B13'].value  # B13 -> B13
+                        output_values['B14'] = sheet_pump_input['B14'].value  # B14 -> B14
+                        
+                        print(f"DEBUG: Nilai dari SBT_PUMP.{data_input_sheet_name}.B13: {sheet_pump_input['B13'].value}")
+                        print(f"DEBUG: Nilai dari SBT_PUMP.{data_input_sheet_name}.B14: {sheet_pump_input['B14'].value}")
+                    except Exception as e:
+                        print(f"DEBUG: Error saat mengambil nilai dari DATA INPUT: {str(e)}")
+                else:
+                    QMessageBox.warning(
+                        self, 
+                        "Warning", 
+                        f"Sheet 'DATA INPUT' tidak ditemukan di file SBT_PUMP.xlsm. "
+                        f"Beberapa data mungkin tidak lengkap."
+                    )
+                
+                # TAMBAHAN: Cari dan ambil data dari sheet 'DATA ENGINE'
+                data_engine_sheet_name = "DATA ENGINE"
+                found_data_engine = False
+                
+                for sheet_name in wb_pump_input.sheetnames:
+                    if sheet_name.upper() == data_engine_sheet_name.upper():
+                        data_engine_sheet_name = sheet_name  # Gunakan nama sheet yang benar
+                        found_data_engine = True
+                        break
+                
+                if found_data_engine:
+                    sheet_pump_engine = wb_pump_input[data_engine_sheet_name]
+                    # Tambahkan data dari SBT_PUMP.DATA ENGINE
+                    try:
+                        output_values['B15'] = sheet_pump_engine['B19'].value  # B19 -> B15
+                        
+                        print(f"DEBUG: Nilai dari SBT_PUMP.{data_engine_sheet_name}.B19: {sheet_pump_engine['B19'].value}")
+                    except Exception as e:
+                        print(f"DEBUG: Error saat mengambil nilai dari DATA ENGINE: {str(e)}")
+                else:
+                    QMessageBox.warning(
+                        self, 
+                        "Warning", 
+                        f"Sheet 'DATA ENGINE' tidak ditemukan di file SBT_PUMP.xlsm. "
+                        f"Beberapa data mungkin tidak lengkap."
+                    )
+                
+                wb_pump_input.close()
+                
+                # Buka SET_BDU untuk update nilai akhir
+                wb_bdu_final = load_workbook(set_bdu_path)
+                
+                # Pastikan sheet DATA_TEMP ada
+                if "DATA_TEMP" not in wb_bdu_final.sheetnames:
+                    QMessageBox.critical(
+                        self, 
+                        "Error", 
+                        "Sheet DATA_TEMP tidak ditemukan di file SET_BDU.xlsx"
+                    )
+                    wb_bdu_final.close()
+                    return
+                    
+                sheet_temp = wb_bdu_final["DATA_TEMP"]
+                
+                # Transfer semua nilai ke SET_BDU.DATA_TEMP
+                for cell_addr, value in output_values.items():
+                    if value is not None:  # Hanya transfer nilai yang tidak None
+                        sheet_temp[cell_addr] = value
+                        print(f"DEBUG: Menyimpan nilai {value} ke SET_BDU.DATA_TEMP.{cell_addr}")
+                    else:
+                        print(f"DEBUG: Tidak menyimpan nilai None ke SET_BDU.DATA_TEMP.{cell_addr}")
+                
+                # Simpan SET_BDU
+                wb_bdu_final.save(set_bdu_path)
+                wb_bdu_final.close()
+                
+                self.statusBar().showMessage("Projection selesai - Semua data berhasil diproses")
+                QMessageBox.information(
+                    self, 
+                    "Projection Selesai", 
+                    "Proses projection telah berhasil dilakukan. Data telah dipindahkan dan diproses."
+                )
+                
+                # Perbarui tampilan
+                self.load_excel_data()
+                
+            except Exception as e:
+                self.statusBar().clearMessage()
+                QMessageBox.critical(
+                    self, 
+                    "Error", 
+                    f"Terjadi kesalahan saat memproses data akhir: {str(e)}"
+                )
+                print(f"DEBUG: Error saat proses 4: {str(e)}")
+                import traceback
+                traceback.print_exc()
+            
+        except Exception as e:
+            self.statusBar().clearMessage()
+            QMessageBox.critical(
+                self, 
+                "Error", 
+                f"Terjadi kesalahan saat menjalankan projection: {str(e)}"
+            )
+            print(f"Error running projection: {str(e)}")
+            import traceback
+            traceback.print_exc()
             
     def run_generate_proposal(self):
         """Fungsi untuk menjalankan script generate_proposal.py"""
@@ -892,7 +1597,7 @@ class BDUGroupView(QMainWindow):
                 }}
             """)
             # Connect to function if needed
-            # run_projection_btn.clicked.connect(self.run_projection)
+            run_projection_btn.clicked.connect(self.run_projection)
             
             # Tombol Generate Proposal
             generate_btn = QPushButton("Regenerate Proposal")
