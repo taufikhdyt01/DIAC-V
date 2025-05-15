@@ -620,23 +620,53 @@ class CustomerSearchView(QMainWindow):
         QApplication.processEvents()
         
         try:
+            # First, get all customer data from the database
+            customer_data = self.get_customer_data_from_database(customer_name)
+            if not customer_data:
+                print(f"Warning: Could not find detailed data for customer '{customer_name}' in database")
+            
+            progress.setValue(30)
+            QApplication.processEvents()
+            
             # Copy the template file to the customer folder
             shutil.copy2(self.template_path, customer_file_path)
             progress.setValue(50)
             QApplication.processEvents()
             
-            # Update customer name in the Excel file if possible
+            # Update customer information in the Excel file
             try:
                 import openpyxl
                 workbook = openpyxl.load_workbook(customer_file_path)
                 
-                # Try to update customer name in various sheets where it might be expected
+                # Specifically target the DIP_Customer Information sheet
+                sheet_name = 'DIP_Customer Information'
+                if sheet_name in workbook.sheetnames:
+                    sheet = workbook[sheet_name]
+                    
+                    # Update customer data in specific cells
+                    data_mapping = {
+                        'B4': customer_name,  # Company Name
+                        'B8': customer_data.get('Country', ''),
+                        'B9': customer_data.get('Province', ''),
+                        'B10': customer_data.get('City', ''),
+                        'B11': customer_data.get('Site Address', ''),
+                        'B12': customer_data.get('Correspondence Address (HO)', ''),
+                        'B13': customer_data.get('Postal Code (HO)', '')
+                    }
+                    
+                    # Apply all mappings
+                    for cell, value in data_mapping.items():
+                        if value:  # Only update if we have a value
+                            sheet[cell] = value
+                            print(f"Updated {sheet_name}.{cell} with: {value}")
+                
+                # Also try to update customer name in various other sheets where it might be expected
                 sheets_to_check = ['DATA_GENERAL', 'DATA_CUSTOMER', 'DIP_General Information']
                 customer_fields = ['customer', 'client', 'company']
                 
-                for sheet_name in sheets_to_check:
-                    if sheet_name in workbook.sheetnames:
-                        sheet = workbook[sheet_name]
+                for check_sheet_name in sheets_to_check:
+                    if check_sheet_name in workbook.sheetnames:
+                        sheet = workbook[check_sheet_name]
                         
                         # Search for customer name fields in the first 30 rows
                         for row in range(1, min(30, sheet.max_row + 1)):
@@ -649,7 +679,7 @@ class CustomerSearchView(QMainWindow):
                                     next_col = col + 1
                                     if next_col <= sheet.max_column:
                                         sheet.cell(row=row, column=next_col).value = customer_name
-                                        print(f"Updated customer name in sheet {sheet_name} at cell {chr(64+next_col)}{row}")
+                                        print(f"Updated customer name in sheet {check_sheet_name} at cell {chr(64+next_col)}{row}")
                 
                 # Save the workbook
                 workbook.save(customer_file_path)
@@ -657,7 +687,9 @@ class CustomerSearchView(QMainWindow):
                 QApplication.processEvents()
                 
             except Exception as e:
-                print(f"Error updating customer name in Excel: {str(e)}")
+                print(f"Error updating customer data in Excel: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 # Continue anyway - the file was copied
             
             progress.setValue(100)
@@ -669,6 +701,44 @@ class CustomerSearchView(QMainWindow):
             raise Exception(f"Error creating customer BDU file: {str(e)}")
         finally:
             progress.close()
+
+    def get_customer_data_from_database(self, customer_name):
+        """Retrieve all customer data from database_customer.xlsx"""
+        try:
+            if not os.path.exists(self.db_path):
+                print(f"Customer database not found: {self.db_path}")
+                return {}
+                
+            # Load the database
+            df = pd.read_excel(self.db_path)
+            
+            # Find the customer row
+            customer_rows = df[df['Company Name'] == customer_name]
+            if customer_rows.empty:
+                print(f"Customer '{customer_name}' not found in database")
+                return {}
+                
+            # Get the first matching row (in case of duplicates)
+            customer_row = customer_rows.iloc[0]
+            
+            # Convert the row to a dictionary
+            customer_data = customer_row.to_dict()
+            
+            # Clean up the data - handle NaN values
+            for key, value in customer_data.items():
+                if pd.isna(value):
+                    customer_data[key] = ""
+                elif not isinstance(value, str):
+                    # Convert numeric values to strings
+                    customer_data[key] = str(value)
+                    
+            return customer_data
+            
+        except Exception as e:
+            print(f"Error getting customer data from database: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {}
     
     def continue_to_bdu(self):
         """Continue to BDU View with selected customer"""
