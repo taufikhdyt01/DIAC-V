@@ -30,6 +30,7 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
     """
     print(f"Membuka file Excel: {excel_path}")
     print(f"Membuka template Word: {template_path}")
+    print(f"Output akan disimpan ke: {output_path}")
     
     # Siapkan data tanggal untuk placeholder
     now = datetime.datetime.now()
@@ -357,6 +358,11 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
     
     # Simpan hasil ke file baru
     try:
+        # Pastikan direktori output ada
+        output_dir = os.path.dirname(output_path)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+            
         doc.save(output_path)
         print(f"Dokumen berhasil dihasilkan: {output_path}")
         success = True
@@ -382,6 +388,26 @@ def generate_proposal(excel_path, template_path, output_path):
     Returns:
     - bool: True jika berhasil, False jika gagal
     """
+    # Validasi path input
+    if not os.path.exists(excel_path):
+        print(f"Error: File Excel tidak ditemukan: {excel_path}")
+        return False
+        
+    if not os.path.exists(template_path):
+        print(f"Error: Template Word tidak ditemukan: {template_path}")
+        return False
+    
+    # Pastikan direktori output ada
+    output_dir = os.path.dirname(output_path)
+    if output_dir and not os.path.exists(output_dir):
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+            print(f"Membuat direktori output: {output_dir}")
+        except Exception as e:
+            print(f"Error membuat direktori output: {e}")
+            return False
+            
+    # Jalankan fungsi untuk membuat dokumen
     success = excel_to_word_by_cell(excel_path, template_path, output_path)
     
     # Jika berhasil generate proposal, update sel A1 pada sheet DATA_PROPOSAL
@@ -395,8 +421,17 @@ def generate_proposal(excel_path, template_path, output_path):
                 sheet = wb['DATA_PROPOSAL']
                 
                 # Dapatkan path relatif dari output_path
+                # Jika output_path adalah di folder customer, buat path relatif ke customer folder
+                
+                # Path dasar adalah root project
                 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                relative_path = os.path.relpath(output_path, root_dir)
+                
+                # Jika output_path merupakan subpath dari root_dir, buat path relatif
+                if os.path.commonpath([root_dir]) == os.path.commonpath([root_dir, output_path]):
+                    relative_path = os.path.relpath(output_path, root_dir)
+                else:
+                    # Jika berbeda drive atau tidak ada path umum, gunakan path absolut
+                    relative_path = output_path
                 
                 # Konversi ke format path Windows dengan backslash
                 relative_path = relative_path.replace('/', '\\')
@@ -417,25 +452,63 @@ def generate_proposal(excel_path, template_path, output_path):
 
 # Jika script ini dijalankan secara langsung (bukan diimport)
 if __name__ == "__main__":
+    """Jika file ini dijalankan langsung (bukan diimpor), 
+    kode ini memungkinkan penggunaan customer path jika diberikan sebagai argumen.
+    
+    Penggunaan:
+    python generate_proposal.py [customer_name]
+    
+    Jika customer_name diberikan, script akan memproses file SET_BDU.xlsx
+    di folder customer tersebut dan menyimpan output di folder yang sama.
+    """
+    # Import argparse untuk menangani argumen command line
+    import argparse
+    
+    # Buat parser argumen
+    parser = argparse.ArgumentParser(description='Generate proposal from SET_BDU.xlsx')
+    parser.add_argument('customer_name', nargs='?', help='Optional customer name')
+    
+    # Parse argumen
+    args = parser.parse_args()
+    
     # Tentukan path relatif terhadap root project
-    # Folder data akan berada di root project, bukan di folder modules
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    data_folder = os.path.join(root_dir, "data")
     
-    # Nama file
-    excel_filename = "SET_BDU.xlsx"
-    template_filename = "Trial WWTP ANP Quotation Template.docx"
-    output_filename = "WWTP_Quotation_Result.docx"
-    
-    # Path lengkap
-    excel_file = os.path.join(data_folder, excel_filename)
-    template_file = os.path.join(data_folder, template_filename)
-    output_file = os.path.join(data_folder, output_filename)
+    if args.customer_name:
+        # Jika customer_name diberikan, gunakan path khusus customer
+        from modules.fix_customer_system import clean_folder_name
+        
+        # Buat path folder customer
+        customer_folder = os.path.join(root_dir, "data", "customers", clean_folder_name(args.customer_name))
+        
+        # Path file customer
+        excel_file = os.path.join(customer_folder, "SET_BDU.xlsx")
+        output_file = os.path.join(customer_folder, f"WWTP_Quotation_{args.customer_name}.docx")
+        
+        # Path template tetap mengacu ke folder data utama
+        template_file = os.path.join(root_dir, "data", "Trial WWTP ANP Quotation Template.docx")
+        
+        print(f"Menggunakan file Excel customer: {excel_file}")
+        print(f"Output akan disimpan ke: {output_file}")
+    else:
+        # Gunakan path default jika tidak ada customer_name
+        data_folder = os.path.join(root_dir, "data")
+        
+        # Nama file
+        excel_filename = "SET_BDU.xlsx"
+        template_filename = "Trial WWTP ANP Quotation Template.docx"
+        output_filename = "WWTP_Quotation_Result.docx"
+        
+        # Path lengkap
+        excel_file = os.path.join(data_folder, excel_filename)
+        template_file = os.path.join(data_folder, template_filename)
+        output_file = os.path.join(data_folder, output_filename)
     
     # Pastikan folder data ada
-    if not os.path.exists(data_folder):
-        os.makedirs(data_folder)
-        print(f"Folder {data_folder} dibuat.")
+    output_folder = os.path.dirname(output_file)
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder, exist_ok=True)
+        print(f"Folder {output_folder} dibuat.")
     
     # Periksa apakah file yang diperlukan ada
     if not os.path.exists(excel_file):
@@ -444,6 +517,5 @@ if __name__ == "__main__":
         print(f"KESALAHAN: File template Word '{template_file}' tidak ditemukan!")
     else:
         print(f"Mulai memproses file...")
-        # Panggil generate_proposal alih-alih excel_to_word_by_cell langsung
-        # agar sel A1 pada DATA_PROPOSAL diperbarui
+        # Panggil generate_proposal
         generate_proposal(excel_file, template_file, output_file)

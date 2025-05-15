@@ -651,7 +651,9 @@ class CustomerSearchView(QMainWindow):
                         'B10': customer_data.get('City', ''),
                         'B11': customer_data.get('Site Address', ''),
                         'B12': customer_data.get('Correspondence Address (HO)', ''),
-                        'B13': customer_data.get('Postal Code (HO)', '')
+                        'B13': customer_data.get('Postal Code (HO)', ''),
+                        'B16': customer_data.get('Name', ''),
+                        'C16': customer_data.get('Phone No./Email', '')
                     }
                     
                     # Apply all mappings
