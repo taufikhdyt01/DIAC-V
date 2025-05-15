@@ -765,11 +765,20 @@ class BDUGroupView(QMainWindow):
             import subprocess
             from PyQt5.QtWidgets import QApplication, QMessageBox
             
-            # Path data folder relatif terhadap folder proyek
+            # Use the customer-specific Excel file if available
+            if hasattr(self, 'excel_path'):
+                set_bdu_path = self.excel_path
+                print(f"Using customer-specific SET_BDU.xlsx: {set_bdu_path}")
+            else:
+                # Fall back to default path if customer file isn't set
+                data_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+                set_bdu_path = os.path.join(data_folder, "SET_BDU.xlsx")
+                print(f"No customer file path found, using default SET_BDU.xlsx: {set_bdu_path}")
+            
+            # Base data folder path
             data_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
             
             # Path ke file-file Excel
-            set_bdu_path = os.path.join(data_folder, "SET_BDU.xlsx")
             sbt_anapak_path = os.path.join(data_folder, "SBT_ANAPAK.xlsx")
             sbt_pump_path = os.path.join(data_folder, "SBT_PUMP.xlsm")
             all_udf_path = os.path.join(data_folder, "ALL_UDF.py")
@@ -1400,7 +1409,7 @@ class BDUGroupView(QMainWindow):
                 
                 wb_pump_input.close()
                 
-                # Buka SET_BDU untuk update nilai akhir
+                # Buka SET_BDU untuk update nilai akhir - PENTING: Gunakan file SET_BDU customer, bukan template
                 wb_bdu_final = load_workbook(set_bdu_path)
                 
                 # Pastikan sheet DATA_TEMP ada
@@ -1458,7 +1467,7 @@ class BDUGroupView(QMainWindow):
             print(f"Error running projection: {str(e)}")
             import traceback
             traceback.print_exc()
-            
+                    
     def run_generate_proposal(self):
         """Fungsi untuk menjalankan script generate_proposal.py dengan file customer"""
         try:
