@@ -79,6 +79,293 @@ WIND_SPEED_DESCRIPTIONS = {
     "LEVEL-6": "10,0 m/s"
 }
 
+# Daftar provinsi di Indonesia
+INDONESIA_PROVINCES = [
+    "Aceh", "Sumatera Utara", "Sumatera Barat", "Riau", "Jambi", "Sumatera Selatan", 
+    "Bengkulu", "Lampung", "Kepulauan Bangka Belitung", "Kepulauan Riau", 
+    "DKI Jakarta", "Jawa Barat", "Jawa Tengah", "DI Yogyakarta", "Jawa Timur", "Banten", 
+    "Bali", "Nusa Tenggara Barat", "Nusa Tenggara Timur", 
+    "Kalimantan Barat", "Kalimantan Tengah", "Kalimantan Selatan", "Kalimantan Timur", "Kalimantan Utara", 
+    "Sulawesi Utara", "Sulawesi Tengah", "Sulawesi Selatan", "Sulawesi Tenggara", "Gorontalo", "Sulawesi Barat", 
+    "Maluku", "Maluku Utara", "Papua", "Papua Barat"
+]
+
+# Kota-kota dan kabupaten di Indonesia berdasarkan provinsi
+INDONESIA_CITIES = {
+    "Aceh": [
+        "Kota Banda Aceh", "Kota Langsa", "Kota Lhokseumawe", "Kota Sabang", "Kota Subulussalam",
+        "Kabupaten Aceh Barat", "Kabupaten Aceh Barat Daya", "Kabupaten Aceh Besar", 
+        "Kabupaten Aceh Jaya", "Kabupaten Aceh Selatan", "Kabupaten Aceh Singkil", 
+        "Kabupaten Aceh Tamiang", "Kabupaten Aceh Tengah", "Kabupaten Aceh Tenggara", 
+        "Kabupaten Aceh Timur", "Kabupaten Aceh Utara", "Kabupaten Bener Meriah", 
+        "Kabupaten Bireuen", "Kabupaten Gayo Lues", "Kabupaten Nagan Raya", 
+        "Kabupaten Pidie", "Kabupaten Pidie Jaya", "Kabupaten Simeulue"
+    ],
+    
+    "Sumatera Utara": [
+        "Kota Medan", "Kota Binjai", "Kota Gunungsitoli", "Kota Padang Sidempuan", 
+        "Kota Pematangsiantar", "Kota Sibolga", "Kota Tanjungbalai", "Kota Tebing Tinggi",
+        "Kabupaten Asahan", "Kabupaten Batu Bara", "Kabupaten Dairi", "Kabupaten Deli Serdang", 
+        "Kabupaten Humbang Hasundutan", "Kabupaten Karo", "Kabupaten Labuhanbatu", 
+        "Kabupaten Labuhanbatu Selatan", "Kabupaten Labuhanbatu Utara", "Kabupaten Langkat", 
+        "Kabupaten Mandailing Natal", "Kabupaten Nias", "Kabupaten Nias Barat", 
+        "Kabupaten Nias Selatan", "Kabupaten Nias Utara", "Kabupaten Padang Lawas", 
+        "Kabupaten Padang Lawas Utara", "Kabupaten Pakpak Bharat", "Kabupaten Samosir", 
+        "Kabupaten Serdang Bedagai", "Kabupaten Simalungun", "Kabupaten Tapanuli Selatan", 
+        "Kabupaten Tapanuli Tengah", "Kabupaten Tapanuli Utara", "Kabupaten Toba Samosir"
+    ],
+    
+    "Sumatera Barat": [
+        "Kota Bukittinggi", "Kota Padang", "Kota Padang Panjang", "Kota Pariaman", 
+        "Kota Payakumbuh", "Kota Sawahlunto", "Kota Solok",
+        "Kabupaten Agam", "Kabupaten Dharmasraya", "Kabupaten Kepulauan Mentawai", 
+        "Kabupaten Lima Puluh Kota", "Kabupaten Padang Pariaman", "Kabupaten Pasaman", 
+        "Kabupaten Pasaman Barat", "Kabupaten Pesisir Selatan", "Kabupaten Sijunjung", 
+        "Kabupaten Solok", "Kabupaten Solok Selatan", "Kabupaten Tanah Datar"
+    ],
+    
+    "Riau": [
+        "Kota Dumai", "Kota Pekanbaru",
+        "Kabupaten Bengkalis", "Kabupaten Indragiri Hilir", "Kabupaten Indragiri Hulu", 
+        "Kabupaten Kampar", "Kabupaten Kepulauan Meranti", "Kabupaten Kuantan Singingi", 
+        "Kabupaten Pelalawan", "Kabupaten Rokan Hilir", "Kabupaten Rokan Hulu", 
+        "Kabupaten Siak"
+    ],
+    
+    "Jambi": [
+        "Kota Jambi", "Kota Sungai Penuh",
+        "Kabupaten Batanghari", "Kabupaten Bungo", "Kabupaten Kerinci", 
+        "Kabupaten Merangin", "Kabupaten Muaro Jambi", "Kabupaten Sarolangun", 
+        "Kabupaten Tanjung Jabung Barat", "Kabupaten Tanjung Jabung Timur", 
+        "Kabupaten Tebo"
+    ],
+    
+    "Sumatera Selatan": [
+        "Kota Lubuklinggau", "Kota Pagar Alam", "Kota Palembang", "Kota Prabumulih",
+        "Kabupaten Banyuasin", "Kabupaten Empat Lawang", "Kabupaten Lahat", 
+        "Kabupaten Muara Enim", "Kabupaten Musi Banyuasin", "Kabupaten Musi Rawas", 
+        "Kabupaten Musi Rawas Utara", "Kabupaten Ogan Ilir", "Kabupaten Ogan Komering Ilir", 
+        "Kabupaten Ogan Komering Ulu", "Kabupaten Ogan Komering Ulu Selatan", 
+        "Kabupaten Ogan Komering Ulu Timur", "Kabupaten Penukal Abab Lematang Ilir"
+    ],
+    
+    "Bengkulu": [
+        "Kota Bengkulu",
+        "Kabupaten Bengkulu Selatan", "Kabupaten Bengkulu Tengah", "Kabupaten Bengkulu Utara", 
+        "Kabupaten Kaur", "Kabupaten Kepahiang", "Kabupaten Lebong", 
+        "Kabupaten Mukomuko", "Kabupaten Rejang Lebong", "Kabupaten Seluma"
+    ],
+    
+    "Lampung": [
+        "Kota Bandar Lampung", "Kota Metro",
+        "Kabupaten Lampung Barat", "Kabupaten Lampung Selatan", "Kabupaten Lampung Tengah", 
+        "Kabupaten Lampung Timur", "Kabupaten Lampung Utara", "Kabupaten Mesuji", 
+        "Kabupaten Pesawaran", "Kabupaten Pesisir Barat", "Kabupaten Pringsewu", 
+        "Kabupaten Tanggamus", "Kabupaten Tulang Bawang", "Kabupaten Tulang Bawang Barat", 
+        "Kabupaten Way Kanan"
+    ],
+    
+    "Kepulauan Bangka Belitung": [
+        "Kota Pangkalpinang",
+        "Kabupaten Bangka", "Kabupaten Bangka Barat", "Kabupaten Bangka Selatan", 
+        "Kabupaten Bangka Tengah", "Kabupaten Belitung", "Kabupaten Belitung Timur"
+    ],
+    
+    "Kepulauan Riau": [
+        "Kota Batam", "Kota Tanjungpinang",
+        "Kabupaten Bintan", "Kabupaten Karimun", "Kabupaten Kepulauan Anambas", 
+        "Kabupaten Lingga", "Kabupaten Natuna"
+    ],
+    
+    "DKI Jakarta": [
+        "Kota Jakarta Barat", "Kota Jakarta Pusat", "Kota Jakarta Selatan", 
+        "Kota Jakarta Timur", "Kota Jakarta Utara", "Kabupaten Kepulauan Seribu"
+    ],
+    
+    "Jawa Barat": [
+        "Kota Bandung", "Kota Banjar", "Kota Bekasi", "Kota Bogor", "Kota Cimahi", 
+        "Kota Cirebon", "Kota Depok", "Kota Sukabumi", "Kota Tasikmalaya",
+        "Kabupaten Bandung", "Kabupaten Bandung Barat", "Kabupaten Bekasi", "Kabupaten Bogor", 
+        "Kabupaten Ciamis", "Kabupaten Cianjur", "Kabupaten Cirebon", "Kabupaten Garut", 
+        "Kabupaten Indramayu", "Kabupaten Karawang", "Kabupaten Kuningan", "Kabupaten Majalengka", 
+        "Kabupaten Pangandaran", "Kabupaten Purwakarta", "Kabupaten Subang", "Kabupaten Sukabumi", 
+        "Kabupaten Sumedang", "Kabupaten Tasikmalaya"
+    ],
+    
+    "Jawa Tengah": [
+        "Kota Magelang", "Kota Pekalongan", "Kota Salatiga", "Kota Semarang", "Kota Surakarta", "Kota Tegal",
+        "Kabupaten Banjarnegara", "Kabupaten Banyumas", "Kabupaten Batang", "Kabupaten Blora", 
+        "Kabupaten Boyolali", "Kabupaten Brebes", "Kabupaten Cilacap", "Kabupaten Demak", 
+        "Kabupaten Grobogan", "Kabupaten Jepara", "Kabupaten Karanganyar", "Kabupaten Kebumen", 
+        "Kabupaten Kendal", "Kabupaten Klaten", "Kabupaten Kudus", "Kabupaten Magelang", 
+        "Kabupaten Pati", "Kabupaten Pekalongan", "Kabupaten Pemalang", "Kabupaten Purbalingga", 
+        "Kabupaten Purworejo", "Kabupaten Rembang", "Kabupaten Semarang", "Kabupaten Sragen", 
+        "Kabupaten Sukoharjo", "Kabupaten Tegal", "Kabupaten Temanggung", "Kabupaten Wonogiri", 
+        "Kabupaten Wonosobo"
+    ],
+    
+    "DI Yogyakarta": [
+        "Kota Yogyakarta",
+        "Kabupaten Bantul", "Kabupaten Gunungkidul", "Kabupaten Kulon Progo", 
+        "Kabupaten Sleman"
+    ],
+    
+    "Jawa Timur": [
+        "Kota Batu", "Kota Blitar", "Kota Kediri", "Kota Madiun", "Kota Malang", 
+        "Kota Mojokerto", "Kota Pasuruan", "Kota Probolinggo", "Kota Surabaya",
+        "Kabupaten Bangkalan", "Kabupaten Banyuwangi", "Kabupaten Blitar", "Kabupaten Bojonegoro", 
+        "Kabupaten Bondowoso", "Kabupaten Gresik", "Kabupaten Jember", "Kabupaten Jombang", 
+        "Kabupaten Kediri", "Kabupaten Lamongan", "Kabupaten Lumajang", "Kabupaten Madiun", 
+        "Kabupaten Magetan", "Kabupaten Malang", "Kabupaten Mojokerto", "Kabupaten Nganjuk", 
+        "Kabupaten Ngawi", "Kabupaten Pacitan", "Kabupaten Pamekasan", "Kabupaten Pasuruan", 
+        "Kabupaten Ponorogo", "Kabupaten Probolinggo", "Kabupaten Sampang", "Kabupaten Sidoarjo", 
+        "Kabupaten Situbondo", "Kabupaten Sumenep", "Kabupaten Trenggalek", "Kabupaten Tuban", 
+        "Kabupaten Tulungagung"
+    ],
+    
+    "Banten": [
+        "Kota Cilegon", "Kota Serang", "Kota Tangerang", "Kota Tangerang Selatan",
+        "Kabupaten Lebak", "Kabupaten Pandeglang", "Kabupaten Serang", "Kabupaten Tangerang"
+    ],
+    
+    "Bali": [
+        "Kota Denpasar",
+        "Kabupaten Badung", "Kabupaten Bangli", "Kabupaten Buleleng", "Kabupaten Gianyar", 
+        "Kabupaten Jembrana", "Kabupaten Karangasem", "Kabupaten Klungkung", "Kabupaten Tabanan"
+    ],
+    
+    "Nusa Tenggara Barat": [
+        "Kota Bima", "Kota Mataram",
+        "Kabupaten Bima", "Kabupaten Dompu", "Kabupaten Lombok Barat", "Kabupaten Lombok Tengah", 
+        "Kabupaten Lombok Timur", "Kabupaten Lombok Utara", "Kabupaten Sumbawa", 
+        "Kabupaten Sumbawa Barat"
+    ],
+    
+    "Nusa Tenggara Timur": [
+        "Kota Kupang",
+        "Kabupaten Alor", "Kabupaten Belu", "Kabupaten Ende", "Kabupaten Flores Timur", 
+        "Kabupaten Kupang", "Kabupaten Lembata", "Kabupaten Malaka", "Kabupaten Manggarai", 
+        "Kabupaten Manggarai Barat", "Kabupaten Manggarai Timur", "Kabupaten Nagekeo", 
+        "Kabupaten Ngada", "Kabupaten Rote Ndao", "Kabupaten Sabu Raijua", "Kabupaten Sikka", 
+        "Kabupaten Sumba Barat", "Kabupaten Sumba Barat Daya", "Kabupaten Sumba Tengah", 
+        "Kabupaten Sumba Timur", "Kabupaten Timor Tengah Selatan", "Kabupaten Timor Tengah Utara"
+    ],
+    
+    "Kalimantan Barat": [
+        "Kota Pontianak", "Kota Singkawang",
+        "Kabupaten Bengkayang", "Kabupaten Kapuas Hulu", "Kabupaten Kayong Utara", 
+        "Kabupaten Ketapang", "Kabupaten Kubu Raya", "Kabupaten Landak", "Kabupaten Melawi", 
+        "Kabupaten Mempawah", "Kabupaten Sambas", "Kabupaten Sanggau", "Kabupaten Sekadau", 
+        "Kabupaten Sintang"
+    ],
+    
+    "Kalimantan Tengah": [
+        "Kota Palangka Raya",
+        "Kabupaten Barito Selatan", "Kabupaten Barito Timur", "Kabupaten Barito Utara", 
+        "Kabupaten Gunung Mas", "Kabupaten Kapuas", "Kabupaten Katingan", 
+        "Kabupaten Kotawaringin Barat", "Kabupaten Kotawaringin Timur", "Kabupaten Lamandau", 
+        "Kabupaten Murung Raya", "Kabupaten Pulang Pisau", "Kabupaten Sukamara", 
+        "Kabupaten Seruyan"
+    ],
+    
+    "Kalimantan Selatan": [
+        "Kota Banjarbaru", "Kota Banjarmasin",
+        "Kabupaten Balangan", "Kabupaten Banjar", "Kabupaten Barito Kuala", "Kabupaten Hulu Sungai Selatan", 
+        "Kabupaten Hulu Sungai Tengah", "Kabupaten Hulu Sungai Utara", "Kabupaten Kotabaru", 
+        "Kabupaten Tabalong", "Kabupaten Tanah Bumbu", "Kabupaten Tanah Laut", "Kabupaten Tapin"
+    ],
+    
+    "Kalimantan Timur": [
+        "Kota Balikpapan", "Kota Bontang", "Kota Samarinda",
+        "Kabupaten Berau", "Kabupaten Kutai Barat", "Kabupaten Kutai Kartanegara", 
+        "Kabupaten Kutai Timur", "Kabupaten Mahakam Ulu", "Kabupaten Paser", 
+        "Kabupaten Penajam Paser Utara"
+    ],
+    
+    "Kalimantan Utara": [
+        "Kota Tarakan",
+        "Kabupaten Bulungan", "Kabupaten Malinau", "Kabupaten Nunukan", "Kabupaten Tana Tidung"
+    ],
+    
+    "Sulawesi Utara": [
+        "Kota Bitung", "Kota Kotamobagu", "Kota Manado", "Kota Tomohon",
+        "Kabupaten Bolaang Mongondow", "Kabupaten Bolaang Mongondow Selatan", 
+        "Kabupaten Bolaang Mongondow Timur", "Kabupaten Bolaang Mongondow Utara", 
+        "Kabupaten Kepulauan Sangihe", "Kabupaten Kepulauan Siau Tagulandang Biaro", 
+        "Kabupaten Kepulauan Talaud", "Kabupaten Minahasa", "Kabupaten Minahasa Selatan", 
+        "Kabupaten Minahasa Tenggara", "Kabupaten Minahasa Utara"
+    ],
+    
+    "Sulawesi Tengah": [
+        "Kota Palu",
+        "Kabupaten Banggai", "Kabupaten Banggai Kepulauan", "Kabupaten Banggai Laut", 
+        "Kabupaten Buol", "Kabupaten Donggala", "Kabupaten Morowali", "Kabupaten Morowali Utara", 
+        "Kabupaten Parigi Moutong", "Kabupaten Poso", "Kabupaten Sigi", "Kabupaten Tojo Una-Una", 
+        "Kabupaten Tolitoli"
+    ],
+    
+    "Sulawesi Selatan": [
+        "Kota Makassar", "Kota Palopo", "Kota Parepare",
+        "Kabupaten Bantaeng", "Kabupaten Barru", "Kabupaten Bone", "Kabupaten Bulukumba", 
+        "Kabupaten Enrekang", "Kabupaten Gowa", "Kabupaten Jeneponto", "Kabupaten Kepulauan Selayar", 
+        "Kabupaten Luwu", "Kabupaten Luwu Timur", "Kabupaten Luwu Utara", "Kabupaten Maros", 
+        "Kabupaten Pangkajene dan Kepulauan", "Kabupaten Pinrang", "Kabupaten Sidenreng Rappang", 
+        "Kabupaten Sinjai", "Kabupaten Soppeng", "Kabupaten Takalar", "Kabupaten Tana Toraja", 
+        "Kabupaten Toraja Utara", "Kabupaten Wajo"
+    ],
+    
+    "Sulawesi Tenggara": [
+        "Kota Baubau", "Kota Kendari",
+        "Kabupaten Bombana", "Kabupaten Buton", "Kabupaten Buton Selatan", "Kabupaten Buton Tengah", 
+        "Kabupaten Buton Utara", "Kabupaten Kolaka", "Kabupaten Kolaka Timur", "Kabupaten Kolaka Utara", 
+        "Kabupaten Konawe", "Kabupaten Konawe Kepulauan", "Kabupaten Konawe Selatan", 
+        "Kabupaten Konawe Utara", "Kabupaten Muna", "Kabupaten Muna Barat", "Kabupaten Wakatobi"
+    ],
+    
+    "Gorontalo": [
+        "Kota Gorontalo",
+        "Kabupaten Boalemo", "Kabupaten Bone Bolango", "Kabupaten Gorontalo", 
+        "Kabupaten Gorontalo Utara", "Kabupaten Pohuwato"
+    ],
+    
+    "Sulawesi Barat": [
+        "Kabupaten Majene", "Kabupaten Mamasa", "Kabupaten Mamuju", "Kabupaten Mamuju Tengah", 
+        "Kabupaten Pasangkayu", "Kabupaten Polewali Mandar"
+    ],
+    
+    "Maluku": [
+        "Kota Ambon", "Kota Tual",
+        "Kabupaten Buru", "Kabupaten Buru Selatan", "Kabupaten Kepulauan Aru", 
+        "Kabupaten Maluku Barat Daya", "Kabupaten Maluku Tengah", "Kabupaten Maluku Tenggara", 
+        "Kabupaten Maluku Tenggara Barat", "Kabupaten Seram Bagian Barat", "Kabupaten Seram Bagian Timur"
+    ],
+    
+    "Maluku Utara": [
+        "Kota Ternate", "Kota Tidore Kepulauan",
+        "Kabupaten Halmahera Barat", "Kabupaten Halmahera Tengah", "Kabupaten Halmahera Timur", 
+        "Kabupaten Halmahera Selatan", "Kabupaten Halmahera Utara", "Kabupaten Kepulauan Sula", 
+        "Kabupaten Pulau Morotai", "Kabupaten Pulau Taliabu"
+    ],
+    
+    "Papua": [
+        "Kota Jayapura",
+        "Kabupaten Asmat", "Kabupaten Biak Numfor", "Kabupaten Boven Digoel", "Kabupaten Deiyai", 
+        "Kabupaten Dogiyai", "Kabupaten Intan Jaya", "Kabupaten Jayapura", "Kabupaten Jayawijaya", 
+        "Kabupaten Keerom", "Kabupaten Kepulauan Yapen", "Kabupaten Lanny Jaya", "Kabupaten Mamberamo Raya", 
+        "Kabupaten Mamberamo Tengah", "Kabupaten Mappi", "Kabupaten Merauke", "Kabupaten Mimika", 
+        "Kabupaten Nabire", "Kabupaten Nduga", "Kabupaten Paniai", "Kabupaten Pegunungan Bintang", 
+        "Kabupaten Puncak", "Kabupaten Puncak Jaya", "Kabupaten Sarmi", "Kabupaten Supiori", 
+        "Kabupaten Tolikara", "Kabupaten Waropen", "Kabupaten Yahukimo", "Kabupaten Yalimo"
+    ],
+    
+    "Papua Barat": [
+        "Kota Sorong",
+        "Kabupaten Fakfak", "Kabupaten Kaimana", "Kabupaten Manokwari", "Kabupaten Manokwari Selatan", 
+        "Kabupaten Maybrat", "Kabupaten Pegunungan Arfak", "Kabupaten Raja Ampat", "Kabupaten Sorong", 
+        "Kabupaten Sorong Selatan", "Kabupaten Tambrauw", "Kabupaten Teluk Bintuni", "Kabupaten Teluk Wondama"
+    ]
+}
+
 # Pengecekan opsional untuk modul docx2pdf
 HAS_DOCX2PDF = False
 try:
@@ -556,7 +843,7 @@ class BDUGroupView(QMainWindow):
             child_dropdown.addItems(INDUSTRY_SUBTYPE_MAPPING[parent_value])
         else:
             # Jika tidak ada mapping, tambahkan placeholder atau biarkan kosong
-            child_dropdown.addItem("-- Select Sub Industry --")
+            child_dropdown.addItem("-- Select Industry First --")
             
     def get_absolute_path(self, relative_path):
         """Konversi path relatif menjadi absolut relatif terhadap root project"""
@@ -1893,142 +2180,7 @@ class BDUGroupView(QMainWindow):
                 f"Tidak dapat membuka file: {str(e)}"
             )
             print(f"Error membuka dokumen: {str(e)}")
-                    
-    def get_validation_values(self, excel_path, sheet_name, cell_address):
-        """Fungsi yang lebih robust untuk mendapatkan nilai data validation"""
-        from openpyxl import load_workbook
-        
-        try:
-            # Load workbook dengan data_only=False untuk akses validasi
-            workbook = load_workbook(excel_path, data_only=False)
-            
-            if sheet_name not in workbook.sheetnames:
-                return []
-                
-            sheet = workbook[sheet_name]
-            
-            # Coba beberapa pendekatan untuk mendapatkan data validasi
-            
-            # Pendekatan 1: Cek dengan cell coordinate langsung
-            try:
-                cell = sheet[cell_address]
-                
-                # Jika cell punya data_validation
-                if hasattr(cell, 'data_validation') and cell.data_validation:
-                    if cell.data_validation.type == 'list':
-                        formula = cell.data_validation.formula1
-                        if formula:
-                            # Formula bisa dalam bentuk "A,B,C" atau formula Excel
-                            if formula.startswith('"') and formula.endswith('"'):
-                                formula = formula[1:-1]
-                                return [val.strip() for val in formula.split(',')]
-            except:
-                pass
-            
-            # Pendekatan 2: Cek semua validasi di sheet
-            if hasattr(sheet, 'data_validations') and hasattr(sheet.data_validations, 'dataValidation'):
-                for dv in sheet.data_validations.dataValidation:
-                    if dv.type == 'list':
-                        for sqref in dv.sqref.ranges:
-                            # Cek apakah cell address ada dalam range validasi
-                            if cell_address in str(sqref):
-                                formula = dv.formula1
-                                if formula.startswith('"') and formula.endswith('"'):
-                                    formula = formula[1:-1]
-                                    return [val.strip() for val in formula.split(',')]
-            
-            # Pendekatan 3: Cek berdasarkan baris dan kolom yang sama
-            # Parse cell address
-            import re
-            match = re.match(r'([A-Za-z]+)(\d+)', cell_address)
-            if match:
-                col_letter, row_num = match.groups()
-                row_num = int(row_num)
-                
-                # Loop through all validations
-                for dv in sheet.data_validations.dataValidation:
-                    if dv.type == 'list':
-                        formula = dv.formula1
-                        if formula:
-                            try:
-                                # Temukan validation list untuk row yang sama
-                                for sqref in dv.sqref.ranges:
-                                    sqref_str = str(sqref)
-                                    # Jika referensi mencakup row yang sama dengan cell kita
-                                    if f"${row_num}:" in sqref_str or f"${row_num}" in sqref_str:
-                                        if formula.startswith('"') and formula.endswith('"'):
-                                            formula = formula[1:-1]
-                                            return [val.strip() for val in formula.split(',')]
-                            except:
-                                pass
-            
-            # Pendekatan 4: Cek baris-baris sebelumnya untuk pola validasi serupa
-            # Terutama untuk kasus Process_1 sampai Process_9 yang biasanya memiliki validasi yang sama
-            
-            # Parse cell address untuk mendapatkan baris dan kolom
-            match = re.match(r'([A-Za-z]+)(\d+)', cell_address)
-            if match:
-                col_letter, row_num = match.groups()
-                row_num = int(row_num)
-                
-                # Cek cell satu baris di atasnya (asumsi fd_Process items berurutan)
-                prev_cell_addr = f"{col_letter}{row_num-1}"
-                
-                try:
-                    prev_cell = sheet[prev_cell_addr]
-                    if hasattr(prev_cell, 'data_validation') and prev_cell.data_validation:
-                        if prev_cell.data_validation.type == 'list':
-                            formula = prev_cell.data_validation.formula1
-                            if formula:
-                                if formula.startswith('"') and formula.endswith('"'):
-                                    formula = formula[1:-1]
-                                    return [val.strip() for val in formula.split(',')]
-                except:
-                    pass
-            
-            # Pendekatan 5: Untuk dropdown sequential seperti Process_1 sampai Process_9
-            # Coba cari opsi data validation dari Process_1 dan gunakan untuk semuanya
-            if 'Process_' in cell_address:
-                # Find the Process_1 cell in the same sheet
-                # This requires knowing the exact row of Process_1
-                # Example of finding similar validation from Process_1
-                try:
-                    # Cari semua data validation dengan tipe 'list'
-                    for dv in sheet.data_validations.dataValidation:
-                        if dv.type == 'list':
-                            formula = dv.formula1
-                            if formula and formula.startswith('"') and formula.endswith('"'):
-                                formula = formula[1:-1]
-                                options = [val.strip() for val in formula.split(',')]
-                                if options and len(options) > 0:
-                                    return options
-                except:
-                    pass
-                    
-            # Fallback: Jika tidak ada data validation, cek apakah ada options di cell setelahnya
-            # Ini asumsi bahwa options kadang ditulis di cell sebelah kanan dropdown field
-            try:
-                # Get column index
-                from openpyxl.utils import column_index_from_string, get_column_letter
-                col_idx = column_index_from_string(col_letter)
-                next_col_letter = get_column_letter(col_idx + 1)
-                next_cell_addr = f"{next_col_letter}{row_num}"
-                
-                next_cell = sheet[next_cell_addr]
-                if next_cell.value:
-                    # Asumsi options dipisahkan koma
-                    options_str = str(next_cell.value).strip()
-                    return [opt.strip() for opt in options_str.split(',')]
-            except:
-                pass
-                
-            return []
-        except Exception as e:
-            print(f"Error saat membaca data validation: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return []
-            
+                            
     def process_excel_images(self, sheet_name, layout):
         """Extract and display images from Excel sheet"""
         try:
@@ -2901,8 +3053,12 @@ class BDUGroupView(QMainWindow):
                                             right_options_str = str(row.iloc[col_idx + 1]).strip()
                                             right_options = [opt.strip() for opt in right_options_str.split(',')]
                                     
+                                    # Penanganan untuk field-field spesifik
+                                    if right_field_name in ["Biogas", "Expo Participation", "Gathering Participation"] and not right_options:
+                                        right_options = ["YES", "NO"]
+                                        
                                     # Add placeholder item "-- Select value --" first (KEY ADDITION)
-                                    display_options = ["-- Select value --"] + right_options
+                                    display_options = ["-- Select Value --"] + right_options
                                     right_input_field.addItems(display_options)
                                     
                                     # Style the placeholder item
@@ -3191,8 +3347,12 @@ class BDUGroupView(QMainWindow):
                                             right_options_str = str(row.iloc[col_idx + 1]).strip()
                                             right_options = [opt.strip() for opt in right_options_str.split(',')]
                                     
+                                    # Penanganan untuk field-field spesifik
+                                    if right_field_name in ["Biogas", "Expo Participation", "Gathering Participation"] and not right_options:
+                                        right_options = ["YES", "NO"]
+                                    
                                     # Add options to right dropdown
-                                    display_options = ["-- Select value --"] + right_options
+                                    display_options = ["-- Select Value --"] + right_options
                                     right_input_field.addItems(display_options)
                                     
                                     # Style the placeholder item
@@ -3322,6 +3482,15 @@ class BDUGroupView(QMainWindow):
                         if len(row) > 1 and not pd.isna(row.iloc[1]):
                             options_str = str(row.iloc[1]).strip()
                             options = [opt.strip() for opt in options_str.split(',')]
+                                
+                    # Simpan Process options untuk digunakan bersama
+                    if "Process" in field_name and field_name.replace("Process ", "").strip().isdigit():
+                        # Jika ini Process 1, simpan opsinya untuk field Process lainnya
+                        if "Process 1" in field_name:
+                            self.process_field_options = options
+                        # Jika ini Process 2-9, gunakan opsi dari Process 1 jika tersedia
+                        elif hasattr(self, 'process_field_options') and self.process_field_options:
+                            options = self.process_field_options
                 
                 # Jika ini adalah Sub Industry Specification field
                 if is_sub_industry_field:
@@ -3367,7 +3536,7 @@ class BDUGroupView(QMainWindow):
                 # Tambahkan item "-- Select value --" jika belum ada opsi atau nilai default kosong
                 if not options or not default_value:
                     # Buat salinan opsi untuk menghindari memodifikasi options asli
-                    display_options = ["-- Select value --"] + options
+                    display_options = ["-- Select Value --"] + options
                     input_field.addItems(display_options)
                     
                     # Atur item pertama menjadi teks yang berbeda
@@ -3524,8 +3693,12 @@ class BDUGroupView(QMainWindow):
                                             right_options_str = str(row.iloc[col_idx + 1]).strip()
                                             right_options = [opt.strip() for opt in right_options_str.split(',')]
                                     
+                                    # Penanganan untuk field-field spesifik
+                                    if right_field_name in ["Biogas", "Expo Participation", "Gathering Participation"] and not right_options:
+                                        right_options = ["YES", "NO"]
+                                        
                                     # Add placeholder item "-- Select value --" first (KEY ADDITION)
-                                    display_options = ["-- Select value --"] + right_options
+                                    display_options = ["-- Select Value --"] + right_options
                                     right_input_field.addItems(display_options)
                                     
                                     # Style the placeholder item
