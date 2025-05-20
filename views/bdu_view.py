@@ -2837,7 +2837,8 @@ class BDUGroupView(QMainWindow):
                                 right_header_label = QLabel(right_header)
                                 right_header_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
                                 right_header_label.setStyleSheet("color: #555; margin-top: 5px;")
-                                
+                                right_header_label.setContentsMargins(0, 0, 0, 0)  # Remove any default margins
+                                right_header_label.setIndent(0)
                                 # Position in the grid correctly - at the same row level as the left header
                                 # But in columns 3-4 (index 3-4) to create proper separation
                                 section_grid.addWidget(right_header_label, current_row, 3, 1, 2)
@@ -2858,7 +2859,7 @@ class BDUGroupView(QMainWindow):
                                 
                                 # Create input field based on type
                                 if col_value.startswith('fd_'):
-                                    # It's a dropdown
+                                    # Create dropdown for right field
                                     right_input_field = QComboBox()
                                     right_input_field.setFont(QFont("Segoe UI", 11))
                                     right_input_field.setMinimumWidth(200)
@@ -2886,31 +2887,36 @@ class BDUGroupView(QMainWindow):
                                     """)
                                     
                                     # Get options for dropdown
-                                    options = []
+                                    right_options = []
                                     right_cell_col = col_idx + 1
                                     right_cell_address = f"{chr(ord('A') + right_cell_col)}{index + 1}"
-
-                                    # Get validation values first
+                                    
                                     right_validation_options = self.get_validation_values(self.excel_path, sheet_name, right_cell_address)
-
+                                    
                                     if right_validation_options:
-                                        options = right_validation_options
+                                        right_options = right_validation_options
                                     else:
                                         # Fallback if data validation not found
                                         if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
-                                            options_str = str(row.iloc[col_idx + 1]).strip()
-                                            options = [opt.strip() for opt in options_str.split(',')]
+                                            right_options_str = str(row.iloc[col_idx + 1]).strip()
+                                            right_options = [opt.strip() for opt in right_options_str.split(',')]
                                     
-                                    # Add options and set default
-                                    right_input_field.addItems(options)
-                                    if len(options) > 0:
-                                        right_input_field.setCurrentText(options[0])
-                                        
-                                    # Set value if available
+                                    # Add placeholder item "-- Select value --" first (KEY ADDITION)
+                                    display_options = ["-- Select value --"] + right_options
+                                    right_input_field.addItems(display_options)
+                                    
+                                    # Style the placeholder item
+                                    right_input_field.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+                                    right_input_field.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+                                    right_input_field.setCurrentIndex(0)  # Select placeholder by default
+                                    
+                                    # Only set a saved value if it exists and matches an option
                                     if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
-                                        value = str(row.iloc[col_idx + 1]).strip()
-                                        if value in options:
-                                            right_input_field.setCurrentText(value)
+                                        saved_value = str(row.iloc[col_idx + 1]).strip()
+                                        if saved_value in right_options:
+                                            # Find the index in the display_options list (add 1 because of placeholder)
+                                            option_index = right_options.index(saved_value) + 1
+                                            right_input_field.setCurrentIndex(option_index)
                                     
                                     # Add to grid
                                     section_grid.addWidget(right_input_field, current_row, 4)
@@ -3186,13 +3192,21 @@ class BDUGroupView(QMainWindow):
                                             right_options = [opt.strip() for opt in right_options_str.split(',')]
                                     
                                     # Add options to right dropdown
-                                    right_input_field.addItems(right_options)
+                                    display_options = ["-- Select value --"] + right_options
+                                    right_input_field.addItems(display_options)
                                     
-                                    # Set default value if available
-                                    if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]) and str(row.iloc[col_idx + 1]).strip() in right_options:
-                                        right_input_field.setCurrentText(str(row.iloc[col_idx + 1]).strip())
-                                    elif len(right_options) > 0:
-                                        right_input_field.setCurrentText(right_options[0])
+                                    # Style the placeholder item
+                                    right_input_field.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+                                    right_input_field.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+                                    right_input_field.setCurrentIndex(0)  # Select placeholder by default
+
+                                    # Only set a saved value if it exists and matches an option
+                                    if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
+                                        saved_value = str(row.iloc[col_idx + 1]).strip()
+                                        if saved_value in right_options:
+                                            # Find the index in the display_options list (add 1 because of placeholder)
+                                            option_index = right_options.index(saved_value) + 1
+                                            right_input_field.setCurrentIndex(option_index)
                                     
                                     # Add dropdown to grid
                                     section_grid.addWidget(right_input_field, current_row, 4)
@@ -3468,7 +3482,7 @@ class BDUGroupView(QMainWindow):
                                 
                                 # Handle different input field types based on prefix
                                 if col_value.startswith('fd_'):
-                                    # Create dropdown
+                                    # Create dropdown for right field
                                     right_input_field = QComboBox()
                                     right_input_field.setFont(QFont("Segoe UI", 11))
                                     right_input_field.setMinimumWidth(200)
@@ -3505,18 +3519,27 @@ class BDUGroupView(QMainWindow):
                                     if right_validation_options:
                                         right_options = right_validation_options
                                     else:
+                                        # Fallback if data validation not found
                                         if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
                                             right_options_str = str(row.iloc[col_idx + 1]).strip()
                                             right_options = [opt.strip() for opt in right_options_str.split(',')]
                                     
-                                    # Add options
-                                    right_input_field.addItems(right_options)
+                                    # Add placeholder item "-- Select value --" first (KEY ADDITION)
+                                    display_options = ["-- Select value --"] + right_options
+                                    right_input_field.addItems(display_options)
                                     
-                                    # Set default value
-                                    if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]) and str(row.iloc[col_idx + 1]).strip() in right_options:
-                                        right_input_field.setCurrentText(str(row.iloc[col_idx + 1]).strip())
-                                    elif len(right_options) > 0:
-                                        right_input_field.setCurrentText(right_options[0])
+                                    # Style the placeholder item
+                                    right_input_field.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+                                    right_input_field.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+                                    right_input_field.setCurrentIndex(0)  # Select placeholder by default
+                                    
+                                    # Only set a saved value if it exists and matches an option
+                                    if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
+                                        saved_value = str(row.iloc[col_idx + 1]).strip()
+                                        if saved_value in right_options:
+                                            # Find the index in the display_options list (add 1 because of placeholder)
+                                            option_index = right_options.index(saved_value) + 1
+                                            right_input_field.setCurrentIndex(option_index)
                                     
                                     # Add to grid
                                     section_grid.addWidget(right_input_field, current_row, 4)
