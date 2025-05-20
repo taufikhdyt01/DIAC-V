@@ -19,16 +19,46 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import APP_NAME, SECONDARY_COLOR, PRIMARY_COLOR, BG_COLOR, DEPARTMENTS
 
 INDUSTRY_SUBTYPE_MAPPING = {
-    "Palm Oil": ["CPO&CPKO", "EFB", "Palm Oil Plantation"],
-    "Mining": ["Coal Mining", "Gold Mining", "Nickel Mining", "Tin Mining", "Bauxite Mining"],
-    "Oil & Gas": ["Upstream", "Midstream", "Downstream"],
-    "Non Food Industry-A": ["Apparel & Footwear (Textile)", "Manufacturing/Heavy Industry", 
-                           "Technology & Telecommunication", "Transportation & Logistics"],
-    "F&B": ["Processed Food", "Beverages", "Dairy Products", "Confectionary", 
-           "Meat Processing", "Seasoning"],
-    "Agro Industry": ["Fishery & Aquaculture Products", "Food Crops (Cofee, Cocoa)", 
-                     "Tobacco", "Sugar", "Livestock & Poultry"],
-    "Non Food Industry-B": ["Tourism & Hospitality", "Construction & Real Estate", "Residential"]
+    "Business A - Palm Oil": [
+        "Palm Oil - CPO", 
+        "Palm Oil - CPKO", 
+        "Palm Oil - EFB", 
+        "Palm Oil - Plantation"
+    ],
+    "Business B - Mining, Oil & Gas, NFI A": [
+        "Mining - Coal", 
+        "Mining - Gold", 
+        "Mining - Nickel", 
+        "Mining - Tin", 
+        "Mining - Bauxite", 
+        "O&G - Upstream", 
+        "O&G - Midstream", 
+        "O&G - Downstream", 
+        "Non Food - Textile", 
+        "Non Food - Manufacturing / Heavy", 
+        "Non Food - Tech & Telecom", 
+        "Non Food - Transport & Log"
+    ],
+    "Business C - Food Beverage & Dairy, Agroindustry": [
+        "F&B - Processed Food", 
+        "F&B - Beverages", 
+        "F&B - Dairy Product", 
+        "F&B - Confectionery", 
+        "F&B - Meat Processing", 
+        "F&B - Seasoning", 
+        "Agroindustry - Fishery & Aquaculture", 
+        "Agroindustry - Food Crops", 
+        "Agroindustry - Tobacco", 
+        "Agroindustry - Sugar", 
+        "Agroindustry - Livestock & Poultry"
+    ],
+    "Business D - OM, BOO, BOT": [],
+    "Business E - NFI B": [
+        "Non Food - Tourism & Hospitality", 
+        "Non Food - Residential", 
+        "Non Food - Construction & Real Estate", 
+        "Non Food - PDAM/SPAM"
+    ]
 }
 
 SEISMIC_ZONE_DESCRIPTIONS = {
@@ -1865,11 +1895,11 @@ class BDUGroupView(QMainWindow):
             print(f"Error membuka dokumen: {str(e)}")
                     
     def get_validation_values(self, excel_path, sheet_name, cell_address):
-        """Mengambil nilai dari data validation di sebuah sel Excel"""
+        """Fungsi yang lebih robust untuk mendapatkan nilai data validation"""
         from openpyxl import load_workbook
         
         try:
-            # Pastikan untuk memuat dengan data_only=False agar kita bisa mengakses validasi
+            # Load workbook dengan data_only=False untuk akses validasi
             workbook = load_workbook(excel_path, data_only=False)
             
             if sheet_name not in workbook.sheetnames:
@@ -1877,48 +1907,128 @@ class BDUGroupView(QMainWindow):
                 
             sheet = workbook[sheet_name]
             
-            # Periksa apakah cell address valid
+            # Coba beberapa pendekatan untuk mendapatkan data validasi
+            
+            # Pendekatan 1: Cek dengan cell coordinate langsung
             try:
                 cell = sheet[cell_address]
-            except:
-                return []
-            
-            # Cek data validation secara eksplisit
-            dv = sheet.data_validations.dataValidation
-            for validation in dv:
-                for coord in validation.sqref.ranges:
-                    if cell.coordinate in str(coord):
-                        # Ditemukan validasi untuk sel ini
-                        if validation.type == "list":
-                            formula = validation.formula1
-                            
-                            # Jika formula menggunakan referensi
-                            if formula.startswith('='):
-                                # Implementasi sama seperti sebelumnya...
-                                pass
-                            else:
-                                # Untuk list langsung seperti "A,B,C"
-                                if formula.startswith('"') and formula.endswith('"'):
-                                    formula = formula[1:-1]
-                                return [val.strip() for val in formula.split(',')]
-            
-            # Fallback: Coba cara lain untuk mendapatkan validation list
-            try:
-                # Untuk beberapa versi openpyxl, langsung coba akses data_validation
-                if hasattr(cell, 'data_validation') and cell.data_validation and hasattr(cell.data_validation, 'type'):
+                
+                # Jika cell punya data_validation
+                if hasattr(cell, 'data_validation') and cell.data_validation:
                     if cell.data_validation.type == 'list':
                         formula = cell.data_validation.formula1
-                        if formula.startswith('"') and formula.endswith('"'):
-                            formula = formula[1:-1]
-                        return [val.strip() for val in formula.split(',')]
+                        if formula:
+                            # Formula bisa dalam bentuk "A,B,C" atau formula Excel
+                            if formula.startswith('"') and formula.endswith('"'):
+                                formula = formula[1:-1]
+                                return [val.strip() for val in formula.split(',')]
+            except:
+                pass
+            
+            # Pendekatan 2: Cek semua validasi di sheet
+            if hasattr(sheet, 'data_validations') and hasattr(sheet.data_validations, 'dataValidation'):
+                for dv in sheet.data_validations.dataValidation:
+                    if dv.type == 'list':
+                        for sqref in dv.sqref.ranges:
+                            # Cek apakah cell address ada dalam range validasi
+                            if cell_address in str(sqref):
+                                formula = dv.formula1
+                                if formula.startswith('"') and formula.endswith('"'):
+                                    formula = formula[1:-1]
+                                    return [val.strip() for val in formula.split(',')]
+            
+            # Pendekatan 3: Cek berdasarkan baris dan kolom yang sama
+            # Parse cell address
+            import re
+            match = re.match(r'([A-Za-z]+)(\d+)', cell_address)
+            if match:
+                col_letter, row_num = match.groups()
+                row_num = int(row_num)
+                
+                # Loop through all validations
+                for dv in sheet.data_validations.dataValidation:
+                    if dv.type == 'list':
+                        formula = dv.formula1
+                        if formula:
+                            try:
+                                # Temukan validation list untuk row yang sama
+                                for sqref in dv.sqref.ranges:
+                                    sqref_str = str(sqref)
+                                    # Jika referensi mencakup row yang sama dengan cell kita
+                                    if f"${row_num}:" in sqref_str or f"${row_num}" in sqref_str:
+                                        if formula.startswith('"') and formula.endswith('"'):
+                                            formula = formula[1:-1]
+                                            return [val.strip() for val in formula.split(',')]
+                            except:
+                                pass
+            
+            # Pendekatan 4: Cek baris-baris sebelumnya untuk pola validasi serupa
+            # Terutama untuk kasus Process_1 sampai Process_9 yang biasanya memiliki validasi yang sama
+            
+            # Parse cell address untuk mendapatkan baris dan kolom
+            match = re.match(r'([A-Za-z]+)(\d+)', cell_address)
+            if match:
+                col_letter, row_num = match.groups()
+                row_num = int(row_num)
+                
+                # Cek cell satu baris di atasnya (asumsi fd_Process items berurutan)
+                prev_cell_addr = f"{col_letter}{row_num-1}"
+                
+                try:
+                    prev_cell = sheet[prev_cell_addr]
+                    if hasattr(prev_cell, 'data_validation') and prev_cell.data_validation:
+                        if prev_cell.data_validation.type == 'list':
+                            formula = prev_cell.data_validation.formula1
+                            if formula:
+                                if formula.startswith('"') and formula.endswith('"'):
+                                    formula = formula[1:-1]
+                                    return [val.strip() for val in formula.split(',')]
+                except:
+                    pass
+            
+            # Pendekatan 5: Untuk dropdown sequential seperti Process_1 sampai Process_9
+            # Coba cari opsi data validation dari Process_1 dan gunakan untuk semuanya
+            if 'Process_' in cell_address:
+                # Find the Process_1 cell in the same sheet
+                # This requires knowing the exact row of Process_1
+                # Example of finding similar validation from Process_1
+                try:
+                    # Cari semua data validation dengan tipe 'list'
+                    for dv in sheet.data_validations.dataValidation:
+                        if dv.type == 'list':
+                            formula = dv.formula1
+                            if formula and formula.startswith('"') and formula.endswith('"'):
+                                formula = formula[1:-1]
+                                options = [val.strip() for val in formula.split(',')]
+                                if options and len(options) > 0:
+                                    return options
+                except:
+                    pass
+                    
+            # Fallback: Jika tidak ada data validation, cek apakah ada options di cell setelahnya
+            # Ini asumsi bahwa options kadang ditulis di cell sebelah kanan dropdown field
+            try:
+                # Get column index
+                from openpyxl.utils import column_index_from_string, get_column_letter
+                col_idx = column_index_from_string(col_letter)
+                next_col_letter = get_column_letter(col_idx + 1)
+                next_cell_addr = f"{next_col_letter}{row_num}"
+                
+                next_cell = sheet[next_cell_addr]
+                if next_cell.value:
+                    # Asumsi options dipisahkan koma
+                    options_str = str(next_cell.value).strip()
+                    return [opt.strip() for opt in options_str.split(',')]
             except:
                 pass
                 
             return []
         except Exception as e:
             print(f"Error saat membaca data validation: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return []
-        
+            
     def process_excel_images(self, sheet_name, layout):
         """Extract and display images from Excel sheet"""
         try:
@@ -3206,9 +3316,6 @@ class BDUGroupView(QMainWindow):
                     # Tambahkan placeholder, nilai sebenarnya akan diisi nanti saat industry dipilih
                     options = ["-- Select Industry first --"]
                 
-                # Add options and set default if available
-                input_field.addItems(options)
-                
                 # Tambahkan stylesheet untuk tooltip
                 app = QApplication.instance()
                 app.setStyleSheet("""
@@ -3242,11 +3349,26 @@ class BDUGroupView(QMainWindow):
                 default_value = ""
                 if len(row) > 1 and not pd.isna(row.iloc[1]):
                     default_value = str(row.iloc[1]).strip()
+                
+                # Tambahkan item "-- Select value --" jika belum ada opsi atau nilai default kosong
+                if not options or not default_value:
+                    # Buat salinan opsi untuk menghindari memodifikasi options asli
+                    display_options = ["-- Select value --"] + options
+                    input_field.addItems(display_options)
                     
-                if default_value and default_value in options:
-                    input_field.setCurrentText(default_value)
-                elif len(options) > 0:
-                    input_field.setCurrentText(options[0])
+                    # Atur item pertama menjadi teks yang berbeda
+                    input_field.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+                    input_field.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+                    input_field.setCurrentIndex(0)  # Pilih placeholder
+                else:
+                    # Tidak perlu placeholder, tambahkan opsi biasa
+                    input_field.addItems(options)
+                    
+                    # Atur nilai default jika ada
+                    if default_value and default_value in options:
+                        input_field.setCurrentText(default_value)
+                    elif len(options) > 0:
+                        input_field.setCurrentText(options[0])
                     
                 # Check if there's any field in the right columns (columns C and beyond)
                 has_right_field = False
