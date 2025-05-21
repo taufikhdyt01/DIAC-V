@@ -3477,10 +3477,10 @@ class BDUGroupView(QMainWindow):
                 
                 is_industry_field = field_name == "Industry Classification"
                 is_sub_industry_field = field_name == "Sub Industry Specification"
-                is_province1_field = "1Province" in field_name
-                is_city1_field = "1City" in field_name
-                is_province2_field = "2Province" in field_name
-                is_city2_field = "2City" in field_name
+                is_province1_field = field_name == "1Province"
+                is_city1_field = field_name == "1City"
+                is_province2_field = field_name == "2Province"
+                is_city2_field = field_name == "2City"
 
                 # Try to get options from data validation or from second column
                 options = []
@@ -3499,8 +3499,6 @@ class BDUGroupView(QMainWindow):
                 elif is_sub_industry_field:
                     sub_industry_dropdown = input_field
                     sub_industry_field_key = field_key
-                    # Tambahkan placeholder, nilai sebenarnya akan diisi nanti saat industry dipilih
-                    options = ["-- Select Industry first --"]
                 # Untuk field 1Province
                 elif is_province1_field:
                     # Gunakan list province dari mapping
@@ -3515,8 +3513,6 @@ class BDUGroupView(QMainWindow):
                     city1_field_key = field_key
                     # Set properti untuk identifikasi tipe dropdown
                     input_field.setProperty("placeholder_type", "city")
-                    # Tambahkan placeholder, nilai sebenarnya akan diisi nanti saat province dipilih
-                    options = ["-- Select Province first --"]
                 # Untuk field 2Province
                 elif is_province2_field:
                     # Gunakan list province dari mapping
@@ -3531,8 +3527,6 @@ class BDUGroupView(QMainWindow):
                     city2_field_key = field_key
                     # Set properti untuk identifikasi tipe dropdown
                     input_field.setProperty("placeholder_type", "city")
-                    # Tambahkan placeholder, nilai sebenarnya akan diisi nanti saat province dipilih
-                    options = ["-- Select Province first --"]
                 else:
                     # Untuk field lain, gunakan metode biasa
                     # Try to get from data validation
@@ -4786,7 +4780,7 @@ class BDUGroupView(QMainWindow):
                         }
                     
                     # Tambahkan penanganan untuk Province 1
-                    elif "1Province" in display_name and province1_dropdown:
+                    elif "Province" in display_name and province1_dropdown:
                         cell_key = f"row_{row_idx}_col_1"  # Column B
                         cell_to_widget_map[cell_key] = {
                             'widget': province1_dropdown,
@@ -4795,7 +4789,7 @@ class BDUGroupView(QMainWindow):
                         }
                     
                     # Tambahkan penanganan untuk City 1
-                    elif "1City" in display_name and city1_dropdown:
+                    elif "City" in display_name and city1_dropdown:
                         cell_key = f"row_{row_idx}_col_1"  # Column B
                         cell_to_widget_map[cell_key] = {
                             'widget': city1_dropdown,
@@ -4804,7 +4798,7 @@ class BDUGroupView(QMainWindow):
                         }
                     
                     # Tambahkan penanganan untuk Province 2
-                    elif "2Province" in display_name and province2_dropdown:
+                    elif "Province" in display_name and province2_dropdown:
                         cell_key = f"row_{row_idx}_col_1"  # Column B
                         cell_to_widget_map[cell_key] = {
                             'widget': province2_dropdown,
@@ -4813,7 +4807,7 @@ class BDUGroupView(QMainWindow):
                         }
                     
                     # Tambahkan penanganan untuk City 2
-                    elif "2City" in display_name and city2_dropdown:
+                    elif "City" in display_name and city2_dropdown:
                         cell_key = f"row_{row_idx}_col_1"  # Column B
                         cell_to_widget_map[cell_key] = {
                             'widget': city2_dropdown,
