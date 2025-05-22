@@ -3074,10 +3074,6 @@ class BDUGroupView(QMainWindow):
                                         if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
                                             right_options_str = str(row.iloc[col_idx + 1]).strip()
                                             right_options = [opt.strip() for opt in right_options_str.split(',')]
-                                    
-                                    # Penanganan untuk field-field spesifik
-                                    if right_field_name in ["Biogas", "Expo Participation", "Gathering Participation"] and not right_options:
-                                        right_options = ["YES", "NO"]
                                         
                                     # Add placeholder item "-- Select value --" first (KEY ADDITION)
                                     display_options = ["-- Select Value --"] + right_options
@@ -3369,10 +3365,6 @@ class BDUGroupView(QMainWindow):
                                             right_options_str = str(row.iloc[col_idx + 1]).strip()
                                             right_options = [opt.strip() for opt in right_options_str.split(',')]
                                     
-                                    # Penanganan untuk field-field spesifik
-                                    if right_field_name in ["Biogas", "Expo Participation", "Gathering Participation"] and not right_options:
-                                        right_options = ["YES", "NO"]
-                                    
                                     # Add options to right dropdown
                                     display_options = ["-- Select Value --"] + right_options
                                     right_input_field.addItems(display_options)
@@ -3427,7 +3419,7 @@ class BDUGroupView(QMainWindow):
             # Check if it's a field dropdown (fd_)
             if first_col.startswith('fd_'):
                 field_name = first_col[3:].strip()  # Remove 'fd_' prefix
-        
+
                 # Extract display name by removing numeric prefix
                 display_name = field_name
                 if field_name and field_name[0].isdigit():
@@ -3484,10 +3476,13 @@ class BDUGroupView(QMainWindow):
 
                 # Try to get options from data validation or from second column
                 options = []
-                # If Excel stores cell position
-                row_index = index + 1  # +1 because Excel starts from 1
-                col_index = 2  # Assuming column B for dropdown value
-                cell_address = f"{chr(ord('A') + col_index-1)}{row_index}"
+                
+                # Calculate cell address more accurately
+                excel_row = index + 1  # Convert to 1-based Excel row
+                excel_col = 2  # Column B
+                cell_address = f"B{excel_row}"
+                
+                print(f"Processing dropdown field: {field_name} at {cell_address}")
 
                 # Untuk field Industry Classification, gunakan data dari mapping
                 if is_industry_field:
@@ -3495,49 +3490,80 @@ class BDUGroupView(QMainWindow):
                     options = list(INDUSTRY_SUBTYPE_MAPPING.keys())
                     industry_dropdown = input_field
                     industry_field_key = field_key
+                    print(f"Using hardcoded industry options: {len(options)} items")
                 # Untuk field Sub Industry Specification
                 elif is_sub_industry_field:
                     sub_industry_dropdown = input_field
                     sub_industry_field_key = field_key
+                    # Add placeholder for now, will be populated when industry is selected
+                    options = ["-- Select Industry First --"]
+                    print(f"Sub industry field - will be populated dynamically when industry is selected")
                 # Untuk field 1Province
                 elif is_province1_field:
                     options = INDONESIA_PROVINCES
                     province1_dropdown = input_field
                     province1_field_key = field_key
                     input_field.setProperty("dropdown_type", "province")
-                    input_field.setProperty("province_number", "1")  # Tambahkan ini
+                    input_field.setProperty("province_number", "1")
+                    print(f"Using hardcoded province options: {len(options)} items")
                 # Untuk field 1City
                 elif is_city1_field:
                     city1_dropdown = input_field
                     city1_field_key = field_key
                     input_field.setProperty("placeholder_type", "city")
-                    input_field.setProperty("city_number", "1")  # Tambahkan ini
+                    input_field.setProperty("city_number", "1")
+                    # Add placeholder for now, will be populated when province is selected
+                    options = ["-- Select Province First --"]
+                    print(f"City field - will be populated dynamically when province is selected")
                 # Untuk field 2Province
                 elif is_province2_field:
                     options = INDONESIA_PROVINCES
                     province2_dropdown = input_field
                     province2_field_key = field_key
                     input_field.setProperty("dropdown_type", "province")
-                    input_field.setProperty("province_number", "2")  # Tambahkan ini
+                    input_field.setProperty("province_number", "2")
+                    print(f"Using hardcoded province options: {len(options)} items")
                 # Untuk field 2City
                 elif is_city2_field:
                     city2_dropdown = input_field
                     city2_field_key = field_key
                     input_field.setProperty("placeholder_type", "city")
-                    input_field.setProperty("city_number", "2")  # Tambahkan ini
+                    input_field.setProperty("city_number", "2")
+                    # Add placeholder for now, will be populated when province is selected
+                    options = ["-- Select Province First --"]
+                    print(f"City field - will be populated dynamically when province is selected")
                 else:
-                    # Untuk field lain, gunakan metode biasa
-                    # Try to get from data validation
-                    validation_options = self.get_validation_values(self.excel_path, sheet_name, cell_address)
+                    # Untuk field lain, coba ambil dari data validation
+                    print(f"Trying to get validation options for {field_name} at {cell_address}")
+                    
+                    # Try multiple cell addresses in case the calculation is off
+                    possible_addresses = [
+                        cell_address,  # B{excel_row}
+                        f"C{excel_row}",  # Sometimes validation is on the next column
+                        f"B{excel_row + 1}",  # Sometimes there's an offset
+                        f"B{excel_row - 1}"   # Sometimes there's a negative offset
+                    ]
+                    
+                    validation_options = []
+                    for addr in possible_addresses:
+                        validation_options = self.get_validation_values(self.excel_path, sheet_name, addr)
+                        if validation_options:
+                            print(f"Found validation options at {addr}: {validation_options}")
+                            break
                     
                     if validation_options:
                         options = validation_options
                     else:
                         # Fallback to old method if data validation not found
+                        print(f"No validation found, trying fallback method for {field_name}")
                         if len(row) > 1 and not pd.isna(row.iloc[1]):
                             options_str = str(row.iloc[1]).strip()
-                            options = [opt.strip() for opt in options_str.split(',')]
-                            
+                            if options_str and options_str != "nan":
+                                options = [opt.strip() for opt in options_str.split(',')]
+                                print(f"Found options from cell content: {options}")
+                            else:
+                                print(f"Cell content is empty or invalid: '{options_str}'")
+                        
                     # Simpan Process options untuk digunakan bersama
                     if "Process" in field_name and field_name.replace("Process ", "").strip().isdigit():
                         # Jika ini Process 1, simpan opsinya untuk field Process lainnya
@@ -3546,7 +3572,7 @@ class BDUGroupView(QMainWindow):
                         # Jika ini Process 2-9, gunakan opsi dari Process 1 jika tersedia
                         elif hasattr(self, 'process_field_options') and self.process_field_options:
                             options = self.process_field_options
-                
+
                 # Tambahkan stylesheet untuk tooltip
                 app = QApplication.instance()
                 app.setStyleSheet("""
@@ -3560,47 +3586,64 @@ class BDUGroupView(QMainWindow):
                     }
                 """)
                 
-                # Periksa field untuk menambahkan tooltip yang sesuai
-                if field_name == "Seismic Hazard Zone":
-                    # Tambahkan tooltip untuk setiap zona
-                    for i in range(input_field.count()):
-                        zone_text = input_field.itemText(i)
-                        if zone_text in SEISMIC_ZONE_DESCRIPTIONS:
-                            input_field.setItemData(i, SEISMIC_ZONE_DESCRIPTIONS[zone_text], Qt.ToolTipRole)
-                
-                # Tambahkan kondisi untuk Wind Speed Zone
-                elif field_name == "Wind Speed Zone":
-                    # Tambahkan tooltip untuk setiap level
-                    for i in range(input_field.count()):
-                        level_text = input_field.itemText(i)
-                        if level_text in WIND_SPEED_DESCRIPTIONS:
-                            input_field.setItemData(i, WIND_SPEED_DESCRIPTIONS[level_text], Qt.ToolTipRole)
-                
                 # Set default value if available
                 default_value = ""
                 if len(row) > 1 and not pd.isna(row.iloc[1]):
                     default_value = str(row.iloc[1]).strip()
                 
-                # Tambahkan item "-- Select value --" jika belum ada opsi atau nilai default kosong
-                if not options or not default_value:
-                    # Buat salinan opsi untuk menghindari memodifikasi options asli
-                    display_options = ["-- Select Value --"] + options
-                    input_field.addItems(display_options)
+                # Populate dropdown options
+                if options:
+                    # Add placeholder if no default value or if we want to force selection
+                    if not default_value or default_value == "nan":
+                        # For dependent fields, don't add extra placeholder
+                        if any(msg in options[0] for msg in ["Select Industry First", "Select Province First"]):
+                            input_field.addItems(options)
+                            input_field.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+                            input_field.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+                            input_field.setCurrentIndex(0)
+                        else:
+                            display_options = ["-- Select Value --"] + options
+                            input_field.addItems(display_options)
+                            
+                            # Style placeholder
+                            input_field.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+                            input_field.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+                            input_field.setCurrentIndex(0)
+                            
+                            # Set default value if it exists and matches an option
+                            if default_value and default_value in options:
+                                index = options.index(default_value) + 1  # +1 for placeholder
+                                input_field.setCurrentIndex(index)
+                    else:
+                        # No placeholder needed, add options directly
+                        input_field.addItems(options)
+                        
+                        # Set default value if it exists
+                        if default_value and default_value in options:
+                            input_field.setCurrentText(default_value)
+                        elif len(options) > 0:
+                            input_field.setCurrentText(options[0])
                     
-                    # Atur item pertama menjadi teks yang berbeda
+                    print(f"Populated dropdown {field_name} with {len(options)} options, default: '{default_value}'")
+                else:
+                    # No options found - add placeholder only
+                    input_field.addItem("-- No Options Available --")
                     input_field.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
                     input_field.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
-                    input_field.setCurrentIndex(0)  # Pilih placeholder
-                else:
-                    # Tidak perlu placeholder, tambahkan opsi biasa
-                    input_field.addItems(options)
-                    
-                    # Atur nilai default jika ada
-                    if default_value and default_value in options:
-                        input_field.setCurrentText(default_value)
-                    elif len(options) > 0:
-                        input_field.setCurrentText(options[0])
-                    
+                    print(f"Warning: No options found for dropdown field: {field_name}")
+                
+                # Add tooltips for special fields
+                if field_name == "Seismic Hazard Zone":
+                    for i in range(input_field.count()):
+                        zone_text = input_field.itemText(i)
+                        if zone_text in SEISMIC_ZONE_DESCRIPTIONS:
+                            input_field.setItemData(i, SEISMIC_ZONE_DESCRIPTIONS[zone_text], Qt.ToolTipRole)
+                elif field_name == "Wind Speed Zone":
+                    for i in range(input_field.count()):
+                        level_text = input_field.itemText(i)
+                        if level_text in WIND_SPEED_DESCRIPTIONS:
+                            input_field.setItemData(i, WIND_SPEED_DESCRIPTIONS[level_text], Qt.ToolTipRole)
+
                 # Check if there's any field in the right columns (columns C and beyond)
                 has_right_field = False
                 for col_idx in range(2, min(len(row), df.shape[1])):
@@ -3620,18 +3663,15 @@ class BDUGroupView(QMainWindow):
                             col_value.startswith('fm_')):
                             has_right_field = True
                             break
-                
-                # If there's no field in the right columns, make this field span to match fm_ fields
+
+                # Position dropdown in grid
                 if not has_right_field:
-                    # Set dropdown to span only columns 1 and 2 to align with fm_ fields
+                    # If there's no field in the right columns, make this field span to match fm_ fields
                     section_grid.addWidget(input_field, current_row, 1, 1, 2)  # Span 2 columns
                 else:
                     # Add dropdown to grid normally
                     section_grid.addWidget(input_field, current_row, 1)
                     
-                # Register the field
-                self.data_fields[field_key] = input_field
-                
                 # Register the field
                 self.data_fields[field_key] = input_field
                 
@@ -3740,10 +3780,6 @@ class BDUGroupView(QMainWindow):
                                         if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
                                             right_options_str = str(row.iloc[col_idx + 1]).strip()
                                             right_options = [opt.strip() for opt in right_options_str.split(',')]
-                                    
-                                    # Penanganan untuk field-field spesifik
-                                    if right_field_name in ["Biogas", "Expo Participation", "Gathering Participation"] and not right_options:
-                                        right_options = ["YES", "NO"]
                                         
                                     # Add placeholder item "-- Select value --" first (KEY ADDITION)
                                     display_options = ["-- Select Value --"] + right_options
@@ -4341,58 +4377,149 @@ class BDUGroupView(QMainWindow):
     def get_validation_values(self, excel_path, sheet_name, cell_address):
         """Mengambil nilai dari data validation di sebuah sel Excel"""
         from openpyxl import load_workbook
+        import re
         
+        workbook = None
         try:
             # Pastikan untuk memuat dengan data_only=False agar kita bisa mengakses validasi
             workbook = load_workbook(excel_path, data_only=False)
             
             if sheet_name not in workbook.sheetnames:
+                print(f"Sheet {sheet_name} not found in workbook")
                 return []
                 
             sheet = workbook[sheet_name]
             
-            # Periksa apakah cell address valid
+            # Parse cell address manually (e.g., "B5" -> column=2, row=5)
             try:
-                cell = sheet[cell_address]
-            except:
+                # Use regex to parse cell address
+                match = re.match(r'^([A-Z]+)(\d+)$', cell_address.upper())
+                if not match:
+                    print(f"Invalid cell address format: {cell_address}")
+                    return []
+                
+                col_letters = match.group(1)
+                row_num = int(match.group(2))
+                
+                # Convert column letters to number (A=1, B=2, etc.)
+                col_num = 0
+                for i, letter in enumerate(reversed(col_letters)):
+                    col_num += (ord(letter) - ord('A') + 1) * (26 ** i)
+                
+                target_cell = sheet.cell(row=row_num, column=col_num)
+                print(f"Looking for validation at {cell_address} (row={row_num}, col={col_num})")
+            except Exception as e:
+                print(f"Error parsing cell address {cell_address}: {str(e)}")
                 return []
             
-            # Cek data validation secara eksplisit
-            dv = sheet.data_validations.dataValidation
-            for validation in dv:
-                for coord in validation.sqref.ranges:
-                    if cell.coordinate in str(coord):
-                        # Ditemukan validasi untuk sel ini
-                        if validation.type == "list":
-                            formula = validation.formula1
-                            
-                            # Jika formula menggunakan referensi
-                            if formula.startswith('='):
-                                # Implementasi sama seperti sebelumnya...
-                                pass
-                            else:
-                                # Untuk list langsung seperti "A,B,C"
-                                if formula.startswith('"') and formula.endswith('"'):
-                                    formula = formula[1:-1]
-                                return [val.strip() for val in formula.split(',')]
+            # Method 1: Check data validations collection
+            if hasattr(sheet, 'data_validations') and sheet.data_validations:
+                for validation in sheet.data_validations.dataValidation:
+                    if validation.type == "list":
+                        # Check if our cell is in the validation range
+                        for coord_range in validation.sqref.ranges:
+                            if target_cell.coordinate in str(coord_range):
+                                print(f"Found validation range for {cell_address}: {coord_range}")
+                                formula = validation.formula1
+                                
+                                if formula:
+                                    # Handle different formula formats
+                                    if formula.startswith('"') and formula.endswith('"'):
+                                        # Direct list: "option1,option2,option3"
+                                        formula = formula[1:-1]
+                                        options = [val.strip() for val in formula.split(',')]
+                                        print(f"Extracted options from quoted formula: {options}")
+                                        return options
+                                    elif formula.startswith('='):
+                                        # Reference to another range
+                                        print(f"Found reference formula: {formula}")
+                                        try:
+                                            ref_range = formula[1:]  # Remove '='
+                                            # Handle sheet references like 'Sheet1!A1:A10'
+                                            if '!' in ref_range:
+                                                ref_sheet_name, ref_range = ref_range.split('!', 1)
+                                                ref_sheet = workbook[ref_sheet_name]
+                                            else:
+                                                ref_sheet = sheet
+                                            
+                                            # Get values from the referenced range
+                                            ref_cells = ref_sheet[ref_range]
+                                            options = []
+                                            if hasattr(ref_cells, '__iter__'):
+                                                for cell_row in ref_cells:
+                                                    if hasattr(cell_row, '__iter__'):
+                                                        for cell in cell_row:
+                                                            if cell.value is not None:
+                                                                options.append(str(cell.value).strip())
+                                                    else:
+                                                        if cell_row.value is not None:
+                                                            options.append(str(cell_row.value).strip())
+                                            else:
+                                                if ref_cells.value is not None:
+                                                    options.append(str(ref_cells.value).strip())
+                                            
+                                            print(f"Extracted options from reference {ref_range}: {options}")
+                                            return options
+                                        except Exception as ref_e:
+                                            print(f"Error processing reference formula {formula}: {str(ref_e)}")
+                                    else:
+                                        # Simple list without quotes
+                                        options = [val.strip() for val in formula.split(',')]
+                                        print(f"Extracted options from simple formula: {options}")
+                                        return options
             
-            # Fallback: Coba cara lain untuk mendapatkan validation list
+            # Method 2: Check if cell has direct validation (alternative approach)
             try:
-                # Untuk beberapa versi openpyxl, langsung coba akses data_validation
-                if hasattr(cell, 'data_validation') and cell.data_validation and hasattr(cell.data_validation, 'type'):
-                    if cell.data_validation.type == 'list':
-                        formula = cell.data_validation.formula1
-                        if formula.startswith('"') and formula.endswith('"'):
-                            formula = formula[1:-1]
-                        return [val.strip() for val in formula.split(',')]
-            except:
-                pass
-                
+                if hasattr(target_cell, 'data_validation') and target_cell.data_validation:
+                    cell_validation = target_cell.data_validation
+                    if hasattr(cell_validation, 'type') and cell_validation.type == 'list':
+                        formula = cell_validation.formula1
+                        if formula:
+                            if formula.startswith('"') and formula.endswith('"'):
+                                formula = formula[1:-1]
+                            options = [val.strip() for val in formula.split(',')]
+                            print(f"Found direct cell validation: {options}")
+                            return options
+            except Exception as e:
+                print(f"Error checking direct cell validation: {str(e)}")
+            
+            # Method 3: Scan all validations and find matching cell coordinates
+            if hasattr(sheet, 'data_validations') and sheet.data_validations:
+                for validation in sheet.data_validations.dataValidation:
+                    if validation.type == "list":
+                        try:
+                            for coord_range in validation.sqref.ranges:
+                                # Check if our target coordinates fall within this range
+                                if (coord_range.min_row <= row_num <= coord_range.max_row and
+                                    coord_range.min_col <= col_num <= coord_range.max_col):
+                                    print(f"Found validation in range {coord_range} covering {cell_address}")
+                                    formula = validation.formula1
+                                    if formula:
+                                        if formula.startswith('"') and formula.endswith('"'):
+                                            formula = formula[1:-1]
+                                        options = [val.strip() for val in formula.split(',')]
+                                        print(f"Extracted options from range validation: {options}")
+                                        return options
+                        except Exception as range_e:
+                            print(f"Error processing validation range: {str(range_e)}")
+                            continue
+            
+            print(f"No validation found for {cell_address}")
             return []
+                    
         except Exception as e:
-            print(f"Error saat membaca data validation: {str(e)}")
+            print(f"Error reading data validation for {cell_address}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return []
-        
+        finally:
+            # Always close the workbook if it was opened
+            if workbook is not None:
+                try:
+                    workbook.close()
+                except Exception as close_e:
+                    print(f"Error closing workbook: {str(close_e)}")
+                                            
     def save_sheet_data(self, sheet_name):
         """Save the form data back to the Excel file"""
         try:
