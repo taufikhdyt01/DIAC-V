@@ -3501,32 +3501,30 @@ class BDUGroupView(QMainWindow):
                     sub_industry_field_key = field_key
                 # Untuk field 1Province
                 elif is_province1_field:
-                    # Gunakan list province dari mapping
                     options = INDONESIA_PROVINCES
                     province1_dropdown = input_field
                     province1_field_key = field_key
-                    # Set properti untuk identifikasi tipe dropdown
                     input_field.setProperty("dropdown_type", "province")
+                    input_field.setProperty("province_number", "1")  # Tambahkan ini
                 # Untuk field 1City
                 elif is_city1_field:
                     city1_dropdown = input_field
                     city1_field_key = field_key
-                    # Set properti untuk identifikasi tipe dropdown
                     input_field.setProperty("placeholder_type", "city")
+                    input_field.setProperty("city_number", "1")  # Tambahkan ini
                 # Untuk field 2Province
                 elif is_province2_field:
-                    # Gunakan list province dari mapping
                     options = INDONESIA_PROVINCES
                     province2_dropdown = input_field
                     province2_field_key = field_key
-                    # Set properti untuk identifikasi tipe dropdown
                     input_field.setProperty("dropdown_type", "province")
+                    input_field.setProperty("province_number", "2")  # Tambahkan ini
                 # Untuk field 2City
                 elif is_city2_field:
                     city2_dropdown = input_field
                     city2_field_key = field_key
-                    # Set properti untuk identifikasi tipe dropdown
                     input_field.setProperty("placeholder_type", "city")
+                    input_field.setProperty("city_number", "2")  # Tambahkan ini
                 else:
                     # Untuk field lain, gunakan metode biasa
                     # Try to get from data validation
@@ -4593,66 +4591,62 @@ class BDUGroupView(QMainWindow):
                 if not key.startswith(sheet_name):
                     continue  # Skip widgets from other sheets
                 
-                 # Find dropdowns for Industry and Sub-Industry by going through all widgets
-                for key, widget in self.data_fields.items():
-                    if not key.startswith(sheet_name):
-                        continue  # Skip widgets from other sheets
-                    
-                    if isinstance(widget, QComboBox):
-                        # Extract current section and field index
-                        parts = key.split('_')
-                        if len(parts) >= 3:
-                            try:
-                                field_index = int(parts[-1])
-                                
-                                # Cek apakah dropdown ini label mengandung kunci untuk identifikasi
-                                widget_label = ""
-                                for section_grid in self.findChildren(QGridLayout):
-                                    for row in range(section_grid.rowCount()):
-                                        for col in range(section_grid.columnCount()):
-                                            label_item = section_grid.itemAtPosition(row, col)
-                                            if label_item and label_item.widget():
-                                                label_widget = label_item.widget()
-                                                if isinstance(label_widget, QLabel):
-                                                    next_item = section_grid.itemAtPosition(row, col+1)
-                                                    if next_item and next_item.widget() == widget:
-                                                        widget_label = label_widget.text()
-                                                        break
-                                                        
-                                # Cek juga properti dropdown untuk identifikasi
-                                dropdown_type = widget.property("dropdown_type") or ""
-                                placeholder_type = widget.property("placeholder_type") or ""
-                                
-                                # Identifikasi dropdown berdasarkan label atau properti
-                                if "Industry Classification" in widget_label or dropdown_type == "industry":
-                                    industry_dropdown = widget
-                                    industry_index = field_index
-                                    print(f"Found Industry dropdown with key {key}")
-                                elif "Sub Industry" in widget_label or dropdown_type == "sub_industry":
-                                    sub_industry_dropdown = widget
-                                    sub_industry_index = field_index
-                                    print(f"Found Sub-Industry dropdown with key {key}")
-                                # Menambahkan identifikasi untuk province dan city
-                                elif "1Province" in widget_label or (dropdown_type == "province" and "1" in key):
-                                    province1_dropdown = widget
-                                    province1_index = field_index
-                                    print(f"Found Province 1 dropdown with key {key}")
-                                elif "1City" in widget_label or (placeholder_type == "city" and "1" in key):
-                                    city1_dropdown = widget
-                                    city1_index = field_index
-                                    print(f"Found City 1 dropdown with key {key}")
-                                elif "2Province" in widget_label or (dropdown_type == "province" and "2" in key):
-                                    province2_dropdown = widget
-                                    province2_index = field_index
-                                    print(f"Found Province 2 dropdown with key {key}")
-                                elif "2City" in widget_label or (placeholder_type == "city" and "2" in key):
-                                    city2_dropdown = widget
-                                    city2_index = field_index
-                                    print(f"Found City 2 dropdown with key {key}")
-                                
-                            except ValueError:
-                                # Not an integer index
-                                pass
+                if isinstance(widget, QComboBox):
+                    # Extract current section and field index
+                    parts = key.split('_')
+                    if len(parts) >= 3:
+                        try:
+                            field_index = int(parts[-1])
+                            
+                            # Cek apakah dropdown ini label mengandung kunci untuk identifikasi
+                            widget_label = ""
+                            for section_grid in self.findChildren(QGridLayout):
+                                for row in range(section_grid.rowCount()):
+                                    for col in range(section_grid.columnCount()):
+                                        label_item = section_grid.itemAtPosition(row, col)
+                                        if label_item and label_item.widget():
+                                            label_widget = label_item.widget()
+                                            if isinstance(label_widget, QLabel):
+                                                next_item = section_grid.itemAtPosition(row, col+1)
+                                                if next_item and next_item.widget() == widget:
+                                                    widget_label = label_widget.text()
+                                                    break
+                                                    
+                            # Cek juga properti dropdown untuk identifikasi
+                            dropdown_type = widget.property("dropdown_type") or ""
+                            placeholder_type = widget.property("placeholder_type") or ""
+                            province_number = widget.property("province_number") or ""
+                            city_number = widget.property("city_number") or ""
+                            
+                            # Identifikasi dropdown berdasarkan label atau properti
+                            if "Industry Classification" in widget_label:
+                                industry_dropdown = widget
+                                industry_index = field_index
+                                print(f"Found Industry dropdown with key {key}")
+                            elif "Sub Industry" in widget_label:
+                                sub_industry_dropdown = widget
+                                sub_industry_index = field_index
+                                print(f"Found Sub-Industry dropdown with key {key}")
+                            elif dropdown_type == "province" and province_number == "1":
+                                province1_dropdown = widget
+                                province1_index = field_index
+                                print(f"Found Province 1 dropdown with key {key}")
+                            elif placeholder_type == "city" and city_number == "1":
+                                city1_dropdown = widget
+                                city1_index = field_index
+                                print(f"Found City 1 dropdown with key {key}")
+                            elif dropdown_type == "province" and province_number == "2":
+                                province2_dropdown = widget
+                                province2_index = field_index
+                                print(f"Found Province 2 dropdown with key {key}")
+                            elif placeholder_type == "city" and city_number == "2":
+                                city2_dropdown = widget
+                                city2_index = field_index
+                                print(f"Found City 2 dropdown with key {key}")
+                            
+                        except ValueError:
+                            # Not an integer index
+                            pass
             
             # Track changes
             changes_made = 0
@@ -4760,6 +4754,7 @@ class BDUGroupView(QMainWindow):
                         print(f"Warning: Could not find widget for field: {field_id}")
                                         
                 elif field_type == 'fd_':
+                    original_field_name = field_name
                     # Dropdown field - requires special handling
                     # For Industry Classification
                     if "Industry Classification" in display_name and industry_dropdown:
@@ -4779,8 +4774,8 @@ class BDUGroupView(QMainWindow):
                             'type': 'dropdown'
                         }
                     
-                    # Tambahkan penanganan untuk Province 1
-                    elif "Province" in display_name and province1_dropdown:
+                    # For Province 1 - check original field name
+                    elif original_field_name == "1Province" and province1_dropdown:
                         cell_key = f"row_{row_idx}_col_1"  # Column B
                         cell_to_widget_map[cell_key] = {
                             'widget': province1_dropdown,
@@ -4788,8 +4783,8 @@ class BDUGroupView(QMainWindow):
                             'type': 'dropdown'
                         }
                     
-                    # Tambahkan penanganan untuk City 1
-                    elif "City" in display_name and city1_dropdown:
+                    # For City 1 - check original field name
+                    elif original_field_name == "1City" and city1_dropdown:
                         cell_key = f"row_{row_idx}_col_1"  # Column B
                         cell_to_widget_map[cell_key] = {
                             'widget': city1_dropdown,
@@ -4797,8 +4792,8 @@ class BDUGroupView(QMainWindow):
                             'type': 'dropdown'
                         }
                     
-                    # Tambahkan penanganan untuk Province 2
-                    elif "Province" in display_name and province2_dropdown:
+                    # For Province 2 - check original field name
+                    elif original_field_name == "2Province" and province2_dropdown:
                         cell_key = f"row_{row_idx}_col_1"  # Column B
                         cell_to_widget_map[cell_key] = {
                             'widget': province2_dropdown,
@@ -4806,8 +4801,8 @@ class BDUGroupView(QMainWindow):
                             'type': 'dropdown'
                         }
                     
-                    # Tambahkan penanganan untuk City 2
-                    elif "City" in display_name and city2_dropdown:
+                    # For City 2 - check original field name
+                    elif original_field_name == "2City" and city2_dropdown:
                         cell_key = f"row_{row_idx}_col_1"  # Column B
                         cell_to_widget_map[cell_key] = {
                             'widget': city2_dropdown,
