@@ -4388,7 +4388,6 @@ class BDUGroupView(QMainWindow):
                     col_num += (ord(letter) - ord('A') + 1) * (26 ** i)
                 
                 target_cell = sheet.cell(row=row_num, column=col_num)
-                print(f"Looking for validation at {cell_address} (row={row_num}, col={col_num})")
             except Exception as e:
                 print(f"Error parsing cell address {cell_address}: {str(e)}")
                 return []
@@ -4454,7 +4453,6 @@ class BDUGroupView(QMainWindow):
                             if formula.startswith('"') and formula.endswith('"'):
                                 formula = formula[1:-1]
                             options = [val.strip() for val in formula.split(',')]
-                            print(f"Found direct cell validation: {options}")
                             return options
             except Exception as e:
                 print(f"Error checking direct cell validation: {str(e)}")
@@ -4468,19 +4466,16 @@ class BDUGroupView(QMainWindow):
                                 # Check if our target coordinates fall within this range
                                 if (coord_range.min_row <= row_num <= coord_range.max_row and
                                     coord_range.min_col <= col_num <= coord_range.max_col):
-                                    print(f"Found validation in range {coord_range} covering {cell_address}")
                                     formula = validation.formula1
                                     if formula:
                                         if formula.startswith('"') and formula.endswith('"'):
                                             formula = formula[1:-1]
                                         options = [val.strip() for val in formula.split(',')]
-                                        print(f"Extracted options from range validation: {options}")
                                         return options
                         except Exception as range_e:
                             print(f"Error processing validation range: {str(range_e)}")
                             continue
             
-            print(f"No validation found for {cell_address}")
             return []
                     
         except Exception as e:
