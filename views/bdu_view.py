@@ -1097,7 +1097,6 @@ class BDUGroupView(QMainWindow):
             # Use the customer-specific Excel file if available
             if hasattr(self, 'excel_path'):
                 set_bdu_path = self.excel_path
-                print(f"Using customer-specific SET_BDU.xlsx: {set_bdu_path}")
             else:
                 # Fall back to default path if customer file isn't set
                 data_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
@@ -1899,7 +1898,7 @@ class BDUGroupView(QMainWindow):
             
             # Periksa apakah file ada
             if not os.path.exists(abs_file_path):
-                print(f"Dokumen Word tidak ditemukan: {abs_file_path}")
+                print(f"Word document not found: {abs_file_path}")
                 return False
                     
             # Dapatkan ekstensi file
@@ -1908,7 +1907,7 @@ class BDUGroupView(QMainWindow):
             
             # Periksa apakah itu dokumen Word
             if ext not in ['.docx', '.doc']:
-                print(f"Bukan dokumen Word: {abs_file_path}")
+                print(f"Not a Word document:: {abs_file_path}")
                 return False
 
             # Simpan path dokumen untuk referensi
@@ -3481,23 +3480,19 @@ class BDUGroupView(QMainWindow):
                 excel_row = index + 1  # Convert to 1-based Excel row
                 excel_col = 2  # Column B
                 cell_address = f"B{excel_row}"
-                
-                print(f"Processing dropdown field: {field_name} at {cell_address}")
-
+            
                 # Untuk field Industry Classification, gunakan data dari mapping
                 if is_industry_field:
                     # Gunakan list industry dari mapping
                     options = list(INDUSTRY_SUBTYPE_MAPPING.keys())
                     industry_dropdown = input_field
                     industry_field_key = field_key
-                    print(f"Using hardcoded industry options: {len(options)} items")
                 # Untuk field Sub Industry Specification
                 elif is_sub_industry_field:
                     sub_industry_dropdown = input_field
                     sub_industry_field_key = field_key
                     # Add placeholder for now, will be populated when industry is selected
                     options = ["-- Select Industry First --"]
-                    print(f"Sub industry field - will be populated dynamically when industry is selected")
                 # Untuk field 1Province
                 elif is_province1_field:
                     options = INDONESIA_PROVINCES
@@ -3505,8 +3500,7 @@ class BDUGroupView(QMainWindow):
                     province1_field_key = field_key
                     input_field.setProperty("dropdown_type", "province")
                     input_field.setProperty("province_number", "1")
-                    print(f"Using hardcoded province options: {len(options)} items")
-                # Untuk field 1City
+                    # Untuk field 1City
                 elif is_city1_field:
                     city1_dropdown = input_field
                     city1_field_key = field_key
@@ -3514,7 +3508,6 @@ class BDUGroupView(QMainWindow):
                     input_field.setProperty("city_number", "1")
                     # Add placeholder for now, will be populated when province is selected
                     options = ["-- Select Province First --"]
-                    print(f"City field - will be populated dynamically when province is selected")
                 # Untuk field 2Province
                 elif is_province2_field:
                     options = INDONESIA_PROVINCES
@@ -3522,7 +3515,6 @@ class BDUGroupView(QMainWindow):
                     province2_field_key = field_key
                     input_field.setProperty("dropdown_type", "province")
                     input_field.setProperty("province_number", "2")
-                    print(f"Using hardcoded province options: {len(options)} items")
                 # Untuk field 2City
                 elif is_city2_field:
                     city2_dropdown = input_field
@@ -3531,11 +3523,7 @@ class BDUGroupView(QMainWindow):
                     input_field.setProperty("city_number", "2")
                     # Add placeholder for now, will be populated when province is selected
                     options = ["-- Select Province First --"]
-                    print(f"City field - will be populated dynamically when province is selected")
                 else:
-                    # Untuk field lain, coba ambil dari data validation
-                    print(f"Trying to get validation options for {field_name} at {cell_address}")
-                    
                     # Try multiple cell addresses in case the calculation is off
                     possible_addresses = [
                         cell_address,  # B{excel_row}
@@ -3548,21 +3536,16 @@ class BDUGroupView(QMainWindow):
                     for addr in possible_addresses:
                         validation_options = self.get_validation_values(self.excel_path, sheet_name, addr)
                         if validation_options:
-                            print(f"Found validation options at {addr}: {validation_options}")
                             break
                     
                     if validation_options:
                         options = validation_options
                     else:
                         # Fallback to old method if data validation not found
-                        print(f"No validation found, trying fallback method for {field_name}")
                         if len(row) > 1 and not pd.isna(row.iloc[1]):
                             options_str = str(row.iloc[1]).strip()
                             if options_str and options_str != "nan":
                                 options = [opt.strip() for opt in options_str.split(',')]
-                                print(f"Found options from cell content: {options}")
-                            else:
-                                print(f"Cell content is empty or invalid: '{options_str}'")
                         
                     # Simpan Process options untuk digunakan bersama
                     if "Process" in field_name and field_name.replace("Process ", "").strip().isdigit():
@@ -3624,13 +3607,11 @@ class BDUGroupView(QMainWindow):
                         elif len(options) > 0:
                             input_field.setCurrentText(options[0])
                     
-                    print(f"Populated dropdown {field_name} with {len(options)} options, default: '{default_value}'")
                 else:
                     # No options found - add placeholder only
                     input_field.addItem("-- No Options Available --")
                     input_field.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
                     input_field.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
-                    print(f"Warning: No options found for dropdown field: {field_name}")
                 
                 # Add tooltips for special fields
                 if field_name == "Seismic Hazard Zone":
@@ -4419,7 +4400,6 @@ class BDUGroupView(QMainWindow):
                         # Check if our cell is in the validation range
                         for coord_range in validation.sqref.ranges:
                             if target_cell.coordinate in str(coord_range):
-                                print(f"Found validation range for {cell_address}: {coord_range}")
                                 formula = validation.formula1
                                 
                                 if formula:
@@ -4428,11 +4408,9 @@ class BDUGroupView(QMainWindow):
                                         # Direct list: "option1,option2,option3"
                                         formula = formula[1:-1]
                                         options = [val.strip() for val in formula.split(',')]
-                                        print(f"Extracted options from quoted formula: {options}")
                                         return options
                                     elif formula.startswith('='):
                                         # Reference to another range
-                                        print(f"Found reference formula: {formula}")
                                         try:
                                             ref_range = formula[1:]  # Remove '='
                                             # Handle sheet references like 'Sheet1!A1:A10'
@@ -4458,14 +4436,12 @@ class BDUGroupView(QMainWindow):
                                                 if ref_cells.value is not None:
                                                     options.append(str(ref_cells.value).strip())
                                             
-                                            print(f"Extracted options from reference {ref_range}: {options}")
                                             return options
                                         except Exception as ref_e:
                                             print(f"Error processing reference formula {formula}: {str(ref_e)}")
                                     else:
                                         # Simple list without quotes
                                         options = [val.strip() for val in formula.split(',')]
-                                        print(f"Extracted options from simple formula: {options}")
                                         return options
             
             # Method 2: Check if cell has direct validation (alternative approach)
@@ -4600,7 +4576,6 @@ class BDUGroupView(QMainWindow):
                                         'options': options,
                                         'cell': cell_address
                                     }
-                                    print(f"Found validation at {cell_address}: {options}")
 
             # Create mapping of field identifiers to their Excel row positions
             field_positions = {}
@@ -4630,7 +4605,6 @@ class BDUGroupView(QMainWindow):
                         'field_id': first_col,
                         'cell_address': f"B{row_idx + 1}"  # Column B
                     }
-                    print(f"Found field: {field_name} at row {row_idx + 1}")
 
             # Create specific widget mapping based on field names and positions
             widget_mapping = {}
@@ -4661,28 +4635,22 @@ class BDUGroupView(QMainWindow):
                 if "Industry Classification" in widget_label:
                     industry_dropdown = widget
                     widget_mapping['Industry Classification'] = widget
-                    print(f"Mapped Industry Classification to widget {key}")
                 elif "Sub Industry" in widget_label:
                     sub_industry_dropdown = widget
                     widget_mapping['Sub Industry Specification'] = widget
-                    print(f"Mapped Sub Industry Specification to widget {key}")
                 elif dropdown_type == "province" and province_number == "1":
                     province1_dropdown = widget
                     widget_mapping['1Province'] = widget
-                    print(f"Mapped 1Province to widget {key}")
                 elif placeholder_type == "city" and city_number == "1":
                     city1_dropdown = widget
                     widget_mapping['1City'] = widget
-                    print(f"Mapped 1City to widget {key}")
                 elif dropdown_type == "province" and province_number == "2":
                     province2_dropdown = widget
                     widget_mapping['2Province'] = widget
-                    print(f"Mapped 2Province to widget {key}")
                 elif placeholder_type == "city" and city_number == "2":
                     city2_dropdown = widget
                     widget_mapping['2City'] = widget
-                    print(f"Mapped 2City to widget {key}")
-
+                
             # Map remaining dropdown widgets based on field positions and validation data
             remaining_widgets = []
             for key, widget in self.data_fields.items():
@@ -4706,7 +4674,6 @@ class BDUGroupView(QMainWindow):
                 
                 if cell_key in validation_data:
                     expected_options = validation_data[cell_key]['options']
-                    print(f"Expected options for {field_name}: {expected_options}")
                 
                 # Find the best matching widget
                 best_widget = None
@@ -4744,10 +4711,7 @@ class BDUGroupView(QMainWindow):
                     widget_mapping[field_name] = best_widget
                     # Remove from remaining widgets
                     remaining_widgets = [(k, w) for k, w in remaining_widgets if k != best_widget_key]
-                    print(f"Mapped {field_name} to widget {best_widget_key} (score: {best_match_score})")
-                else:
-                    print(f"Warning: Could not find widget for field: {field_name}")
-
+                
             # Track changes
             changes_made = 0
             changes_log = []
@@ -4774,7 +4738,6 @@ class BDUGroupView(QMainWindow):
                 
                 changes_made += 1
                 changes_log.append(f"Updated cell B{excel_row} ({field_name}): {old_value} -> {value}")
-                print(f"Updated cell B{excel_row} ({field_name}): {old_value} -> {value}")
 
             # Create cell-to-widget mapping for non-dropdown fields
             cell_to_widget_map = {}
@@ -5009,7 +4972,6 @@ class BDUGroupView(QMainWindow):
                                         'key': key,
                                         'type': 'text'
                                     }
-                                    print(f"Mapped right field {display_name} at {cell_key} to widget {key}")
                                     break
                     
                     elif field_type == 'fd_':
@@ -5029,8 +4991,7 @@ class BDUGroupView(QMainWindow):
                         validation_key = f"row_{row_idx}_col_{target_col}"
                         if validation_key in validation_data:
                             options = validation_data[validation_key]['options']
-                            print(f"Found validation options for right dropdown {field_name} at {validation_key}: {options}")
-                        
+                           
                         # Find a QComboBox that isn't already mapped
                         best_widget = None
                         best_widget_key = None
@@ -5067,7 +5028,6 @@ class BDUGroupView(QMainWindow):
                                     if exact_matches == len(options):
                                         match_score += 1
                                         
-                                    print(f"Widget {key} match score for {field_name}: {match_score} (exact matches: {exact_matches}/{len(options)})")
                                 else:
                                     # If no validation options found, use any available dropdown
                                     match_score = 0.5
@@ -5087,10 +5047,7 @@ class BDUGroupView(QMainWindow):
                                 'options': options,
                                 'display_name': display_name
                             }
-                            print(f"Mapped right dropdown {display_name} at {cell_key} to widget {best_widget_key} (score: {best_match_score})")
-                        else:
-                            print(f"Warning: Could not find suitable widget for right dropdown {field_name}")
-                    
+                        
                     elif field_type == 'fm_':
                         # Multiple field (e.g., Name and Phone/Email)
                         found_base_key = None
@@ -5138,7 +5095,6 @@ class BDUGroupView(QMainWindow):
                                         }
                                         
                                         found_base_key = base_key
-                                        print(f"Mapped right multiple field {display_name} at {cell_key_0},{cell_key_1} to widgets {key_0},{key_1}")
                                         break
 
             # Update cells for ALL fields including right dropdown fields
@@ -5168,7 +5124,6 @@ class BDUGroupView(QMainWindow):
                     # Skip placeholder values
                     if value == "-- Select Value --":
                         value = ""
-                    print(f"Processing right dropdown at {col_letter}{excel_row}: {value}")
                 elif widget_type == 'checkbox' and isinstance(widget, QCheckBox):
                     value = 'ü' if widget.isChecked() else ''
                     target_cell = sheet.cell(row=excel_row, column=excel_col)
@@ -5214,7 +5169,6 @@ class BDUGroupView(QMainWindow):
                 
                 changes_made += 1
                 changes_log.append(f"Updated cell {col_letter}{excel_row} ({display_name}): {old_value} -> {value}")
-                print(f"Updated cell {col_letter}{excel_row} ({display_name}): {old_value} -> {value}")
 
             # Handle tdi_ fields with placeholders (existing code)
             placeholder_widgets = {}
@@ -5280,7 +5234,6 @@ class BDUGroupView(QMainWindow):
                                 'key': key
                             }
                             
-                            print(f"Matched placeholder {placeholder} in row {row_idx}, col {col_idx} to widget {key} with value: {value}")
                             break
 
             # Apply placeholder replacements
@@ -5325,13 +5278,10 @@ class BDUGroupView(QMainWindow):
                 cell_address = f"{col_letter}{replacement['row']}"
                 changes_made += 1
                 changes_log.append(f"Updated placeholder cell {cell_address}: {old_value} -> {new_value}")
-                print(f"Updated placeholder cell {cell_address}: {old_value} -> {new_value}")
                             
             # Save the workbook
-            print("Attempting to save workbook...")
             try:
                 wb.save(self.excel_path)
-                print(f"Workbook saved successfully to: {self.excel_path}")
                 
                 # Show success message
                 QMessageBox.information(
@@ -5357,8 +5307,6 @@ class BDUGroupView(QMainWindow):
                 # Reload the data to reflect changes - just reload the current tab
                 current_tab_index = self.tab_widget.currentIndex()
                 current_tab_text = self.tab_widget.tabText(current_tab_index)
-                
-                print(f"Reloading data for tab: {current_tab_text}")
                 
                 # Only reload the data for the current sheet to avoid freezing
                 if sheet_name in self.sheet_tabs:
@@ -5390,9 +5338,7 @@ class BDUGroupView(QMainWindow):
                                     QApplication.processEvents()
                                     scroll_area.verticalScrollBar().setValue(scroll_pos)
                                     
-                                    print(f"Successfully reloaded tab: {current_tab_text}")
                     except Exception as e:
-                        print(f"Error reloading tab {current_tab_text}: {str(e)}")
                         import traceback
                         traceback.print_exc()
                 
