@@ -686,7 +686,7 @@ class BDUGroupView(QMainWindow):
                 background-color: #2980B9;
             }}
         """)
-        refresh_btn.clicked.connect(self.load_excel_data)
+        refresh_btn.clicked.connect(self.refresh_with_calculation)
         
         title_layout.addWidget(refresh_btn)
         
@@ -865,6 +865,125 @@ class BDUGroupView(QMainWindow):
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return os.path.join(project_root, relative_path)
     
+    def force_excel_calculation(self, excel_path):
+        """Force Excel to recalculate all formulas before reading data"""
+        try:
+            import xlwings as xw
+            import time
+            
+            # Buka Excel dengan xlwings (tidak visible)
+            app = xw.App(visible=False)
+            app.display_alerts = False
+            
+            # Buka workbook
+            wb = xw.Book(excel_path)
+            
+            # Paksa kalkulasi semua formula
+            wb.api.Application.CalculateFullRebuild()
+            wb.api.Application.Calculate()
+            
+            # Tunggu sebentar untuk memastikan kalkulasi selesai
+            time.sleep(2)
+            
+            # Simpan workbook
+            wb.save()
+            
+            # Tutup
+            wb.close()
+            app.quit()
+            
+            return True
+            
+        except ImportError:
+            # Jika xlwings tidak tersedia, gunakan metode alternatif dengan VBScript
+            return self.force_calculation_vbs(excel_path)
+        except Exception as e:
+            print(f"Error forcing Excel calculation: {str(e)}")
+            return False
+
+    def force_calculation_vbs(self, excel_path):
+        """Alternative method using VBScript to force calculation"""
+        try:
+            import tempfile
+            import subprocess
+            import sys
+            
+            # Buat VBS script untuk kalkulasi
+            vbs_file = tempfile.NamedTemporaryFile(delete=False, suffix='.vbs')
+            vbs_path = vbs_file.name
+            
+            vbs_script = f'''
+            Set objExcel = CreateObject("Excel.Application")
+            objExcel.DisplayAlerts = False
+            objExcel.Visible = False
+            
+            ' Buka workbook
+            Set objWorkbook = objExcel.Workbooks.Open("{excel_path}")
+            
+            ' Paksa kalkulasi
+            objExcel.CalculateFullRebuild
+            objWorkbook.Application.Calculate
+            
+            ' Tunggu sebentar
+            WScript.Sleep 2000
+            
+            ' Simpan dan tutup
+            objWorkbook.Save
+            objWorkbook.Close
+            objExcel.Quit
+            
+            Set objWorkbook = Nothing
+            Set objExcel = Nothing
+            '''
+            
+            vbs_file.write(vbs_script.encode('utf-8'))
+            vbs_file.close()
+            
+            # Jalankan VBS script
+            if sys.platform == 'win32':
+                subprocess.call(['cscript.exe', '//nologo', vbs_path])
+            
+            # Hapus file VBS
+            try:
+                import os
+                os.unlink(vbs_path)
+            except:
+                pass
+                
+            return True
+            
+        except Exception as e:
+            print(f"Error with VBS calculation: {str(e)}")
+            return False
+    
+    def refresh_with_calculation(self):
+        """Refresh data with forced Excel calculation"""
+        try:
+            # Show status
+            self.statusBar().showMessage("Forcing Excel calculation and refreshing data...")
+            QApplication.processEvents()
+            
+            # Force calculation
+            success = self.force_excel_calculation(self.excel_path)
+            
+            if success:
+                # Then load data normally
+                self.load_excel_data()
+                self.statusBar().showMessage("Data refreshed with updated calculations", 3000)
+            else:
+                # Load data anyway but show warning
+                self.load_excel_data()
+                QMessageBox.warning(
+                    self, 
+                    "Calculation Warning", 
+                    "Could not force Excel calculation. Some formula values may be outdated. "
+                    "Try opening the file in Excel and pressing Ctrl+S, then refresh again."
+                )
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error during refresh: {str(e)}")
+            self.statusBar().clearMessage()
+    
     def load_excel_data(self):
         """Load data from SET_BDU.xlsx"""
         try:
@@ -872,6 +991,14 @@ class BDUGroupView(QMainWindow):
                 self.loading_label.setText(f"Error: File SET_BDU.xlsx not found in the data directory.")
                 self.loading_label.setStyleSheet("color: #E74C3C; margin: 20px;")
                 return
+            
+            # TAMBAHAN: Paksa kalkulasi Excel sebelum membaca data
+            self.statusBar().showMessage("Calculating Excel formulas...")
+            QApplication.processEvents()
+            
+            calculation_success = self.force_excel_calculation(self.excel_path)
+            if not calculation_success:
+                print("Warning: Could not force Excel calculation. Some formulas may show outdated values.")
 
             # Clear existing tabs
             self.tab_widget.clear()
@@ -5277,6 +5404,13 @@ class BDUGroupView(QMainWindow):
             # Save the workbook
             try:
                 wb.save(self.excel_path)
+                
+                # TAMBAHAN: Force calculation setelah save
+                self.statusBar().showMessage("Updating calculations...")
+                QApplication.processEvents()
+                
+                # Paksa kalkulasi setelah save
+                self.force_excel_calculation(self.excel_path)
                 
                 # Show success message
                 QMessageBox.information(
