@@ -13,6 +13,7 @@ from PyQt5.QtCore import Qt, QSize, pyqtSignal, QPoint, QTimer
 # Import local modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import APP_NAME, APP_LOGO, DEPARTMENTS, PRIMARY_COLOR, SECONDARY_COLOR, BG_COLOR
+from views.loading_screen import LoadingScreen, QuickLoadingDialog, show_loading_dialog
 
 import pandas as pd
 
@@ -511,28 +512,72 @@ class CustomerSearchView(QMainWindow):
             )
             
             if reply == QMessageBox.Yes:
-                # Set as selected customer and enable continue
-                self.selected_customer = new_customer
-                self.continue_btn.setEnabled(True)
+                # Show loading screen for registration process
+                def register_customer_process(progress_callback=None):
+                    try:
+                        if progress_callback:
+                            progress_callback(20, f"Creating customer folder for {new_customer}...")
+                        
+                        # Create customer folder in advance
+                        self.get_customer_folder_path(new_customer)
+                        
+                        if progress_callback:
+                            progress_callback(60, "Adding customer to database...")
+                        
+                        # Add new customer to the database if it exists
+                        self.add_customer_to_database(new_customer)
+                        
+                        if progress_callback:
+                            progress_callback(80, "Updating customer list...")
+                        
+                        # Add new customer to temporary list
+                        self.customers_data.append(new_customer)
+                        self.filtered_customers.append(new_customer)
+                        
+                        if progress_callback:
+                            progress_callback(100, "Customer registration completed!")
+                        
+                        return True
+                    except Exception as e:
+                        if progress_callback:
+                            progress_callback(100, f"Error: {str(e)}")
+                        return False
                 
-                # Add new customer to temporary list (not persisted yet)
-                self.customers_data.append(new_customer)
-                self.filtered_customers.append(new_customer)
-                self.update_results_list()
+                # Show loading screen
+                loading_screen = LoadingScreen(
+                    parent=self,
+                    title="Registering Customer",
+                    message=f"Setting up new customer: {new_customer}"
+                )
+                loading_screen.show()
+                loading_screen.start_loading(register_customer_process)
                 
-                # Find and select the new customer in the list
-                for i in range(self.results_list.count()):
-                    if self.results_list.item(i).text() == new_customer:
-                        self.results_list.setCurrentRow(i)
-                        break
+                # Connect completion handler
+                def on_registration_complete(success, message):
+                    if success:
+                        # Set as selected customer and enable continue
+                        self.selected_customer = new_customer
+                        self.continue_btn.setEnabled(True)
+                        
+                        self.update_results_list()
+                        
+                        # Find and select the new customer in the list
+                        for i in range(self.results_list.count()):
+                            if self.results_list.item(i).text() == new_customer:
+                                self.results_list.setCurrentRow(i)
+                                break
+                        
+                        self.statusBar().showMessage(f"New customer '{new_customer}' registered and added to database")
+                        
+                        # Show success message
+                        QTimer.singleShot(500, lambda: QMessageBox.information(
+                            self, "Registration Complete", 
+                            f"Customer '{new_customer}' has been successfully registered!"
+                        ))
+                    else:
+                        QMessageBox.critical(self, "Registration Failed", f"Failed to register customer: {message}")
                 
-                # Create customer folder in advance
-                self.get_customer_folder_path(new_customer)
-                
-                # Add new customer to the database if it exists
-                self.add_customer_to_database(new_customer)
-                
-                self.statusBar().showMessage(f"New customer '{new_customer}' registered and added to database")
+                loading_screen.worker.task_completed.connect(on_registration_complete)
     
     def add_customer_to_database(self, customer_name):
         """Add new customer to database_customer.xlsx"""
@@ -598,7 +643,7 @@ class CustomerSearchView(QMainWindow):
         file_path = self.get_customer_bdu_file_path(customer_name)
         return os.path.exists(file_path)
     
-    def create_customer_bdu_file(self, customer_name):
+    def create_customer_bdu_file(self, customer_name, progress_callback=None):
         """Create a copy of SET_BDU.xlsx for the customer if it doesn't exist"""
         # Get paths
         customer_file_path = self.get_customer_bdu_file_path(customer_name)
@@ -612,26 +657,23 @@ class CustomerSearchView(QMainWindow):
             print(f"Customer BDU file already exists: {customer_file_path}")
             return customer_file_path
         
-        # Create progress dialog
-        progress = QProgressDialog("Creating customer file...", None, 0, 100, self)
-        progress.setWindowTitle("Creating Customer File")
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setValue(10)
-        QApplication.processEvents()
-        
         try:
+            if progress_callback:
+                progress_callback(10, "Loading customer data from database...")
+            
             # First, get all customer data from the database
             customer_data = self.get_customer_data_from_database(customer_name)
             if not customer_data:
                 print(f"Warning: Could not find detailed data for customer '{customer_name}' in database")
             
-            progress.setValue(30)
-            QApplication.processEvents()
+            if progress_callback:
+                progress_callback(30, "Copying template file...")
             
             # Copy the template file to the customer folder
             shutil.copy2(self.template_path, customer_file_path)
-            progress.setValue(50)
-            QApplication.processEvents()
+            
+            if progress_callback:
+                progress_callback(50, "Updating customer information...")
             
             # Update customer information in the Excel file
             try:
@@ -642,6 +684,9 @@ class CustomerSearchView(QMainWindow):
                 sheet_name = 'DIP_Customer Information'
                 if sheet_name in workbook.sheetnames:
                     sheet = workbook[sheet_name]
+                    
+                    if progress_callback:
+                        progress_callback(70, "Mapping customer data to Excel cells...")
                     
                     # Update customer data in specific cells
                     data_mapping = {
@@ -661,6 +706,9 @@ class CustomerSearchView(QMainWindow):
                         if value:  # Only update if we have a value
                             sheet[cell] = value
                             print(f"Updated {sheet_name}.{cell} with: {value}")
+                
+                if progress_callback:
+                    progress_callback(85, "Updating additional sheets...")
                 
                 # Also try to update customer name in various other sheets where it might be expected
                 sheets_to_check = ['DATA_GENERAL', 'DATA_CUSTOMER', 'DIP_General Information']
@@ -683,10 +731,14 @@ class CustomerSearchView(QMainWindow):
                                         sheet.cell(row=row, column=next_col).value = customer_name
                                         print(f"Updated customer name in sheet {check_sheet_name} at cell {chr(64+next_col)}{row}")
                 
+                if progress_callback:
+                    progress_callback(95, "Saving customer file...")
+                
                 # Save the workbook
                 workbook.save(customer_file_path)
-                progress.setValue(90)
-                QApplication.processEvents()
+                
+                if progress_callback:
+                    progress_callback(100, "Customer file created successfully!")
                 
             except Exception as e:
                 print(f"Error updating customer data in Excel: {str(e)}")
@@ -694,15 +746,11 @@ class CustomerSearchView(QMainWindow):
                 traceback.print_exc()
                 # Continue anyway - the file was copied
             
-            progress.setValue(100)
             print(f"Created customer BDU file: {customer_file_path}")
             return customer_file_path
             
         except Exception as e:
-            progress.close()
             raise Exception(f"Error creating customer BDU file: {str(e)}")
-        finally:
-            progress.close()
 
     def get_customer_data_from_database(self, customer_name):
         """Retrieve all customer data from database_customer.xlsx"""
@@ -748,36 +796,55 @@ class CustomerSearchView(QMainWindow):
             QMessageBox.warning(self, "Selection Required", "Please select a customer to continue")
             return
         
-        try:
-            # Check if template file exists
-            if not os.path.exists(self.template_path):
-                QMessageBox.critical(
-                    self, 
-                    "Error", 
-                    f"Template file not found: {self.template_path}\n\nPlease ensure SET_BDU.xlsx exists in the data folder."
-                )
-                return
-            
-            # Check if customer BDU file exists, create if it doesn't
-            if not self.check_customer_bdu_file_exists(self.selected_customer):
-                # Show message that we're creating a new file
-                QMessageBox.information(
-                    self,
-                    "Creating New File",
-                    f"Creating a new BDU file for customer: {self.selected_customer}"
-                )
+        def prepare_bdu_workspace(progress_callback=None):
+            try:
+                if progress_callback:
+                    progress_callback(10, "Checking template file...")
                 
-                # Create the file
-                self.create_customer_bdu_file(self.selected_customer)
-            
-            # Signal to open BDU view with selected customer
-            self.open_bdu_view.emit(self.selected_customer)
-            self.close()
+                # Check if template file exists
+                if not os.path.exists(self.template_path):
+                    raise Exception(f"Template file not found: {self.template_path}\n\nPlease ensure SET_BDU.xlsx exists in the data folder.")
+                
+                if progress_callback:
+                    progress_callback(30, f"Checking customer file for {self.selected_customer}...")
+                
+                # Check if customer BDU file exists, create if it doesn't
+                if not self.check_customer_bdu_file_exists(self.selected_customer):
+                    if progress_callback:
+                        progress_callback(40, f"Creating new BDU file for {self.selected_customer}...")
+                    
+                    # Create the file with progress updates
+                    self.create_customer_bdu_file(self.selected_customer, progress_callback)
+                else:
+                    if progress_callback:
+                        progress_callback(80, f"Found existing BDU file for {self.selected_customer}")
+                
+                if progress_callback:
+                    progress_callback(100, "BDU workspace ready!")
+                
+                return True
+            except Exception as e:
+                if progress_callback:
+                    progress_callback(100, f"Error: {str(e)}")
+                return False
         
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"An error occurred while preparing the customer file:\n\n{str(e)}"
-            )
-            print(f"Error in continue_to_bdu: {str(e)}")
+        # Show loading screen
+        loading_screen = LoadingScreen(
+            parent=self,
+            title="Preparing BDU Workspace",
+            message=f"Setting up BDU workspace for {self.selected_customer}..."
+        )
+        loading_screen.show()
+        loading_screen.start_loading(prepare_bdu_workspace)
+        
+        # Connect completion handler
+        def on_preparation_complete(success, message):
+            if success:
+                # Signal to open BDU view with selected customer
+                QTimer.singleShot(300, lambda: self.open_bdu_view.emit(self.selected_customer))
+                self.close()
+            else:
+                error_msg = message if "Error:" in message else f"An error occurred while preparing the customer file:\n\n{message}"
+                QMessageBox.critical(self, "Error", error_msg)
+        
+        loading_screen.worker.task_completed.connect(on_preparation_complete)

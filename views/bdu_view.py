@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QHeaderView, QMessageBox, QFileDialog, QDateEdit, QCheckBox)
 from PyQt5.QtGui import QPixmap, QIcon, QFont, QColor, QPalette, QCursor, QImage
 from PyQt5.QtCore import Qt, QSize, pyqtSignal, QPoint, QDate, QThread
+from views.loading_screen import LoadingScreen, QuickLoadingDialog, show_loading_dialog
 import tempfile
 import shutil
 import subprocess
@@ -686,7 +687,7 @@ class BDUGroupView(QMainWindow):
                 background-color: #2980B9;
             }}
         """)
-        refresh_btn.clicked.connect(self.load_excel_data)
+        refresh_btn.clicked.connect(self.refresh_with_calculation)
         
         title_layout.addWidget(refresh_btn)
         
@@ -835,15 +836,27 @@ class BDUGroupView(QMainWindow):
         # Bersihkan dropdown anak
         child_dropdown.clear()
         
-        # Simpan nilai sub-industry saat ini agar bisa digunakan nanti
-        current_sub_industry = getattr(child_dropdown, "_last_value", None)
+        # Simpan nilai saat ini agar bisa digunakan nanti
+        current_value = getattr(child_dropdown, "_last_value", None)
         
         # Isi dengan nilai-nilai yang sesuai berdasarkan pilihan pada dropdown utama
         if parent_value in INDUSTRY_SUBTYPE_MAPPING:
+            # Ini adalah dropdown industry
+            child_dropdown.addItem("-- Select Value --")
             child_dropdown.addItems(INDUSTRY_SUBTYPE_MAPPING[parent_value])
+            child_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+            child_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+        elif parent_value in INDONESIA_CITIES:
+            # Ini adalah dropdown province
+            child_dropdown.addItem("-- Select Value --")
+            child_dropdown.addItems(INDONESIA_CITIES[parent_value])
+            child_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+            child_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
         else:
-            # Jika tidak ada mapping, tambahkan placeholder atau biarkan kosong
-            child_dropdown.addItem("-- Select Industry First --")
+            # Default jika tidak ada mapping
+            child_dropdown.addItem("-- Select Value --")
+            child_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+            child_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
             
     def get_absolute_path(self, relative_path):
         """Konversi path relatif menjadi absolut relatif terhadap root project"""
@@ -853,697 +866,635 @@ class BDUGroupView(QMainWindow):
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return os.path.join(project_root, relative_path)
     
-    def load_excel_data(self):
-        """Load data from SET_BDU.xlsx"""
+    def force_excel_calculation(self, excel_path, progress_callback=None):
+        """Force Excel to recalculate all formulas before reading data with progress updates"""
         try:
-            if not os.path.exists(self.excel_path):
-                self.loading_label.setText(f"Error: File SET_BDU.xlsx not found in the data directory.")
-                self.loading_label.setStyleSheet("color: #E74C3C; margin: 20px;")
-                return
-
-            # Clear existing tabs
-            self.tab_widget.clear()
-            self.sheet_tabs = {}
-            self.data_fields = {}
-
-            # Hide loading message when tabs exist
-            self.loading_label.setVisible(True)
-
-            # Read Excel file
-            xl = pd.ExcelFile(self.excel_path)
-            sheet_names = xl.sheet_names
-
-            # Variabel untuk melacak posisi proposal sheet dalam daftar
-            proposal_sheet_index = -1
-            for i, sheet_name in enumerate(sheet_names):
-                if sheet_name == "DATA_PROPOSAL":
-                    proposal_sheet_index = i
-                    break
-
-            # Filter sheets to only include those starting with DATA_ or DIP_
-            filtered_sheets = [sheet for sheet in sheet_names if sheet.startswith("DATA_") or sheet.startswith("DIP_")]
-
-            if len(filtered_sheets) == 0:
-                self.loading_label.setText("No DATA_ or DIP_ sheets found in SET_BDU.xlsx.")
-                return
-
-            # Hide loading label as we have data
-            self.loading_label.setVisible(False)
-
-            # Create a tab for each filtered sheet
-            for sheet_name in filtered_sheets:
-                # Get display name (remove DIP_ or DATA_ prefix)
-                display_name = sheet_name
-                if sheet_name.startswith("DIP_"):
-                    display_name = sheet_name[4:]  # Remove "DIP_"
-                elif sheet_name.startswith("DATA_"):
-                    display_name = sheet_name[5:]  # Remove "DATA_"
-
-                try:
-                    df = pd.read_excel(self.excel_path, sheet_name=sheet_name, header=None)
-                    
-                    # Khusus untuk DATA_PROPOSAL
-                    if sheet_name == "DATA_PROPOSAL":
-                        # Check apakah cell A1 ada dan berisi file path
-                        file_exists = False
-                        relative_word_file_path = ""
-                        
-                        if not df.empty and not pd.isna(df.iloc[0, 0]):
-                            relative_word_file_path = str(df.iloc[0, 0]).strip()
-                            # Konversi ke path absolut untuk pengecekan file
-                            absolute_word_file_path = self.get_absolute_path(relative_word_file_path)
-                            file_exists = os.path.exists(absolute_word_file_path)
-                        
-                        # Buat tab PROPOSAL dengan tampilan yang sesuai
-                        scroll_area = QScrollArea()
-                        scroll_area.setWidgetResizable(True)
-                        
-                        # Buat widget untuk proposal
-                        proposal_widget = QWidget()
-                        proposal_layout = QVBoxLayout(proposal_widget)
-                        proposal_layout.setContentsMargins(10, 10, 10, 0)
-                        proposal_layout.setSpacing(0)
-                        
-                        # Jika file ada, langsung proses dokumen
-                        if file_exists:
-                            # Process the Word document - simpan path relatif untuk referensi, tapi gunakan path absolut untuk proses
-                            self.proposal_relative_path = relative_word_file_path
-                            if self.process_proposal_document(absolute_word_file_path):
-                                # Add the proposal document widget
-                                if hasattr(self, 'proposal_document_widget'):
-                                    proposal_layout.addWidget(self.proposal_document_widget)
-                        else:
-                            # Jika file TIDAK ada, tampilkan header dengan icon dan tombol
-                            # Container untuk header file yang tidak ada
-                            top_container = QWidget()
-                            top_layout = QHBoxLayout(top_container)
-                            top_layout.setContentsMargins(0, 0, 0, 0)
-                            
-                            # Panel kiri untuk ikon dan label
-                            left_panel = QWidget()
-                            left_panel.setMaximumWidth(300)
-                            left_layout = QHBoxLayout(left_panel)
-                            left_layout.setContentsMargins(0, 0, 0, 0)
-                            left_layout.setSpacing(5)
-                            
-                            # Ikon file
-                            file_icon = QLabel("📄")
-                            file_icon.setFont(QFont("Segoe UI", 14))
-                            file_icon.setStyleSheet("color: #3498DB; background-color: transparent;")
-                            left_layout.addWidget(file_icon)
-                            
-                            # Label status proposal
-                            file_label = QLabel("Proposal Not Generated")
-                            file_label.setFont(QFont("Segoe UI", 11))
-                            file_label.setStyleSheet("color: #333; background-color: transparent;")
-                            left_layout.addWidget(file_label)
-                            left_layout.addStretch()
-                            
-                            # Panel kanan untuk tombol
-                            right_panel = QWidget()
-                            right_layout = QHBoxLayout(right_panel)
-                            right_layout.setContentsMargins(0, 0, 0, 0)
-                            right_layout.setAlignment(Qt.AlignRight | Qt.AlignTop)
-                            
-                            # Tambahkan tombol Run Projection
-                            run_projection_btn = QPushButton("Run Projection")
-                            run_projection_btn.setFont(QFont("Segoe UI", 10))
-                            run_projection_btn.setCursor(Qt.PointingHandCursor)
-                            run_projection_btn.setStyleSheet(f"""
-                                QPushButton {{
-                                    background-color: #3498db;
-                                    color: white;
-                                    border: none;
-                                    border-radius: 4px;
-                                    padding: 5px 10px;
-                                    margin-right: 5px;
-                                }}
-                                QPushButton:hover {{
-                                    background-color: #2980b9;
-                                }}
-                            """)
-                            # Connect to function if needed
-                            run_projection_btn.clicked.connect(self.run_projection)
-                            right_layout.addWidget(run_projection_btn)
-                            
-                            # Tambahkan tombol Generate Proposal
-                            generate_btn = QPushButton("Generate Proposal")
-                            generate_btn.setFont(QFont("Segoe UI", 10))
-                            generate_btn.setCursor(Qt.PointingHandCursor)
-                            generate_btn.setStyleSheet(f"""
-                                QPushButton {{
-                                    background-color: #27ae60;
-                                    color: white;
-                                    border: none;
-                                    border-radius: 4px;
-                                    padding: 5px 10px;
-                                }}
-                                QPushButton:hover {{
-                                    background-color: #2ecc71;
-                                }}
-                            """)
-                            generate_btn.clicked.connect(self.run_generate_proposal)
-                            right_layout.addWidget(generate_btn)
-                            
-                            # Menyusun panel kiri dan kanan
-                            top_layout.addWidget(left_panel)
-                            top_layout.addWidget(right_panel)
-                            
-                            # Tambahkan container utama ke layout proposal
-                            proposal_layout.addWidget(top_container)
-                            
-                            # Tambahkan instruksi yang singkat
-                            info_label = QLabel("Click 'Generate Proposal' button to create a new proposal document.")
-                            info_label.setAlignment(Qt.AlignCenter)
-                            info_label.setFont(QFont("Segoe UI", 10))
-                            info_label.setStyleSheet("color: #666;")
-                            info_label.setMaximumHeight(20)
-                            proposal_layout.addWidget(info_label)
-                            
-                            # Tambahkan spacer
-                            proposal_layout.addStretch(1)
-                        
-                        scroll_area.setWidget(proposal_widget)
-                        self.tab_widget.addTab(scroll_area, display_name)
-                        self.sheet_tabs[sheet_name] = proposal_widget
-                    else:
-                        # Regular processing for other sheets
-                        scroll_area = QScrollArea()
-                        scroll_area.setWidgetResizable(True)
-                        
-                        sheet_widget = QWidget()
-                        sheet_layout = QVBoxLayout(sheet_widget)
-                        sheet_layout.setContentsMargins(15, 15, 15, 15)
-                        
-                        # Process the sheet data
-                        self.process_sheet_data(df, sheet_name, sheet_layout)
-                        
-                        scroll_area.setWidget(sheet_widget)
-                        self.tab_widget.addTab(scroll_area, display_name)
-                        self.sheet_tabs[sheet_name] = sheet_widget
-                        
-                except Exception as e:
-                    print(f"Error processing sheet {sheet_name}: {str(e)}")
-                    # Create an error tab for this sheet
-                    error_widget = QWidget()
-                    error_layout = QVBoxLayout(error_widget)
-                    
-                    error_label = QLabel(f"Error loading {sheet_name}: {str(e)}")
-                    error_label.setStyleSheet("color: #E74C3C;")
-                    error_layout.addWidget(error_label)
-                    
-                    self.tab_widget.addTab(error_widget, display_name)
-                    
-            # Setelah selesai memuat semua sheet dan tab, tambahkan kode untuk menyimpan nilai yang saat ini dipilih
-            for sheet_name, sheet_widget in self.sheet_tabs.items():
-                # Cari dropdown Sub Industry
-                for key, widget in self.data_fields.items():
-                    if isinstance(widget, QComboBox) and key.startswith(sheet_name):
-                        # Simpan nilai saat ini ke dalam property widget
-                        widget._last_value = widget.currentText()
+            import xlwings as xw
+            import time
             
-            # Hapus pesan loading status bar  
-            self.statusBar().clearMessage()
+            if progress_callback:
+                progress_callback(10, "Starting Excel application...")
+            
+            # Buka Excel dengan xlwings (tidak visible)
+            app = xw.App(visible=False)
+            app.display_alerts = False
+            
+            if progress_callback:
+                progress_callback(30, "Opening workbook...")
+            
+            # Buka workbook
+            wb = xw.Book(excel_path)
+            
+            if progress_callback:
+                progress_callback(50, "Forcing formula calculation...")
+            
+            # Paksa kalkulasi semua formula
+            wb.api.Application.CalculateFullRebuild()
+            wb.api.Application.Calculate()
+            
+            if progress_callback:
+                progress_callback(70, "Waiting for calculation to complete...")
+            
+            # Tunggu sebentar untuk memastikan kalkulasi selesai
+            time.sleep(2)
+            
+            if progress_callback:
+                progress_callback(90, "Saving workbook...")
+            
+            # Simpan workbook
+            wb.save()
+            
+            if progress_callback:
+                progress_callback(100, "Calculation completed!")
+            
+            # Tutup
+            wb.close()
+            app.quit()
+            
+            return True
+            
+        except ImportError:
+            # Jika xlwings tidak tersedia, gunakan metode alternatif dengan VBScript
+            return self.force_calculation_vbs(excel_path, progress_callback)
+        except Exception as e:
+            print(f"Error forcing Excel calculation: {str(e)}")
+            if progress_callback:
+                progress_callback(100, f"Error: {str(e)}")
+            return False
+
+    def force_calculation_vbs(self, excel_path, progress_callback=None):
+        """Alternative method using VBScript to force calculation with progress"""
+        try:
+            import tempfile
+            import subprocess
+            import sys
+            
+            if progress_callback:
+                progress_callback(20, "Creating VBScript for calculation...")
+            
+            # Buat VBS script untuk kalkulasi
+            vbs_file = tempfile.NamedTemporaryFile(delete=False, suffix='.vbs')
+            vbs_path = vbs_file.name
+            
+            vbs_script = f'''
+            Set objExcel = CreateObject("Excel.Application")
+            objExcel.DisplayAlerts = False
+            objExcel.Visible = False
+            
+            ' Buka workbook
+            Set objWorkbook = objExcel.Workbooks.Open("{excel_path}")
+            
+            ' Paksa kalkulasi
+            objExcel.CalculateFullRebuild
+            objWorkbook.Application.Calculate
+            
+            ' Tunggu sebentar
+            WScript.Sleep 2000
+            
+            ' Simpan dan tutup
+            objWorkbook.Save
+            objWorkbook.Close
+            objExcel.Quit
+            
+            Set objWorkbook = Nothing
+            Set objExcel = Nothing
+            '''
+            
+            vbs_file.write(vbs_script.encode('utf-8'))
+            vbs_file.close()
+            
+            if progress_callback:
+                progress_callback(50, "Running Excel calculation script...")
+            
+            # Jalankan VBS script
+            if sys.platform == 'win32':
+                subprocess.call(['cscript.exe', '//nologo', vbs_path])
+            
+            if progress_callback:
+                progress_callback(90, "Cleaning up temporary files...")
+            
+            # Hapus file VBS
+            try:
+                import os
+                os.unlink(vbs_path)
+            except:
+                pass
+            
+            if progress_callback:
+                progress_callback(100, "Calculation completed via VBScript!")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error with VBS calculation: {str(e)}")
+            if progress_callback:
+                progress_callback(100, f"Error: {str(e)}")
+            return False
+
+    # Modifikasi method refresh_with_calculation
+    def refresh_with_calculation(self):
+        """Refresh data with forced Excel calculation using loading screen"""
+        
+        def refresh_process(progress_callback=None):
+            try:
+                if progress_callback:
+                    progress_callback(10, "Initializing calculation process...")
                 
+                # Force calculation
+                success = self.force_excel_calculation(self.excel_path, progress_callback)
+                
+                if success:
+                    if progress_callback:
+                        progress_callback(80, "Reloading Excel data...")
+                    
+                    # Then load data normally
+                    self.load_excel_data()
+                    
+                    if progress_callback:
+                        progress_callback(100, "Data refreshed successfully!")
+                    
+                    return "Data refreshed with updated calculations"
+                else:
+                    if progress_callback:
+                        progress_callback(100, "Calculation warning - loading data anyway...")
+                    
+                    # Load data anyway but show warning
+                    self.load_excel_data()
+                    return "Could not force Excel calculation. Some formula values may be outdated."
+                    
+            except Exception as e:
+                if progress_callback:
+                    progress_callback(100, f"Error: {str(e)}")
+                return f"Error during refresh: {str(e)}"
+        
+        # Show loading screen
+        loading_screen = LoadingScreen(
+            parent=self,
+            title="Refreshing Data",
+            message="Updating calculations and reloading data..."
+        )
+        loading_screen.show()
+        loading_screen.start_loading(refresh_process)
+        
+        # Connect completion handler
+        def on_refresh_complete(success, message):
+            if success:
+                self.statusBar().showMessage("Data refreshed successfully", 3000)
+                if "warning" in message.lower():
+                    QMessageBox.warning(
+                        self, 
+                        "Calculation Warning", 
+                        "Could not force Excel calculation. Some formula values may be outdated. "
+                        "Try opening the file in Excel and pressing Ctrl+S, then refresh again."
+                    )
+            else:
+                QMessageBox.critical(self, "Error", f"Error during refresh: {message}")
+                self.statusBar().clearMessage()
+        
+        loading_screen.worker.task_completed.connect(on_refresh_complete)
+    
+    def load_excel_data(self):
+        """Load data from SET_BDU.xlsx with loading screen for large files"""
+        
+        def load_data_process(progress_callback=None):
+            try:
+                if progress_callback:
+                    progress_callback(5, "Checking Excel file...")
+                
+                if not os.path.exists(self.excel_path):
+                    return f"Error: File SET_BDU.xlsx not found in the data directory."
+                
+                if progress_callback:
+                    progress_callback(15, "Forcing Excel calculations...")
+                
+                # Force calculation before reading
+                calculation_success = self.force_excel_calculation(self.excel_path, 
+                    lambda pct, msg: progress_callback(15 + (pct * 0.2), f"Calculating: {msg}") if progress_callback else None)
+                
+                if not calculation_success:
+                    print("Warning: Could not force Excel calculation. Some formulas may show outdated values.")
+                
+                if progress_callback:
+                    progress_callback(35, "Reading Excel file structure...")
+                
+                # Clear existing tabs
+                self.tab_widget.clear()
+                self.sheet_tabs = {}
+                self.data_fields = {}
+                
+                # Hide loading message when tabs exist
+                self.loading_label.setVisible(True)
+                
+                # Read Excel file
+                xl = pd.ExcelFile(self.excel_path)
+                sheet_names = xl.sheet_names
+                
+                if progress_callback:
+                    progress_callback(45, "Filtering relevant sheets...")
+                
+                # Filter sheets to only include those starting with DATA_ or DIP_
+                filtered_sheets = [sheet for sheet in sheet_names if sheet.startswith("DATA_") or sheet.startswith("DIP_")]
+                
+                if len(filtered_sheets) == 0:
+                    return "No DATA_ or DIP_ sheets found in SET_BDU.xlsx."
+                
+                # Hide loading label as we have data
+                self.loading_label.setVisible(False)
+                
+                if progress_callback:
+                    progress_callback(55, f"Processing {len(filtered_sheets)} sheets...")
+                
+                # Create a tab for each filtered sheet
+                sheet_progress_step = 40 / len(filtered_sheets)  # Distribute 40% progress among sheets
+                
+                for i, sheet_name in enumerate(filtered_sheets):
+                    current_progress = 55 + (i * sheet_progress_step)
+                    
+                    if progress_callback:
+                        progress_callback(int(current_progress), f"Processing sheet: {sheet_name}")
+                    
+                    # Get display name
+                    display_name = sheet_name
+                    if sheet_name.startswith("DIP_"):
+                        display_name = sheet_name[4:]
+                    elif sheet_name.startswith("DATA_"):
+                        display_name = sheet_name[5:]
+                    
+                    try:
+                        df = pd.read_excel(self.excel_path, sheet_name=sheet_name, header=None)
+                        
+                        if sheet_name == "DATA_PROPOSAL":
+                            # Special handling for proposal sheet
+                            scroll_area = QScrollArea()
+                            scroll_area.setWidgetResizable(True)
+                            
+                            proposal_widget = QWidget()
+                            proposal_layout = QVBoxLayout(proposal_widget)
+                            proposal_layout.setContentsMargins(10, 10, 10, 0)
+                            proposal_layout.setSpacing(0)
+                            
+                            # Check for existing proposal file
+                            file_exists = False
+                            relative_word_file_path = ""
+                            
+                            if not df.empty and not pd.isna(df.iloc[0, 0]):
+                                relative_word_file_path = str(df.iloc[0, 0]).strip()
+                                absolute_word_file_path = self.get_absolute_path(relative_word_file_path)
+                                file_exists = os.path.exists(absolute_word_file_path)
+                            
+                            if file_exists:
+                                self.proposal_relative_path = relative_word_file_path
+                                if self.process_proposal_document(absolute_word_file_path):
+                                    if hasattr(self, 'proposal_document_widget'):
+                                        proposal_layout.addWidget(self.proposal_document_widget)
+                            else:
+                                # Create proposal interface for when file doesn't exist
+                                self.create_proposal_interface(proposal_layout)
+                            
+                            scroll_area.setWidget(proposal_widget)
+                            self.tab_widget.addTab(scroll_area, display_name)
+                            self.sheet_tabs[sheet_name] = proposal_widget
+                        else:
+                            # Regular processing for other sheets
+                            scroll_area = QScrollArea()
+                            scroll_area.setWidgetResizable(True)
+                            
+                            sheet_widget = QWidget()
+                            sheet_layout = QVBoxLayout(sheet_widget)
+                            sheet_layout.setContentsMargins(15, 15, 15, 15)
+                            
+                            # Process the sheet data
+                            self.process_sheet_data(df, sheet_name, sheet_layout)
+                            
+                            scroll_area.setWidget(sheet_widget)
+                            self.tab_widget.addTab(scroll_area, display_name)
+                            self.sheet_tabs[sheet_name] = sheet_widget
+                            
+                    except Exception as e:
+                        print(f"Error processing sheet {sheet_name}: {str(e)}")
+                        # Create an error tab for this sheet
+                        error_widget = QWidget()
+                        error_layout = QVBoxLayout(error_widget)
+                        
+                        error_label = QLabel(f"Error loading {sheet_name}: {str(e)}")
+                        error_label.setStyleSheet("color: #E74C3C;")
+                        error_layout.addWidget(error_label)
+                        
+                        self.tab_widget.addTab(error_widget, display_name)
+                
+                if progress_callback:
+                    progress_callback(100, "Excel data loaded successfully!")
+                
+                return "Excel data loaded successfully"
+                
+            except Exception as e:
+                if progress_callback:
+                    progress_callback(100, f"Error: {str(e)}")
+                return f"Error loading data: {str(e)}"
+        
+        # For large files, show loading screen. For small files, load directly.
+        try:
+            file_size = os.path.getsize(self.excel_path) / (1024 * 1024)  # Size in MB
+            
+            if file_size > 5:  # Show loading screen for files larger than 5MB
+                loading_screen = LoadingScreen(
+                    parent=self,
+                    title="Loading Excel Data",
+                    message="Reading and processing Excel sheets..."
+                )
+                loading_screen.show()
+                loading_screen.start_loading(load_data_process)
+                
+                def on_load_complete(success, message):
+                    if not success:
+                        self.loading_label.setText(message)
+                        self.loading_label.setStyleSheet("color: #E74C3C; margin: 20px;")
+                        self.loading_label.setVisible(True)
+                        print(f"Error loading Excel data: {message}")
+                
+                loading_screen.worker.task_completed.connect(on_load_complete)
+            else:
+                # Load directly for smaller files
+                result = load_data_process()
+                if "Error" in result:
+                    self.loading_label.setText(result)
+                    self.loading_label.setStyleSheet("color: #E74C3C; margin: 20px;")
+                    self.loading_label.setVisible(True)
+                    print(f"Error loading Excel data: {result}")
         except Exception as e:
             self.loading_label.setText(f"Error loading data: {str(e)}")
             self.loading_label.setStyleSheet("color: #E74C3C; margin: 20px;")
             self.loading_label.setVisible(True)
-            print(f"Error loading Excel data: {str(e)}")
+            print(f"Error loading Excel data: {str(e)}") 
             
+    def create_proposal_interface(self, layout):
+        """Create interface for when proposal file doesn't exist"""
+        # Container untuk header file yang tidak ada
+        top_container = QWidget()
+        top_layout = QHBoxLayout(top_container)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Panel kiri untuk ikon dan label
+        left_panel = QWidget()
+        left_panel.setMaximumWidth(300)
+        left_layout = QHBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(5)
+        
+        # Ikon file
+        file_icon = QLabel("📄")
+        file_icon.setFont(QFont("Segoe UI", 14))
+        file_icon.setStyleSheet("color: #3498DB; background-color: transparent;")
+        left_layout.addWidget(file_icon)
+        
+        # Label status proposal
+        file_label = QLabel("Proposal Not Generated")
+        file_label.setFont(QFont("Segoe UI", 11))
+        file_label.setStyleSheet("color: #333; background-color: transparent;")
+        left_layout.addWidget(file_label)
+        left_layout.addStretch()
+        
+        # Panel kanan untuk tombol
+        right_panel = QWidget()
+        right_layout = QHBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        
+        # Tombol Run Projection
+        run_projection_btn = QPushButton("Run Projection")
+        run_projection_btn.setFont(QFont("Segoe UI", 10))
+        run_projection_btn.setCursor(Qt.PointingHandCursor)
+        run_projection_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 5px 10px;
+                margin-right: 5px;
+            }}
+            QPushButton:hover {{
+                background-color: #2980b9;
+            }}
+        """)
+        run_projection_btn.clicked.connect(self.run_projection)
+        right_layout.addWidget(run_projection_btn)
+        
+        # Tombol Generate Proposal
+        generate_btn = QPushButton("Generate Proposal")
+        generate_btn.setFont(QFont("Segoe UI", 10))
+        generate_btn.setCursor(Qt.PointingHandCursor)
+        generate_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #27ae60;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 5px 10px;
+            }}
+            QPushButton:hover {{
+                background-color: #2ecc71;
+            }}
+        """)
+        generate_btn.clicked.connect(self.run_generate_proposal)
+        right_layout.addWidget(generate_btn)
+        
+        # Menyusun panel kiri dan kanan
+        top_layout.addWidget(left_panel)
+        top_layout.addWidget(right_panel)
+        
+        # Tambahkan container utama ke layout proposal
+        layout.addWidget(top_container)
+        
+        # Tambahkan instruksi yang singkat
+        info_label = QLabel("Click 'Generate Proposal' button to create a new proposal document.")
+        info_label.setAlignment(Qt.AlignCenter)
+        info_label.setFont(QFont("Segoe UI", 10))
+        info_label.setStyleSheet("color: #666;")
+        info_label.setMaximumHeight(20)
+        layout.addWidget(info_label)
+        
+        # Tambahkan spacer
+        layout.addStretch(1)   
+                
     def run_projection(self):
-        """Fungsi untuk menjalankan projection dari data BDU ke ANAPAK ke PUMP dan kembali ke BDU"""
-        try:
-            import os
-            import pandas as pd
-            from openpyxl import load_workbook
-            import time
-            import sys
-            import subprocess
-            from PyQt5.QtWidgets import QApplication, QMessageBox
-            
-            # Use the customer-specific Excel file if available
-            if hasattr(self, 'excel_path'):
-                set_bdu_path = self.excel_path
-                print(f"Using customer-specific SET_BDU.xlsx: {set_bdu_path}")
-            else:
-                # Fall back to default path if customer file isn't set
-                data_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-                set_bdu_path = os.path.join(data_folder, "SET_BDU.xlsx")
-                print(f"No customer file path found, using default SET_BDU.xlsx: {set_bdu_path}")
-            
-            # Base data folder path
-            data_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-            
-            # Path ke file-file Excel
-            sbt_anapak_path = os.path.join(data_folder, "SBT_ANAPAK.xlsx")
-            sbt_pump_path = os.path.join(data_folder, "SBT_PUMP.xlsm")
-            all_udf_path = os.path.join(data_folder, "ALL_UDF.py")
-            
-            # Pastikan file yang dibutuhkan ada
-            missing_files = []
-            for file_path in [set_bdu_path, sbt_anapak_path, sbt_pump_path, all_udf_path]:
-                if not os.path.exists(file_path):
-                    missing_files.append(os.path.basename(file_path))
-            
-            if missing_files:
-                QMessageBox.critical(
-                    self, 
-                    "File Tidak Ditemukan", 
-                    f"Beberapa file berikut tidak ditemukan di folder data:\n{', '.join(missing_files)}"
-                )
-                return
-            
-            # Tampilkan pesan status
-            self.statusBar().showMessage("Menjalankan projection - Transfer data dari SET_BDU ke SBT_ANAPAK...")
-            QApplication.processEvents()
-            
-            # PROSES 1: Transfer data dari SET_BDU ke SBT_ANAPAK
-            # Buka workbook SET_BDU untuk membaca data
-            wb_bdu = load_workbook(set_bdu_path, data_only=True)
-            
-            # Ambil data yang diperlukan dari DIP_Technical Information
-            sheet_dip = wb_bdu["DIP_Technical Information"]
-            values_to_transfer = {
-                'C37': sheet_dip['B9'].value,  # B9 -> C37
-                'C38': sheet_dip['B10'].value, # B10 -> C38
-                'C39': sheet_dip['B11'].value, # B11 -> C39
-                'C40': sheet_dip['B12'].value, # B12 -> C40
-                'C41': sheet_dip['B13'].value, # B13 -> C41
-                'C42': sheet_dip['B16'].value, # B16 -> C42
-                'C43': sheet_dip['B17'].value, # B17 -> C43
-                'C46': sheet_dip['B21'].value  # B21 -> C46
-            }
-            
-            # Tutup workbook SET_BDU
-            wb_bdu.close()
-            
-            # Buka dan update workbook SBT_ANAPAK
-            wb_anapak = load_workbook(sbt_anapak_path)
-            sheet_anapak = wb_anapak["ANAPAK"]
-            
-            # Pindahkan data ke SBT_ANAPAK
-            for cell_addr, value in values_to_transfer.items():
-                sheet_anapak[cell_addr] = value
-            
-            # Simpan SBT_ANAPAK
-            wb_anapak.save(sbt_anapak_path)
-            wb_anapak.close()
-            
-            # LANGKAH BARU: Buka SBT_ANAPAK dengan Excel dan paksa kalkulasi
-            self.statusBar().showMessage("Menjalankan projection - Mengkalkulasi SBT_ANAPAK...")
-            QApplication.processEvents()
-            
+        """Fungsi untuk menjalankan projection dengan loading screen"""
+        
+        def projection_process(progress_callback=None):
             try:
-                # Buat VBS script untuk membuka dan mengkalkulasi SBT_ANAPAK
-                import tempfile
+                import os
+                import pandas as pd
+                from openpyxl import load_workbook
+                import time
+                import sys
+                import subprocess
+                from PyQt5.QtWidgets import QApplication, QMessageBox
                 
-                # Buat file VBS temporal
-                vbs_calc_file = tempfile.NamedTemporaryFile(delete=False, suffix='.vbs')
-                vbs_calc_path = vbs_calc_file.name
+                if progress_callback:
+                    progress_callback(5, "Initializing projection process...")
                 
-                # Tulis skrip VBS untuk membuka Excel, mengkalkulasi, dan menyimpan
-                vbs_calc_script = f'''
-                Set objExcel = CreateObject("Excel.Application")
-                objExcel.DisplayAlerts = False
-                objExcel.Visible = False
-                
-                ' Buka file SBT_ANAPAK.xlsx
-                Set objWorkbook = objExcel.Workbooks.Open("{sbt_anapak_path}")
-                
-                ' Paksa kalkulasi untuk semua sheet
-                objExcel.CalculateFullRebuild
-                objWorkbook.Application.Calculate
-                
-                ' Simpan dan tutup
-                objWorkbook.Save
-                objWorkbook.Close
-                objExcel.Quit
-                
-                Set objWorkbook = Nothing
-                Set objExcel = Nothing
-                '''
-                
-                vbs_calc_file.write(vbs_calc_script.encode('utf-8'))
-                vbs_calc_file.close()
-                
-                # Jalankan script VBS
-                if sys.platform == 'win32':
-                    subprocess.call(['cscript.exe', '//nologo', vbs_calc_path])
+                # Use the customer-specific Excel file if available
+                if hasattr(self, 'excel_path'):
+                    set_bdu_path = self.excel_path
                 else:
-                    QMessageBox.warning(
-                        self, 
-                        "Warning", 
-                        "Menjalankan VBScript di platform non-Windows tidak didukung."
-                    )
+                    # Fall back to default path if customer file isn't set
+                    data_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+                    set_bdu_path = os.path.join(data_folder, "SET_BDU.xlsx")
                 
-                # Hapus file VBS sementara
+                # Base data folder path
+                data_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+                
+                # Path ke file-file Excel
+                sbt_anapak_path = os.path.join(data_folder, "SBT_ANAPAK.xlsx")
+                sbt_pump_path = os.path.join(data_folder, "SBT_PUMP.xlsm")
+                all_udf_path = os.path.join(data_folder, "ALL_UDF.py")
+                
+                if progress_callback:
+                    progress_callback(10, "Checking required files...")
+                
+                # Pastikan file yang dibutuhkan ada
+                missing_files = []
+                for file_path in [set_bdu_path, sbt_anapak_path, sbt_pump_path, all_udf_path]:
+                    if not os.path.exists(file_path):
+                        missing_files.append(os.path.basename(file_path))
+                
+                if missing_files:
+                    raise Exception(f"Required files not found: {', '.join(missing_files)}")
+                
+                if progress_callback:
+                    progress_callback(15, "Opening SET_BDU workbook...")
+                
+                # PROSES 1: Transfer data dari SET_BDU ke SBT_ANAPAK
+                wb_bdu = load_workbook(set_bdu_path, data_only=True)
+                
+                if progress_callback:
+                    progress_callback(20, "Reading data from DIP_Technical Information...")
+                
+                # Ambil data yang diperlukan dari DIP_Technical Information
+                sheet_dip = wb_bdu["DIP_Technical Information"]
+                values_to_transfer = {
+                    'C37': sheet_dip['B9'].value,  # B9 -> C37
+                    'C38': sheet_dip['B10'].value, # B10 -> C38
+                    'C39': sheet_dip['B11'].value, # B11 -> C39
+                    'C40': sheet_dip['B12'].value, # B12 -> C40
+                    'C41': sheet_dip['B13'].value, # B13 -> C41
+                    'C42': sheet_dip['B16'].value, # B16 -> C42
+                    'C43': sheet_dip['B17'].value, # B17 -> C43
+                    'C46': sheet_dip['B21'].value  # B21 -> C46
+                }
+                
+                wb_bdu.close()
+                
+                if progress_callback:
+                    progress_callback(30, "Transferring data to SBT_ANAPAK...")
+                
+                # Buka dan update workbook SBT_ANAPAK
+                wb_anapak = load_workbook(sbt_anapak_path)
+                sheet_anapak = wb_anapak["ANAPAK"]
+                
+                # Pindahkan data ke SBT_ANAPAK
+                for cell_addr, value in values_to_transfer.items():
+                    sheet_anapak[cell_addr] = value
+                
+                # Simpan SBT_ANAPAK
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                
+                if progress_callback:
+                    progress_callback(40, "Calculating SBT_ANAPAK formulas...")
+                
+                # Force calculation untuk SBT_ANAPAK
                 try:
-                    os.unlink(vbs_calc_path)
-                except:
-                    pass
-                
-                # Tunggu sebentar untuk memastikan file tersimpan
-                time.sleep(2)
-                
-            except Exception as e:
-                QMessageBox.warning(
-                    self, 
-                    "Warning", 
-                    f"Gagal menjalankan kalkulasi otomatis SBT_ANAPAK: {str(e)}\nMelanjutkan proses..."
-                )
-            
-            self.statusBar().showMessage("Menjalankan projection - Transfer data dari SBT_ANAPAK ke SBT_PUMP...")
-            QApplication.processEvents()
-            
-            # PROSES 2: Ambil data dari SBT_ANAPAK untuk dimasukkan ke SBT_PUMP
-            # Buka lagi SBT_ANAPAK untuk ambil data terbaru setelah perhitungan
-            wb_anapak = load_workbook(sbt_anapak_path, data_only=True)
-            sheet_anapak = wb_anapak["ANAPAK"]
-            
-            # Ambil nilai dari SBT_ANAPAK.ANAPAK.I66 dan K67
-            value_i66 = sheet_anapak['I66'].value
-            value_k67 = sheet_anapak['K67'].value
-            
-            # Tampilkan nilai untuk debugging
-            print(f"DEBUG: Nilai dari SBT_ANAPAK.ANAPAK.I66: {value_i66}")
-            print(f"DEBUG: Nilai dari SBT_ANAPAK.ANAPAK.K67: {value_k67}")
-            
-            # Periksa apakah nilai masih None
-            if value_i66 is None or value_k67 is None:
-                # Tampilkan pesan dan minta pengguna untuk membuka file secara manual
-                QMessageBox.warning(
-                    self,
-                    "Nilai Kosong",
-                    "Sel I66 dan/atau K67 di file SBT_ANAPAK.xlsx masih kosong setelah kalkulasi. "
-                    "Hal ini mungkin karena:\n\n"
-                    "1. File SBT_ANAPAK memerlukan kalkulasi manual\n"
-                    "2. Rumus di I66/K67 perlu diperbarui\n\n"
-                    "Klik OK untuk melanjutkan proses dengan nilai kosong, atau Cancel untuk berhenti. "
-                    "Anda juga bisa membuka file SBT_ANAPAK.xlsx secara manual, memastikan nilainya "
-                    "terkalkulasi, lalu menjalankan proyeksi ini lagi.",
-                    QMessageBox.Ok | QMessageBox.Cancel
-                ) 
-                
-                response = QMessageBox.question(
-                    self,
-                    "Buka SBT_ANAPAK secara manual?",
-                    "Apakah Anda ingin membuka SBT_ANAPAK.xlsx secara manual untuk memeriksa kalkulasi?",
-                    QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
-                )
-                
-                if response == QMessageBox.Cancel:
-                    wb_anapak.close()
-                    self.statusBar().clearMessage()
-                    return
-                elif response == QMessageBox.Yes:
-                    # Buka file Excel secara manual
-                    if sys.platform == 'win32':
-                        os.startfile(sbt_anapak_path)
-                    else:
-                        if sys.platform == 'darwin':  # macOS
-                            subprocess.call(['open', sbt_anapak_path])
-                        else:  # Linux
-                            subprocess.call(['xdg-open', sbt_anapak_path])
-                    
-                    # Tanyakan apakah pengguna ingin melanjutkan setelah memeriksa file
-                    continue_response = QMessageBox.question(
-                        self,
-                        "Lanjutkan Proses?",
-                        "Setelah Anda memeriksa dan menyimpan file SBT_ANAPAK.xlsx, "
-                        "apakah Anda ingin melanjutkan proses?",
-                        QMessageBox.Yes | QMessageBox.No
-                    )
-                    
-                    if continue_response == QMessageBox.No:
-                        wb_anapak.close()
-                        self.statusBar().clearMessage()
-                        return
-                    
-                    # Buka kembali file yang mungkin telah diubah manual
-                    wb_anapak.close()
-                    wb_anapak = load_workbook(sbt_anapak_path, data_only=True)
-                    sheet_anapak = wb_anapak["ANAPAK"]
-                    
-                    # Ambil nilai yang diperbarui
-                    value_i66 = sheet_anapak['I66'].value
-                    value_k67 = sheet_anapak['K67'].value
-                    
-                    print(f"DEBUG setelah pembaruan manual: Nilai dari SBT_ANAPAK.ANAPAK.I66: {value_i66}")
-                    print(f"DEBUG setelah pembaruan manual: Nilai dari SBT_ANAPAK.ANAPAK.K67: {value_k67}")
-            
-            wb_anapak.close()
-            
-            # Gunakan nilai default jika masih None
-            if value_i66 is None:
-                value_i66 = 0
-                print("DEBUG: Menggunakan nilai default 0 untuk I66 karena nilainya None")
-            
-            if value_k67 is None:
-                value_k67 = 0
-                print("DEBUG: Menggunakan nilai default 0 untuk K67 karena nilainya None")
-            
-            # PERBAIKAN: Transfer data dari SBT_ANAPAK ke SBT_PUMP menggunakan openpyxl saja
-            # (tidak menggunakan VBScript yang menyebabkan error)
-            try:
-                self.statusBar().showMessage("Mentransfer data dari SBT_ANAPAK ke SBT_PUMP menggunakan openpyxl...")
-                QApplication.processEvents()
-                
-                # Cek sheet names di SBT_PUMP sebelum membuka
-                try:
-                    # Load workbook untuk melihat sheet names
-                    temp_wb = load_workbook(sbt_pump_path, read_only=True)
-                    sheet_names = temp_wb.sheetnames
-                    print(f"DEBUG: Sheet names di SBT_PUMP.xlsm: {sheet_names}")
-                    temp_wb.close()
+                    self.force_excel_calculation(sbt_anapak_path, 
+                        lambda pct, msg: progress_callback(40 + (pct * 0.1), f"SBT_ANAPAK: {msg}") if progress_callback else None)
+                    time.sleep(2)
                 except Exception as e:
-                    print(f"DEBUG: Error saat memeriksa sheet names: {str(e)}")
+                    if progress_callback:
+                        progress_callback(50, f"Warning: {str(e)}")
                 
-                # Buka SBT_PUMP.xlsm
-                wb_pump = load_workbook(sbt_pump_path, keep_vba=True)
+                if progress_callback:
+                    progress_callback(50, "Reading calculated values from SBT_ANAPAK...")
                 
-                # Cari sheet 'DATA INPUT' dengan case insensitive match jika perlu
-                target_sheet_name = "DATA INPUT"
-                found_sheet = False
+                # PROSES 2: Ambil data dari SBT_ANAPAK untuk dimasukkan ke SBT_PUMP
+                wb_anapak = load_workbook(sbt_anapak_path, data_only=True)
+                sheet_anapak = wb_anapak["ANAPAK"]
                 
-                for sheet_name in wb_pump.sheetnames:
-                    if sheet_name.upper() == target_sheet_name.upper():
-                        target_sheet_name = sheet_name  # Gunakan nama sheet yang benar
-                        found_sheet = True
-                        break
+                # Ambil nilai dari SBT_ANAPAK.ANAPAK.I66 dan K67
+                value_i66 = sheet_anapak['I66'].value
+                value_k67 = sheet_anapak['K67'].value
                 
-                if not found_sheet:
-                    QMessageBox.critical(
-                        self,
-                        "Error",
-                        f"Sheet 'DATA INPUT' tidak ditemukan di file SBT_PUMP.xlsm. "
-                        f"Sheet yang tersedia: {', '.join(wb_pump.sheetnames)}"
-                    )
-                    wb_pump.close()
-                    return
+                wb_anapak.close()
                 
-                # Gunakan nama sheet yang ditemukan
-                sheet_pump = wb_pump[target_sheet_name]
+                # Gunakan nilai default jika masih None
+                if value_i66 is None:
+                    value_i66 = 0
+                if value_k67 is None:
+                    value_k67 = 0
+                
+                if progress_callback:
+                    progress_callback(60, "Transferring data to SBT_PUMP...")
                 
                 # Transfer data ke SBT_PUMP
-                sheet_pump['B13'] = value_i66
-                sheet_pump['B14'] = value_k67
-                
-                # Log untuk debugging
-                print(f"DEBUG: Menulis nilai {value_i66} ke SBT_PUMP.{target_sheet_name}.B13")
-                print(f"DEBUG: Menulis nilai {value_k67} ke SBT_PUMP.{target_sheet_name}.B14")
-                
-                # Simpan SBT_PUMP
-                wb_pump.save(sbt_pump_path)
-                wb_pump.close()
-                
-                # Tunggu sedikit untuk memastikan file tersimpan
-                time.sleep(1)
-                
-                # Verifikasi nilai telah tersimpan
-                verify_wb = load_workbook(sbt_pump_path, data_only=True)
-                verify_sheet = verify_wb[target_sheet_name]
-                
-                verify_b13 = verify_sheet['B13'].value
-                verify_b14 = verify_sheet['B14'].value
-                
-                print(f"DEBUG: Verifikasi - Nilai di SBT_PUMP.{target_sheet_name}.B13: {verify_b13}")
-                print(f"DEBUG: Verifikasi - Nilai di SBT_PUMP.{target_sheet_name}.B14: {verify_b14}")
-                
-                verify_wb.close()
-                
-            except Exception as e:
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Gagal mentransfer data ke SBT_PUMP: {str(e)}"
-                )
-                print(f"DEBUG: Error saat transfer data ke SBT_PUMP: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                return
-            
-            self.statusBar().showMessage("Menjalankan projection - Menjalankan macro GENERATE_REPORT di SBT_PUMP...")
-            QApplication.processEvents()
-            
-            # PROSES 3: Menjalankan macro di SBT_PUMP
-            self.statusBar().showMessage("Menjalankan projection - Menjalankan macro GENERATE_REPORT di SBT_PUMP...")
-            QApplication.processEvents()
-
-            try:
-                # Import modul xlwings
-                import xlwings as xw
-                
-                self.statusBar().showMessage("Menjalankan projection - Mengimpor UDF dan menjalankan macro...")
-                QApplication.processEvents()
-                
-                # Nonaktifkan tampilan Excel (berjalan di background)
-                app = xw.App(visible=False)
-                app.display_alerts = False
-                
-                # Pastikan macro diaktifkan
-                app.api.AutomationSecurity = 1  # msoAutomationSecurityLow
-                
-                # Buka workbook SBT_PUMP
-                wb = xw.Book(sbt_pump_path)
-                
-                # Metode alternatif untuk mengimpor UDF - Menggunakan RunPython
-                # Buat modul sementara untuk mengimpor UDF
-                import tempfile
-                import importlib.util
-                
-                # Buat file Python sementara untuk mengimpor ALL_UDF
-                temp_py = tempfile.NamedTemporaryFile(delete=False, suffix='.py')
-                temp_py_path = temp_py.name
-                
-                # Isi file dengan kode untuk mengimpor semua fungsi dari ALL_UDF.py
-                with open(temp_py_path, 'w') as f:
-                    f.write(f"""
-            import sys
-            import os
-
-            # Tambahkan direktori ALL_UDF ke sys.path
-            sys.path.append(os.path.dirname(r'{all_udf_path}'))
-
-            # Import ALL_UDF
-            from {os.path.splitext(os.path.basename(all_udf_path))[0]} import *
-
-            def main():
-                print("UDF berhasil diimpor")
-
-            if __name__ == '__main__':
-                main()
-            """)
-                
-                # Jalankan file Python sementara menggunakan RunPython
                 try:
-                    print(f"DEBUG: Mencoba mengimpor UDF dari {all_udf_path}")
-                    xw.Book(sbt_pump_path).api.Application.Run("ImportPythonUDFs")
-                    print("DEBUG: Berhasil mengimpor UDF")
-                except Exception as udf_err:
-                    print(f"DEBUG: Error mengimpor UDF dengan RunPython: {str(udf_err)}")
-                    pass  # Lanjut ke langkah berikutnya jika gagal
+                    wb_pump = load_workbook(sbt_pump_path, keep_vba=True)
+                    
+                    # Cari sheet 'DATA INPUT'
+                    target_sheet_name = "DATA INPUT"
+                    found_sheet = False
+                    
+                    for sheet_name in wb_pump.sheetnames:
+                        if sheet_name.upper() == target_sheet_name.upper():
+                            target_sheet_name = sheet_name
+                            found_sheet = True
+                            break
+                    
+                    if not found_sheet:
+                        raise Exception(f"Sheet 'DATA INPUT' not found in SBT_PUMP.xlsm")
+                    
+                    sheet_pump = wb_pump[target_sheet_name]
+                    
+                    # Transfer data ke SBT_PUMP
+                    sheet_pump['B13'] = value_i66
+                    sheet_pump['B14'] = value_k67
+                    
+                    # Simpan SBT_PUMP
+                    wb_pump.save(sbt_pump_path)
+                    wb_pump.close()
+                    
+                    time.sleep(1)
+                    
+                except Exception as e:
+                    raise Exception(f"Failed to transfer data to SBT_PUMP: {str(e)}")
                 
-                # Tunggu sebentar
-                time.sleep(2)
+                if progress_callback:
+                    progress_callback(70, "Running GENERATE_REPORT macro in SBT_PUMP...")
                 
-                # Jalankan langsung macro GENERATE_REPORT
+                # PROSES 3: Menjalankan macro di SBT_PUMP
                 try:
-                    print("DEBUG: Menjalankan macro GENERATE_REPORT")
+                    import xlwings as xw
+                    
+                    app = xw.App(visible=False)
+                    app.display_alerts = False
+                    app.api.AutomationSecurity = 1
+                    
+                    wb = xw.Book(sbt_pump_path)
+                    
+                    # Jalankan macro GENERATE_REPORT
                     wb.api.Application.Run("'SBT_PUMP.xlsm'!GENERATE_REPORT")
-                except Exception as macro_err:
-                    print(f"DEBUG: Error menjalankan macro dengan metode pertama: {str(macro_err)}")
-                    # Coba metode alternatif jika metode pertama gagal
+                    
+                    # Tunggu macro selesai
+                    time.sleep(5)
+                    
+                    wb.save()
+                    wb.close()
+                    app.quit()
+                    
+                except Exception as e:
+                    # Try alternative methods if xlwings fails
+                    print(f"xlwings failed, trying alternatives: {str(e)}")
+                    
+                    # Alternative dengan VBScript
                     try:
-                        wb.api.Application.Run("GENERATE_REPORT")
-                    except Exception as alt_macro_err:
-                        print(f"DEBUG: Error menjalankan macro dengan metode alternatif: {str(alt_macro_err)}")
-                        raise  # Re-raise exception untuk ditangani oleh blok except di luar
-                
-                # Tunggu macro selesai dijalankan
-                time.sleep(5)
-                
-                # Simpan workbook
-                wb.save()
-                
-                # Tutup workbook dan application
-                wb.close()
-                app.quit()
-                
-                # Hapus file Python sementara
-                try:
-                    os.unlink(temp_py_path)
-                except:
-                    pass
-                
-                self.statusBar().showMessage("Macro GENERATE_REPORT berhasil dijalankan")
-                print("DEBUG: Macro GENERATE_REPORT berhasil dijalankan")
-                
-            except ImportError:
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    "Module xlwings tidak ditemukan. Silakan install dengan menjalankan 'pip install xlwings'."
-                )
-                return
-            except Exception as e:
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Gagal menjalankan macro GENERATE_REPORT: {str(e)}"
-                )
-                print(f"DEBUG: Error saat menjalankan macro: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                
-                # Alternatif menggunakan COM langsung dengan pywin32
-                try:
-                    self.statusBar().showMessage("Mencoba alternatif menggunakan pywin32...")
-                    QApplication.processEvents()
-                    
-                    # Gunakan pywin32 untuk menjalankan macro secara langsung
-                    import win32com.client
-                    
-                    excel = win32com.client.Dispatch("Excel.Application")
-                    excel.Visible = False
-                    excel.DisplayAlerts = False
-                    
-                    # Pastikan makro diizinkan
-                    excel.AutomationSecurity = 1  # msoAutomationSecurityLow
-                    
-                    # Buka workbook
-                    wb = excel.Workbooks.Open(sbt_pump_path)
-                    
-                    # Jalankan VBA untuk mengaktifkan makro jika diperlukan
-                    excel.Run("Application.AutomationSecurity=1")
-                    
-                    # Coba jalankan macro
-                    print("DEBUG: Menjalankan macro dengan pywin32")
-                    try:
-                        excel.Run("'SBT_PUMP.xlsm'!GENERATE_REPORT")
-                    except:
-                        # Jika gagal, coba tanpa nama file
-                        try:
-                            excel.Run("GENERATE_REPORT")
-                        except Exception as win32_err:
-                            print(f"DEBUG: Error menjalankan macro dengan pywin32: {str(win32_err)}")
-                    
-                    # Simpan dan tutup
-                    wb.Save()
-                    wb.Close()
-                    excel.Quit()
-                    
-                    self.statusBar().showMessage("Macro GENERATE_REPORT berhasil dijalankan dengan metode alternatif")
-                    print("DEBUG: Macro GENERATE_REPORT berhasil dijalankan dengan metode alternatif")
-                    
-                except Exception as win_err:
-                    print(f"DEBUG: Error pada metode pywin32: {str(win_err)}")
-                    
-                    # Terakhir, coba dengan VBScript
-                    try:
-                        self.statusBar().showMessage("Mencoba alternatif dengan VBScript...")
-                        QApplication.processEvents()
-                        
                         import tempfile
                         vbs_file = tempfile.NamedTemporaryFile(delete=False, suffix='.vbs')
                         vbs_path = vbs_file.name
@@ -1552,25 +1503,19 @@ class BDUGroupView(QMainWindow):
                         Set objExcel = CreateObject("Excel.Application")
                         objExcel.DisplayAlerts = False
                         objExcel.Visible = False
-                        objExcel.AutomationSecurity = 1  ' msoAutomationSecurityLow
+                        objExcel.AutomationSecurity = 1
                         
-                        ' Buka file SBT_PUMP.xlsm
                         Set objWorkbook = objExcel.Workbooks.Open("{sbt_pump_path}")
                         
                         On Error Resume Next
-                        ' Jalankan macro GENERATE_REPORT
                         objExcel.Run "GENERATE_REPORT"
-                        
                         If Err.Number <> 0 Then
                             Err.Clear
-                            ' Coba dengan nama workbook yang spesifik
                             objExcel.Run "'SBT_PUMP.xlsm'!GENERATE_REPORT"
                         End If
                         
-                        ' Tunggu sebentar untuk memastikan macro selesai
                         WScript.Sleep 5000
                         
-                        ' Simpan dan tutup
                         objWorkbook.Save
                         objWorkbook.Close
                         objExcel.Quit
@@ -1582,262 +1527,218 @@ class BDUGroupView(QMainWindow):
                         vbs_file.write(vbs_script.encode('utf-8'))
                         vbs_file.close()
                         
-                        # Jalankan script VBS
                         if sys.platform == 'win32':
                             subprocess.call(['cscript.exe', '//nologo', vbs_path])
-                            print("DEBUG: Menjalankan macro dengan VBScript sebagai alternatif terakhir")
-                        else:
-                            QMessageBox.warning(
-                                self, 
-                                "Warning", 
-                                "Menjalankan VBScript di platform non-Windows tidak didukung."
-                            )
                         
-                        # Hapus file VBS sementara
                         try:
                             os.unlink(vbs_path)
                         except:
                             pass
                         
-                        # Tunggu sebentar
                         time.sleep(2)
                         
                     except Exception as alt_e:
-                        QMessageBox.critical(
-                            self,
-                            "Error",
-                            f"Gagal menjalankan macro dengan semua metode alternatif: {str(alt_e)}"
-                        )
-                        print(f"DEBUG: Error pada semua metode: {str(alt_e)}")
-                        import traceback
-                        traceback.print_exc()
-                        return
-            
-            self.statusBar().showMessage("Menjalankan projection - Transfer data dari SBT_ANAPAK dan SBT_PUMP ke SET_BDU...")
-            QApplication.processEvents()
-            
-            # PROSES 4: Transfer data dari SBT_ANAPAK dan SBT_PUMP kembali ke SET_BDU
-            # Buka SBT_ANAPAK untuk mendapatkan data output
-            try:
+                        print(f"All macro execution methods failed: {str(alt_e)}")
+                
+                if progress_callback:
+                    progress_callback(80, "Reading output data from SBT_ANAPAK and SBT_PUMP...")
+                
+                # PROSES 4: Transfer data kembali ke SET_BDU
                 wb_anapak_output = load_workbook(sbt_anapak_path, data_only=True)
                 
-                # Pastikan sheet DATA_OUTPUT ada
                 if "DATA_OUTPUT" not in wb_anapak_output.sheetnames:
-                    QMessageBox.critical(
-                        self, 
-                        "Error", 
-                        "Sheet DATA_OUTPUT tidak ditemukan di file SBT_ANAPAK.xlsx"
-                    )
-                    wb_anapak_output.close()
-                    return
+                    raise Exception("Sheet DATA_OUTPUT not found in SBT_ANAPAK.xlsx")
                     
                 sheet_output = wb_anapak_output["DATA_OUTPUT"]
                 
                 # Ambil nilai dari sheet DATA_OUTPUT
                 output_values = {}
-                
-                # Gunakan try-except untuk setiap sel untuk menangani kemungkinan kesalahan
                 try:
-                    output_values['B3'] = sheet_output['C20'].value  # C20 -> B3
-                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C20: {sheet_output['C20'].value}")
+                    output_values['B3'] = sheet_output['C20'].value
+                    output_values['B4'] = sheet_output['C21'].value
+                    output_values['B5'] = sheet_output['C22'].value
+                    output_values['B6'] = sheet_output['C23'].value
+                    output_values['B7'] = sheet_output['C24'].value
+                    output_values['B8'] = sheet_output['C25'].value
+                    output_values['B10'] = sheet_output['C30'].value
+                    output_values['B11'] = sheet_output['C31'].value
                 except Exception as e:
-                    print(f"DEBUG: Error saat mengambil C20: {str(e)}")
-                    output_values['B3'] = None
-                    
-                try:
-                    output_values['B4'] = sheet_output['C21'].value  # C21 -> B4
-                    output_values['B5'] = sheet_output['C22'].value  # C22 -> B5
-                    output_values['B6'] = sheet_output['C23'].value  # C23 -> B6
-                    output_values['B7'] = sheet_output['C24'].value  # C24 -> B7
-                    output_values['B8'] = sheet_output['C25'].value  # C25 -> B8
-                    output_values['B10'] = sheet_output['C30'].value # C30 -> B10
-                    output_values['B11'] = sheet_output['C31'].value # C31 -> B11
-                    
-                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C21: {sheet_output['C21'].value}")
-                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C22: {sheet_output['C22'].value}")
-                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C23: {sheet_output['C23'].value}")
-                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C24: {sheet_output['C24'].value}")
-                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C25: {sheet_output['C25'].value}")
-                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C30: {sheet_output['C30'].value}")
-                    print(f"DEBUG: Nilai dari SBT_ANAPAK.DATA_OUTPUT.C31: {sheet_output['C31'].value}")
-                except Exception as e:
-                    print(f"DEBUG: Error saat mengambil beberapa nilai dari DATA_OUTPUT: {str(e)}")
+                    print(f"Error reading DATA_OUTPUT values: {str(e)}")
                 
                 wb_anapak_output.close()
                 
-                # Buka lagi SBT_PUMP untuk mendapatkan data dari DATA INPUT dan DATA ENGINE
+                if progress_callback:
+                    progress_callback(90, "Updating SET_BDU with calculated results...")
+                
+                # Buka SBT_PUMP untuk mendapatkan data tambahan
                 wb_pump_input = load_workbook(sbt_pump_path, data_only=True)
                 
-                # Cari sheet 'DATA INPUT' dengan case insensitive match jika perlu
-                data_input_sheet_name = "DATA INPUT"
-                found_data_input = False
-                
-                for sheet_name in wb_pump_input.sheetnames:
-                    if sheet_name.upper() == data_input_sheet_name.upper():
-                        data_input_sheet_name = sheet_name  # Gunakan nama sheet yang benar
-                        found_data_input = True
-                        break
-                
-                if found_data_input:
-                    sheet_pump_input = wb_pump_input[data_input_sheet_name]
-                    # Tambahkan data dari SBT_PUMP.DATA INPUT
+                # Data dari DATA INPUT sheet
+                if "DATA INPUT" in wb_pump_input.sheetnames:
+                    sheet_pump_input = wb_pump_input["DATA INPUT"]
                     try:
-                        output_values['B13'] = sheet_pump_input['B13'].value  # B13 -> B13
-                        output_values['B14'] = sheet_pump_input['B14'].value  # B14 -> B14
-                        
-                        print(f"DEBUG: Nilai dari SBT_PUMP.{data_input_sheet_name}.B13: {sheet_pump_input['B13'].value}")
-                        print(f"DEBUG: Nilai dari SBT_PUMP.{data_input_sheet_name}.B14: {sheet_pump_input['B14'].value}")
+                        output_values['B13'] = sheet_pump_input['B13'].value
+                        output_values['B14'] = sheet_pump_input['B14'].value
                     except Exception as e:
-                        print(f"DEBUG: Error saat mengambil nilai dari DATA INPUT: {str(e)}")
-                else:
-                    QMessageBox.warning(
-                        self, 
-                        "Warning", 
-                        f"Sheet 'DATA INPUT' tidak ditemukan di file SBT_PUMP.xlsm. "
-                        f"Beberapa data mungkin tidak lengkap."
-                    )
+                        print(f"Error reading DATA INPUT values: {str(e)}")
                 
-                # TAMBAHAN: Cari dan ambil data dari sheet 'DATA ENGINE'
-                data_engine_sheet_name = "DATA ENGINE"
-                found_data_engine = False
-                
-                for sheet_name in wb_pump_input.sheetnames:
-                    if sheet_name.upper() == data_engine_sheet_name.upper():
-                        data_engine_sheet_name = sheet_name  # Gunakan nama sheet yang benar
-                        found_data_engine = True
-                        break
-                
-                if found_data_engine:
-                    sheet_pump_engine = wb_pump_input[data_engine_sheet_name]
-                    # Tambahkan data dari SBT_PUMP.DATA ENGINE
+                # Data dari DATA ENGINE sheet
+                if "DATA ENGINE" in wb_pump_input.sheetnames:
+                    sheet_pump_engine = wb_pump_input["DATA ENGINE"]
                     try:
-                        output_values['B15'] = sheet_pump_engine['B19'].value  # B19 -> B15
-                        
-                        print(f"DEBUG: Nilai dari SBT_PUMP.{data_engine_sheet_name}.B19: {sheet_pump_engine['B19'].value}")
+                        output_values['B15'] = sheet_pump_engine['B19'].value
                     except Exception as e:
-                        print(f"DEBUG: Error saat mengambil nilai dari DATA ENGINE: {str(e)}")
-                else:
-                    QMessageBox.warning(
-                        self, 
-                        "Warning", 
-                        f"Sheet 'DATA ENGINE' tidak ditemukan di file SBT_PUMP.xlsm. "
-                        f"Beberapa data mungkin tidak lengkap."
-                    )
+                        print(f"Error reading DATA ENGINE values: {str(e)}")
                 
                 wb_pump_input.close()
                 
-                # Buka SET_BDU untuk update nilai akhir - PENTING: Gunakan file SET_BDU customer, bukan template
+                # Update SET_BDU dengan hasil perhitungan
                 wb_bdu_final = load_workbook(set_bdu_path)
                 
-                # Pastikan sheet DATA_TEMP ada
                 if "DATA_TEMP" not in wb_bdu_final.sheetnames:
-                    QMessageBox.critical(
-                        self, 
-                        "Error", 
-                        "Sheet DATA_TEMP tidak ditemukan di file SET_BDU.xlsx"
-                    )
-                    wb_bdu_final.close()
-                    return
+                    raise Exception("Sheet DATA_TEMP not found in SET_BDU.xlsx")
                     
                 sheet_temp = wb_bdu_final["DATA_TEMP"]
                 
                 # Transfer semua nilai ke SET_BDU.DATA_TEMP
                 for cell_addr, value in output_values.items():
-                    if value is not None:  # Hanya transfer nilai yang tidak None
+                    if value is not None:
                         sheet_temp[cell_addr] = value
-                        print(f"DEBUG: Menyimpan nilai {value} ke SET_BDU.DATA_TEMP.{cell_addr}")
-                    else:
-                        print(f"DEBUG: Tidak menyimpan nilai None ke SET_BDU.DATA_TEMP.{cell_addr}")
                 
                 # Simpan SET_BDU
                 wb_bdu_final.save(set_bdu_path)
                 wb_bdu_final.close()
                 
-                self.statusBar().showMessage("Projection selesai - Semua data berhasil diproses")
-                QMessageBox.information(
-                    self, 
-                    "Projection Selesai", 
-                    "Proses projection telah berhasil dilakukan. Data telah dipindahkan dan diproses."
-                )
+                if progress_callback:
+                    progress_callback(100, "Projection completed successfully!")
                 
-                # Perbarui tampilan
-                self.load_excel_data()
+                return "Projection process completed successfully. All data has been processed and calculated."
                 
             except Exception as e:
-                self.statusBar().clearMessage()
+                if progress_callback:
+                    progress_callback(100, f"Error: {str(e)}")
+                return f"Error during projection: {str(e)}"
+        
+        # Show loading screen
+        loading_screen = LoadingScreen(
+            parent=self,
+            title="Running Projection",
+            message="Processing data through ANAPAK and PUMP modules..."
+        )
+        loading_screen.show()
+        loading_screen.start_loading(projection_process)
+        
+        # Connect completion handler
+        def on_projection_complete(success, message):
+            if success:
+                QMessageBox.information(
+                    self, 
+                    "Projection Complete", 
+                    "Projection process has been completed successfully. Data has been processed and calculated."
+                )
+                # Refresh display
+                self.load_excel_data()
+            else:
                 QMessageBox.critical(
                     self, 
-                    "Error", 
-                    f"Terjadi kesalahan saat memproses data akhir: {str(e)}"
+                    "Projection Error", 
+                    f"An error occurred during projection:\n\n{message}"
                 )
-                print(f"DEBUG: Error saat proses 4: {str(e)}")
-                import traceback
-                traceback.print_exc()
             
-        except Exception as e:
             self.statusBar().clearMessage()
-            QMessageBox.critical(
-                self, 
-                "Error", 
-                f"Terjadi kesalahan saat menjalankan projection: {str(e)}"
-            )
-            print(f"Error running projection: {str(e)}")
-            import traceback
-            traceback.print_exc()
-                    
+        
+        loading_screen.worker.task_completed.connect(on_projection_complete)                
+    
     def run_generate_proposal(self):
-        """Fungsi untuk menjalankan script generate_proposal.py dengan file customer"""
-        try:
-            # Use the customer-specific Excel file
-            if not hasattr(self, 'customer_name') or not self.customer_name:
-                # If no customer is set, use the default path
-                excel_path = self.excel_path
-                output_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            else:
-                # Use customer-specific paths
-                from modules.fix_customer_system import clean_folder_name
+        """Fungsi untuk menjalankan generate proposal dengan loading screen"""
+        
+        def generate_proposal_process(progress_callback=None):
+            try:
+                if progress_callback:
+                    progress_callback(10, "Checking file paths...")
                 
-                # Get customer folder path
-                customer_folder = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                    "data", "customers", clean_folder_name(self.customer_name)
+                # Use the customer-specific Excel file
+                if not hasattr(self, 'customer_name') or not self.customer_name:
+                    excel_path = self.excel_path
+                    output_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                else:
+                    from modules.fix_customer_system import clean_folder_name
+                    
+                    customer_folder = os.path.join(
+                        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "data", "customers", clean_folder_name(self.customer_name)
+                    )
+                    
+                    excel_path = os.path.join(customer_folder, "SET_BDU.xlsx")
+                    output_dir = customer_folder
+                
+                # Path to the Word template
+                template_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                        "data", "Trial WWTP ANP Quotation Template.docx")
+                
+                # Path for the output file
+                output_filename = f"WWTP_Quotation_{self.customer_name or 'Result'}.docx"
+                output_path = os.path.join(output_dir, output_filename)
+                
+                if progress_callback:
+                    progress_callback(20, "Loading generate_proposal module...")
+                
+                # Import the generate_proposal module
+                import importlib.util
+                spec = importlib.util.spec_from_file_location(
+                    "generate_proposal", 
+                    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                "modules", "generate_proposal.py")
                 )
+                generate_proposal = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(generate_proposal)
                 
-                # Set excel_path to the customer's SET_BDU.xlsx
-                excel_path = os.path.join(customer_folder, "SET_BDU.xlsx")
+                if progress_callback:
+                    progress_callback(30, "Processing Excel data...")
                 
-                # Set output directory to customer folder
-                output_dir = customer_folder
-            
-            # Path to the Word template
-            template_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                    "data", "Trial WWTP ANP Quotation Template.docx")
-            
-            # Path for the output file - save in customer folder
-            output_filename = f"WWTP_Quotation_{self.customer_name or 'Result'}.docx"
-            output_path = os.path.join(output_dir, output_filename)
-            
-            # Display status message
-            self.statusBar().showMessage("Generating proposal...")
-            
-            # Import the generate_proposal module
-            import importlib.util
-            spec = importlib.util.spec_from_file_location(
-                "generate_proposal", 
-                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                            "modules", "generate_proposal.py")
-            )
-            generate_proposal = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(generate_proposal)
-            
-            # Call the function with proper paths
-            success = generate_proposal.generate_proposal(excel_path, template_path, output_path)
-            
-            if success:
+                # Call the function with progress updates
+                def proposal_progress_wrapper(percentage, message=""):
+                    if progress_callback:
+                        # Map the proposal progress to our overall progress (30-90%)
+                        overall_progress = 30 + (percentage * 0.6)
+                        progress_callback(int(overall_progress), f"Generating proposal: {message}")
+                
+                if progress_callback:
+                    progress_callback(40, "Creating Word document from template...")
+                
+                success = generate_proposal.generate_proposal(excel_path, template_path, output_path)
+                
+                if progress_callback:
+                    progress_callback(95, "Finalizing document...")
+                
+                if success:
+                    if progress_callback:
+                        progress_callback(100, "Proposal generated successfully!")
+                    return f"Proposal successfully generated and saved to: {output_path}"
+                else:
+                    return "Failed to generate proposal. Check the console for more details."
+                
+            except Exception as e:
+                if progress_callback:
+                    progress_callback(100, f"Error: {str(e)}")
+                return f"An error occurred while generating proposal: {str(e)}"
+        
+        # Show loading screen
+        loading_screen = LoadingScreen(
+            parent=self,
+            title="Generating Proposal",
+            message="Creating proposal document from Excel data..."
+        )
+        loading_screen.show()
+        loading_screen.start_loading(generate_proposal_process)
+        
+        # Connect completion handler
+        def on_proposal_complete(success, message):
+            if success and "successfully generated" in message:
                 QMessageBox.information(
                     self,
                     "Success",
-                    f"Proposal successfully generated and saved to: {output_path}"
+                    message
                 )
                 # Refresh display to show the new file
                 self.load_excel_data()
@@ -1845,21 +1746,13 @@ class BDUGroupView(QMainWindow):
                 QMessageBox.critical(
                     self,
                     "Error",
-                    "Failed to generate proposal. Check the console for more details."
+                    message
                 )
             
-            # Clear status message
             self.statusBar().clearMessage()
-            
-        except Exception as e:
-            QMessageBox.critical(
-                self, 
-                "Error", 
-                f"An error occurred while generating proposal: {str(e)}"
-            )
-            self.statusBar().clearMessage()
-            print(f"Error in run_generate_proposal: {str(e)}")    
-    
+        
+        loading_screen.worker.task_completed.connect(on_proposal_complete)
+        
     def on_generate_proposal_finished(self, success, output):
         """Handler ketika proses generate proposal selesai"""
         if success:
@@ -1887,7 +1780,7 @@ class BDUGroupView(QMainWindow):
             
             # Periksa apakah file ada
             if not os.path.exists(abs_file_path):
-                print(f"Dokumen Word tidak ditemukan: {abs_file_path}")
+                print(f"Word document not found: {abs_file_path}")
                 return False
                     
             # Dapatkan ekstensi file
@@ -1896,7 +1789,7 @@ class BDUGroupView(QMainWindow):
             
             # Periksa apakah itu dokumen Word
             if ext not in ['.docx', '.doc']:
-                print(f"Bukan dokumen Word: {abs_file_path}")
+                print(f"Not a Word document:: {abs_file_path}")
                 return False
 
             # Simpan path dokumen untuk referensi
@@ -2274,6 +2167,16 @@ class BDUGroupView(QMainWindow):
         # Variables to track industry dropdown fields
         industry_dropdown = None
         sub_industry_dropdown = None
+        
+        # Untuk melacak pasangan field dropdown province-city
+        province1_dropdown = None
+        city1_dropdown = None
+        province2_dropdown = None
+        city2_dropdown = None
+        province1_field_key = None
+        city1_field_key = None
+        province2_field_key = None
+        city2_field_key = None
         
         # Untuk melacak pasangan field dropdown industry-subindustry
         industry_field_key = None
@@ -3052,10 +2955,6 @@ class BDUGroupView(QMainWindow):
                                         if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
                                             right_options_str = str(row.iloc[col_idx + 1]).strip()
                                             right_options = [opt.strip() for opt in right_options_str.split(',')]
-                                    
-                                    # Penanganan untuk field-field spesifik
-                                    if right_field_name in ["Biogas", "Expo Participation", "Gathering Participation"] and not right_options:
-                                        right_options = ["YES", "NO"]
                                         
                                     # Add placeholder item "-- Select value --" first (KEY ADDITION)
                                     display_options = ["-- Select Value --"] + right_options
@@ -3347,10 +3246,6 @@ class BDUGroupView(QMainWindow):
                                             right_options_str = str(row.iloc[col_idx + 1]).strip()
                                             right_options = [opt.strip() for opt in right_options_str.split(',')]
                                     
-                                    # Penanganan untuk field-field spesifik
-                                    if right_field_name in ["Biogas", "Expo Participation", "Gathering Participation"] and not right_options:
-                                        right_options = ["YES", "NO"]
-                                    
                                     # Add options to right dropdown
                                     display_options = ["-- Select Value --"] + right_options
                                     right_input_field.addItems(display_options)
@@ -3405,7 +3300,7 @@ class BDUGroupView(QMainWindow):
             # Check if it's a field dropdown (fd_)
             if first_col.startswith('fd_'):
                 field_name = first_col[3:].strip()  # Remove 'fd_' prefix
-        
+
                 # Extract display name by removing numeric prefix
                 display_name = field_name
                 if field_name and field_name[0].isdigit():
@@ -3455,25 +3350,75 @@ class BDUGroupView(QMainWindow):
                 
                 is_industry_field = field_name == "Industry Classification"
                 is_sub_industry_field = field_name == "Sub Industry Specification"
-                
-                
+                is_province1_field = field_name == "1Province"
+                is_city1_field = field_name == "1City"
+                is_province2_field = field_name == "2Province"
+                is_city2_field = field_name == "2City"
+
                 # Try to get options from data validation or from second column
                 options = []
-                # If Excel stores cell position
-                row_index = index + 1  # +1 because Excel starts from 1
-                col_index = 2  # Assuming column B for dropdown value
-                cell_address = f"{chr(ord('A') + col_index-1)}{row_index}"
                 
+                # Calculate cell address more accurately
+                excel_row = index + 1  # Convert to 1-based Excel row
+                excel_col = 2  # Column B
+                cell_address = f"B{excel_row}"
+            
                 # Untuk field Industry Classification, gunakan data dari mapping
                 if is_industry_field:
                     # Gunakan list industry dari mapping
                     options = list(INDUSTRY_SUBTYPE_MAPPING.keys())
                     industry_dropdown = input_field
                     industry_field_key = field_key
+                # Untuk field Sub Industry Specification
+                elif is_sub_industry_field:
+                    sub_industry_dropdown = input_field
+                    sub_industry_field_key = field_key
+                    # Add placeholder for now, will be populated when industry is selected
+                    options = ["-- Select Industry First --"]
+                # Untuk field 1Province
+                elif is_province1_field:
+                    options = INDONESIA_PROVINCES
+                    province1_dropdown = input_field
+                    province1_field_key = field_key
+                    input_field.setProperty("dropdown_type", "province")
+                    input_field.setProperty("province_number", "1")
+                    # Untuk field 1City
+                elif is_city1_field:
+                    city1_dropdown = input_field
+                    city1_field_key = field_key
+                    input_field.setProperty("placeholder_type", "city")
+                    input_field.setProperty("city_number", "1")
+                    # Add placeholder for now, will be populated when province is selected
+                    options = ["-- Select Province First --"]
+                # Untuk field 2Province
+                elif is_province2_field:
+                    options = INDONESIA_PROVINCES
+                    province2_dropdown = input_field
+                    province2_field_key = field_key
+                    input_field.setProperty("dropdown_type", "province")
+                    input_field.setProperty("province_number", "2")
+                # Untuk field 2City
+                elif is_city2_field:
+                    city2_dropdown = input_field
+                    city2_field_key = field_key
+                    input_field.setProperty("placeholder_type", "city")
+                    input_field.setProperty("city_number", "2")
+                    # Add placeholder for now, will be populated when province is selected
+                    options = ["-- Select Province First --"]
                 else:
-                    # Untuk field lain, gunakan metode biasa
-                    # Try to get from data validation
-                    validation_options = self.get_validation_values(self.excel_path, sheet_name, cell_address)
+                    # Try multiple cell addresses in case the calculation is off
+                    possible_addresses = [
+                        cell_address,  # B{excel_row}
+                        f"C{excel_row}",  # Sometimes validation is on the next column
+                        f"B{excel_row + 1}",  # Sometimes there's an offset
+                        f"B{excel_row - 1}"   # Sometimes there's a negative offset
+                    ]
+                    
+                    validation_options = []
+                    for addr in possible_addresses:
+                        validation_options = self.get_validation_values(self.excel_path, sheet_name, addr)
+                        if validation_options:
+                            break
                     
                     if validation_options:
                         options = validation_options
@@ -3481,8 +3426,9 @@ class BDUGroupView(QMainWindow):
                         # Fallback to old method if data validation not found
                         if len(row) > 1 and not pd.isna(row.iloc[1]):
                             options_str = str(row.iloc[1]).strip()
-                            options = [opt.strip() for opt in options_str.split(',')]
-                                
+                            if options_str and options_str != "nan":
+                                options = [opt.strip() for opt in options_str.split(',')]
+                        
                     # Simpan Process options untuk digunakan bersama
                     if "Process" in field_name and field_name.replace("Process ", "").strip().isdigit():
                         # Jika ini Process 1, simpan opsinya untuk field Process lainnya
@@ -3491,14 +3437,7 @@ class BDUGroupView(QMainWindow):
                         # Jika ini Process 2-9, gunakan opsi dari Process 1 jika tersedia
                         elif hasattr(self, 'process_field_options') and self.process_field_options:
                             options = self.process_field_options
-                
-                # Jika ini adalah Sub Industry Specification field
-                if is_sub_industry_field:
-                    sub_industry_dropdown = input_field
-                    sub_industry_field_key = field_key
-                    # Tambahkan placeholder, nilai sebenarnya akan diisi nanti saat industry dipilih
-                    options = ["-- Select Industry first --"]
-                
+
                 # Tambahkan stylesheet untuk tooltip
                 app = QApplication.instance()
                 app.setStyleSheet("""
@@ -3512,47 +3451,62 @@ class BDUGroupView(QMainWindow):
                     }
                 """)
                 
-                # Periksa field untuk menambahkan tooltip yang sesuai
-                if field_name == "Seismic Hazard Zone":
-                    # Tambahkan tooltip untuk setiap zona
-                    for i in range(input_field.count()):
-                        zone_text = input_field.itemText(i)
-                        if zone_text in SEISMIC_ZONE_DESCRIPTIONS:
-                            input_field.setItemData(i, SEISMIC_ZONE_DESCRIPTIONS[zone_text], Qt.ToolTipRole)
-                
-                # Tambahkan kondisi untuk Wind Speed Zone
-                elif field_name == "Wind Speed Zone":
-                    # Tambahkan tooltip untuk setiap level
-                    for i in range(input_field.count()):
-                        level_text = input_field.itemText(i)
-                        if level_text in WIND_SPEED_DESCRIPTIONS:
-                            input_field.setItemData(i, WIND_SPEED_DESCRIPTIONS[level_text], Qt.ToolTipRole)
-                
                 # Set default value if available
                 default_value = ""
                 if len(row) > 1 and not pd.isna(row.iloc[1]):
                     default_value = str(row.iloc[1]).strip()
                 
-                # Tambahkan item "-- Select value --" jika belum ada opsi atau nilai default kosong
-                if not options or not default_value:
-                    # Buat salinan opsi untuk menghindari memodifikasi options asli
-                    display_options = ["-- Select Value --"] + options
-                    input_field.addItems(display_options)
+                # Populate dropdown options
+                if options:
+                    # Add placeholder if no default value or if we want to force selection
+                    if not default_value or default_value == "nan":
+                        # For dependent fields, don't add extra placeholder
+                        if any(msg in options[0] for msg in ["Select Industry First", "Select Province First"]):
+                            input_field.addItems(options)
+                            input_field.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+                            input_field.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+                            input_field.setCurrentIndex(0)
+                        else:
+                            display_options = ["-- Select Value --"] + options
+                            input_field.addItems(display_options)
+                            
+                            # Style placeholder
+                            input_field.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+                            input_field.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+                            input_field.setCurrentIndex(0)
+                            
+                            # Set default value if it exists and matches an option
+                            if default_value and default_value in options:
+                                index = options.index(default_value) + 1  # +1 for placeholder
+                                input_field.setCurrentIndex(index)
+                    else:
+                        # No placeholder needed, add options directly
+                        input_field.addItems(options)
+                        
+                        # Set default value if it exists
+                        if default_value and default_value in options:
+                            input_field.setCurrentText(default_value)
+                        elif len(options) > 0:
+                            input_field.setCurrentText(options[0])
                     
-                    # Atur item pertama menjadi teks yang berbeda
+                else:
+                    # No options found - add placeholder only
+                    input_field.addItem("-- No Options Available --")
                     input_field.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
                     input_field.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
-                    input_field.setCurrentIndex(0)  # Pilih placeholder
-                else:
-                    # Tidak perlu placeholder, tambahkan opsi biasa
-                    input_field.addItems(options)
-                    
-                    # Atur nilai default jika ada
-                    if default_value and default_value in options:
-                        input_field.setCurrentText(default_value)
-                    elif len(options) > 0:
-                        input_field.setCurrentText(options[0])
-                    
+                
+                # Add tooltips for special fields
+                if field_name == "Seismic Hazard Zone":
+                    for i in range(input_field.count()):
+                        zone_text = input_field.itemText(i)
+                        if zone_text in SEISMIC_ZONE_DESCRIPTIONS:
+                            input_field.setItemData(i, SEISMIC_ZONE_DESCRIPTIONS[zone_text], Qt.ToolTipRole)
+                elif field_name == "Wind Speed Zone":
+                    for i in range(input_field.count()):
+                        level_text = input_field.itemText(i)
+                        if level_text in WIND_SPEED_DESCRIPTIONS:
+                            input_field.setItemData(i, WIND_SPEED_DESCRIPTIONS[level_text], Qt.ToolTipRole)
+
                 # Check if there's any field in the right columns (columns C and beyond)
                 has_right_field = False
                 for col_idx in range(2, min(len(row), df.shape[1])):
@@ -3572,18 +3526,15 @@ class BDUGroupView(QMainWindow):
                             col_value.startswith('fm_')):
                             has_right_field = True
                             break
-                
-                # If there's no field in the right columns, make this field span to match fm_ fields
+
+                # Position dropdown in grid
                 if not has_right_field:
-                    # Set dropdown to span only columns 1 and 2 to align with fm_ fields
+                    # If there's no field in the right columns, make this field span to match fm_ fields
                     section_grid.addWidget(input_field, current_row, 1, 1, 2)  # Span 2 columns
                 else:
                     # Add dropdown to grid normally
                     section_grid.addWidget(input_field, current_row, 1)
                     
-                # Register the field
-                self.data_fields[field_key] = input_field
-                
                 # Register the field
                 self.data_fields[field_key] = input_field
                 
@@ -3692,10 +3643,6 @@ class BDUGroupView(QMainWindow):
                                         if col_idx + 1 < len(row) and not pd.isna(row.iloc[col_idx + 1]):
                                             right_options_str = str(row.iloc[col_idx + 1]).strip()
                                             right_options = [opt.strip() for opt in right_options_str.split(',')]
-                                    
-                                    # Penanganan untuk field-field spesifik
-                                    if right_field_name in ["Biogas", "Expo Participation", "Gathering Participation"] and not right_options:
-                                        right_options = ["YES", "NO"]
                                         
                                     # Add placeholder item "-- Select value --" first (KEY ADDITION)
                                     display_options = ["-- Select Value --"] + right_options
@@ -4142,7 +4089,9 @@ class BDUGroupView(QMainWindow):
                 current_row += 1
                 continue
 
-        # Setelah semua field diproses, hubungkan dropdown yang saling terkait
+        # Setelah loop pemrosesan baris selesai dan sebelum return, tambahkan:
+
+        # Hubungkan dropdown industry dan sub-industry
         if industry_dropdown and sub_industry_dropdown:
             # Simpan pasangan dropdown untuk referensi nanti
             self.linked_dropdowns[industry_field_key] = sub_industry_field_key
@@ -4153,7 +4102,7 @@ class BDUGroupView(QMainWindow):
             
             # Trigger update awal untuk mengisi sub-industry berdasarkan nilai industry yang sudah dipilih
             industry_value = industry_dropdown.currentText()
-            if industry_value:
+            if industry_value and industry_value != "-- Select Value --":
                 self.update_dependent_dropdown(industry_value, sub_industry_dropdown)
                 
                 # Cari nilai sub-industry yang tersimpan di Excel
@@ -4176,8 +4125,77 @@ class BDUGroupView(QMainWindow):
                 # Jika nilai sub-industry ditemukan, set ke dropdown
                 if sub_industry_value and sub_industry_value in [sub_industry_dropdown.itemText(i) for i in range(sub_industry_dropdown.count())]:
                     sub_industry_dropdown.setCurrentText(sub_industry_value)
-                    print(f"Setting Sub Industry dropdown to saved value: {sub_industry_value}")
 
+        # Hubungkan dropdown province1 dan city1
+        if province1_dropdown and city1_dropdown:
+            # Simpan pasangan dropdown untuk referensi nanti
+            self.linked_dropdowns[province1_field_key] = city1_field_key
+            
+            # Hubungkan event dropdown province ke fungsi update untuk dropdown city
+            province1_dropdown.currentTextChanged.connect(
+                lambda text, child=city1_dropdown: self.update_dependent_dropdown(text, child))
+            
+            # Trigger update awal untuk mengisi city berdasarkan nilai province yang sudah dipilih
+            province1_value = province1_dropdown.currentText()
+            if province1_value and province1_value != "-- Select Value --":
+                self.update_dependent_dropdown(province1_value, city1_dropdown)
+                
+                # Cari nilai city yang tersimpan di Excel
+                city1_value = None
+                city1_row = None
+                
+                # Cari baris yang berisi 'fd_1City'
+                for row_idx, row in df.iterrows():
+                    if pd.isna(row.iloc[0]):
+                        continue
+                        
+                    first_col = str(row.iloc[0]).strip() if not pd.isna(row.iloc[0]) else ""
+                    if "1City" in first_col and first_col.startswith('fd_'):
+                        city1_row = row_idx
+                        # Ambil nilai dari kolom B (indeks 1)
+                        if len(row) > 1 and not pd.isna(row.iloc[1]):
+                            city1_value = str(row.iloc[1]).strip()
+                        break
+                
+                # Jika nilai city ditemukan, set ke dropdown
+                if city1_value and province1_value in INDONESIA_CITIES and city1_value in INDONESIA_CITIES[province1_value]:
+                    city1_dropdown.setCurrentText(city1_value)
+
+        # Hubungkan dropdown province2 dan city2
+        if province2_dropdown and city2_dropdown:
+            # Simpan pasangan dropdown untuk referensi nanti
+            self.linked_dropdowns[province2_field_key] = city2_field_key
+            
+            # Hubungkan event dropdown province ke fungsi update untuk dropdown city
+            province2_dropdown.currentTextChanged.connect(
+                lambda text, child=city2_dropdown: self.update_dependent_dropdown(text, child))
+            
+            # Trigger update awal untuk mengisi city berdasarkan nilai province yang sudah dipilih
+            province2_value = province2_dropdown.currentText()
+            if province2_value and province2_value != "-- Select Value --":
+                self.update_dependent_dropdown(province2_value, city2_dropdown)
+                
+                # Cari nilai city yang tersimpan di Excel
+                city2_value = None
+                city2_row = None
+                
+                # Cari baris yang berisi 'fd_2City'
+                for row_idx, row in df.iterrows():
+                    if pd.isna(row.iloc[0]):
+                        continue
+                        
+                    first_col = str(row.iloc[0]).strip() if not pd.isna(row.iloc[0]) else ""
+                    if "2City" in first_col and first_col.startswith('fd_'):
+                        city2_row = row_idx
+                        # Ambil nilai dari kolom B (indeks 1)
+                        if len(row) > 1 and not pd.isna(row.iloc[1]):
+                            city2_value = str(row.iloc[1]).strip()
+                        break
+                
+                # Jika nilai city ditemukan, set ke dropdown
+                if city2_value and province2_value in INDONESIA_CITIES and city2_value in INDONESIA_CITIES[province2_value]:
+                    city2_dropdown.setCurrentText(city2_value)
+                    
         # Process any excel images that may exist in this sheet
         if section_layout:
             self.process_excel_images(sheet_name, section_layout)
@@ -4222,603 +4240,434 @@ class BDUGroupView(QMainWindow):
     def get_validation_values(self, excel_path, sheet_name, cell_address):
         """Mengambil nilai dari data validation di sebuah sel Excel"""
         from openpyxl import load_workbook
+        import re
         
+        workbook = None
         try:
             # Pastikan untuk memuat dengan data_only=False agar kita bisa mengakses validasi
             workbook = load_workbook(excel_path, data_only=False)
             
             if sheet_name not in workbook.sheetnames:
+                print(f"Sheet {sheet_name} not found in workbook")
                 return []
                 
             sheet = workbook[sheet_name]
             
-            # Periksa apakah cell address valid
+            # Parse cell address manually (e.g., "B5" -> column=2, row=5)
             try:
-                cell = sheet[cell_address]
-            except:
+                # Use regex to parse cell address
+                match = re.match(r'^([A-Z]+)(\d+)$', cell_address.upper())
+                if not match:
+                    print(f"Invalid cell address format: {cell_address}")
+                    return []
+                
+                col_letters = match.group(1)
+                row_num = int(match.group(2))
+                
+                # Convert column letters to number (A=1, B=2, etc.)
+                col_num = 0
+                for i, letter in enumerate(reversed(col_letters)):
+                    col_num += (ord(letter) - ord('A') + 1) * (26 ** i)
+                
+                target_cell = sheet.cell(row=row_num, column=col_num)
+            except Exception as e:
+                print(f"Error parsing cell address {cell_address}: {str(e)}")
                 return []
             
-            # Cek data validation secara eksplisit
-            dv = sheet.data_validations.dataValidation
-            for validation in dv:
-                for coord in validation.sqref.ranges:
-                    if cell.coordinate in str(coord):
-                        # Ditemukan validasi untuk sel ini
-                        if validation.type == "list":
-                            formula = validation.formula1
-                            
-                            # Jika formula menggunakan referensi
-                            if formula.startswith('='):
-                                # Implementasi sama seperti sebelumnya...
-                                pass
-                            else:
-                                # Untuk list langsung seperti "A,B,C"
-                                if formula.startswith('"') and formula.endswith('"'):
-                                    formula = formula[1:-1]
-                                return [val.strip() for val in formula.split(',')]
-            
-            # Fallback: Coba cara lain untuk mendapatkan validation list
-            try:
-                # Untuk beberapa versi openpyxl, langsung coba akses data_validation
-                if hasattr(cell, 'data_validation') and cell.data_validation and hasattr(cell.data_validation, 'type'):
-                    if cell.data_validation.type == 'list':
-                        formula = cell.data_validation.formula1
-                        if formula.startswith('"') and formula.endswith('"'):
-                            formula = formula[1:-1]
-                        return [val.strip() for val in formula.split(',')]
-            except:
-                pass
-                
-            return []
-        except Exception as e:
-            print(f"Error saat membaca data validation: {str(e)}")
-            return []
-        
-    # Kode Baru
-    def save_sheet_data(self, sheet_name):
-        """Save the form data back to the Excel file"""
-        try:
-            # Check if the sheet name exists
-            if not sheet_name.startswith("DIP_"):
-                QMessageBox.warning(self, "Warning", "Only DIP sheets can be saved.")
-                return
-            
-            import pandas as pd
-            from openpyxl import load_workbook
-            import os
-            import time
-            
-            # Check if file exists and is accessible
-            if not os.path.exists(self.excel_path):
-                QMessageBox.critical(self, "Error", f"Excel file not found: {self.excel_path}")
-                return
-                
-            # Check if file is not opened by another process
-            try:
-                # Try to open file in append mode to check if it's locked
-                with open(self.excel_path, 'a'):
-                    pass
-            except PermissionError:
-                QMessageBox.critical(self, "Error", "Excel file is currently opened by another application. Please close it and try again.")
-                return
-            
-            print(f"Starting to save data to sheet: {sheet_name}")
-            
-            # Create a backup of the Excel file
-            backup_path = self.excel_path + ".bak"
-            try:
-                import shutil
-                shutil.copy2(self.excel_path, backup_path)
-                print(f"Backup created at: {backup_path}")
-            except Exception as e:
-                print(f"Warning: Could not create backup: {str(e)}")
-            
-            # Load the Excel workbook with openpyxl
-            wb = load_workbook(self.excel_path)
-            
-            if sheet_name not in wb.sheetnames:
-                QMessageBox.critical(self, "Error", f"Sheet '{sheet_name}' not found in the Excel file.")
-                return
-            
-            # Get the sheet
-            sheet = wb[sheet_name]
-            
-            # Also load with pandas to help us find the field positions
-            df = pd.read_excel(self.excel_path, sheet_name=sheet_name, header=None)
-            
-            # Create a mapping of field IDs to row indices and track dropdown options
-            field_to_row = {}
-            right_fields = {}  # Track right fields by row and column
-            dropdown_options = {}  # Track dropdown options by row and column
-            
-            # First pass: scan the Excel to build a map of field identifiers to row numbers
-            # and collect dropdown options
-            for row_idx, row in df.iterrows():
-                # Skip empty rows
-                if pd.isna(row).all():
-                    continue
-                
-                # Get first column value
-                first_col = row.iloc[0] if not pd.isna(row.iloc[0]) else ""
-                
-                # Convert to string if not already
-                if not isinstance(first_col, str):
-                    try:
-                        first_col = str(first_col)
-                    except:
-                        continue
-                
-                # Store the row index for this field
-                if first_col.startswith('f_') or first_col.startswith('fd_') or first_col.startswith('fm_') or first_col.startswith('ft_'):
-                    field_to_row[first_col] = row_idx
-                    
-                    # Extract the field name without prefix
-                    if first_col.startswith('f_'):
-                        field_name = first_col[2:].strip()
-                    elif first_col.startswith('fd_') or first_col.startswith('fm_') or first_col.startswith('ft_'):
-                        field_name = first_col[3:].strip()
-                    else:
-                        field_name = first_col
-                        
-                    # Store the original field identifier with row index for easy lookup
-                    field_to_row[f"row_{row_idx}"] = first_col
-                    
-                    # For dropdown fields (fd_), store their options
-                    if first_col.startswith('fd_'):
-                        # Options should be in column B (index 1)
-                        if len(row) > 1 and not pd.isna(row.iloc[1]):
-                            options_str = str(row.iloc[1]).strip()
-                            options = [opt.strip() for opt in options_str.split(',')]
-                            dropdown_options[row_idx] = {
-                                'col': 1,  # Column B
-                                'options': options
-                            }
-                            print(f"Found dropdown options for row {row_idx}: {options}")
-                
-                # IMPORTANT: Process fields in ALL columns to track dropdown options
-                for col_idx in range(len(row)):
-                    if not pd.isna(row[col_idx]):
-                        col_value = row.iloc[col_idx] if not pd.isna(row.iloc[col_idx]) else ""
-                        
-                        # Convert to string if needed
-                        if not isinstance(col_value, str):
-                            try:
-                                col_value = str(col_value)
-                            except:
-                                continue
-                        
-                        # Store field identifiers from ALL columns
-                        if (col_value.startswith('f_') or 
-                            col_value.startswith('fd_') or 
-                            col_value.startswith('fm_') or
-                            col_value.startswith('fh_')):
-                            
-                            # Create a key that includes the row and column position
-                            field_key = f"col_{col_idx}_row_{row_idx}"
-                            right_fields[field_key] = col_value
-                            
-                            # Also store by the field identifier for reverse lookup
-                            right_fields[col_value] = {"row": row_idx, "col": col_idx}
-                            
-                            # For dropdown fields (fd_), store their options
-                            if col_value.startswith('fd_'):
-                                # Options should be in the next column
-                                next_col = col_idx + 1
-                                if next_col < len(row) and not pd.isna(row.iloc[next_col]):
-                                    options_str = str(row.iloc[next_col]).strip()
-                                    options = [opt.strip() for opt in options_str.split(',')]
-                                    dropdown_options[f"{row_idx}_{col_idx}"] = {
-                                        'col': next_col,
-                                        'options': options
-                                    }
-                                    print(f"Found dropdown options for row {row_idx}, col {col_idx}: {options}")
-            
-            print(f"Found {len(field_to_row)} field mappings in the Excel sheet")
-            print(f"Found {len(dropdown_options)} dropdown option sets")
-            
-            # Create validation data maps to help match dropdowns with their correct options
-            # This will store cell positions and their validation options
-            validation_data = {}
-            
-            # Load validation info from workbook
-            from openpyxl.worksheet.datavalidation import DataValidation
-            
-            # Process all data validations in the sheet
-            if hasattr(sheet, 'data_validations'):
+            # Method 1: Check data validations collection
+            if hasattr(sheet, 'data_validations') and sheet.data_validations:
                 for validation in sheet.data_validations.dataValidation:
-                    if validation.type == 'list':
-                        # This is a dropdown validation
-                        formula = validation.formula1
-                        options = []
-                        
-                        # Extract options from formula
-                        if formula.startswith('"') and formula.endswith('"'):
-                            formula = formula[1:-1]
-                            options = [opt.strip() for opt in formula.split(',')]
-                        
-                        # Get all cells this validation applies to
-                        for coord in validation.sqref.ranges:
-                            for row in range(coord.min_row, coord.max_row + 1):
-                                for col in range(coord.min_col, coord.max_col + 1):
-                                    cell_key = f"row_{row-1}_col_{col-1}"  # Adjust for 0-based indexing
-                                    validation_data[cell_key] = {
-                                        'options': options,
-                                        'cell': f"{chr(64 + col)}{row}"  # Convert to A1 notation
-                                    }
-                                    print(f"Found validation at {chr(64 + col)}{row}: {options}")
+                    if validation.type == "list":
+                        # Check if our cell is in the validation range
+                        for coord_range in validation.sqref.ranges:
+                            if target_cell.coordinate in str(coord_range):
+                                formula = validation.formula1
+                                
+                                if formula:
+                                    # Handle different formula formats
+                                    if formula.startswith('"') and formula.endswith('"'):
+                                        # Direct list: "option1,option2,option3"
+                                        formula = formula[1:-1]
+                                        options = [val.strip() for val in formula.split(',')]
+                                        return options
+                                    elif formula.startswith('='):
+                                        # Reference to another range
+                                        try:
+                                            ref_range = formula[1:]  # Remove '='
+                                            # Handle sheet references like 'Sheet1!A1:A10'
+                                            if '!' in ref_range:
+                                                ref_sheet_name, ref_range = ref_range.split('!', 1)
+                                                ref_sheet = workbook[ref_sheet_name]
+                                            else:
+                                                ref_sheet = sheet
+                                            
+                                            # Get values from the referenced range
+                                            ref_cells = ref_sheet[ref_range]
+                                            options = []
+                                            if hasattr(ref_cells, '__iter__'):
+                                                for cell_row in ref_cells:
+                                                    if hasattr(cell_row, '__iter__'):
+                                                        for cell in cell_row:
+                                                            if cell.value is not None:
+                                                                options.append(str(cell.value).strip())
+                                                    else:
+                                                        if cell_row.value is not None:
+                                                            options.append(str(cell_row.value).strip())
+                                            else:
+                                                if ref_cells.value is not None:
+                                                    options.append(str(ref_cells.value).strip())
+                                            
+                                            return options
+                                        except Exception as ref_e:
+                                            print(f"Error processing reference formula {formula}: {str(ref_e)}")
+                                    else:
+                                        # Simple list without quotes
+                                        options = [val.strip() for val in formula.split(',')]
+                                        return options
             
-            # Find industry and sub-industry dropdown widgets
-            industry_dropdown = None
-            sub_industry_dropdown = None
+            # Method 2: Check if cell has direct validation (alternative approach)
+            try:
+                if hasattr(target_cell, 'data_validation') and target_cell.data_validation:
+                    cell_validation = target_cell.data_validation
+                    if hasattr(cell_validation, 'type') and cell_validation.type == 'list':
+                        formula = cell_validation.formula1
+                        if formula:
+                            if formula.startswith('"') and formula.endswith('"'):
+                                formula = formula[1:-1]
+                            options = [val.strip() for val in formula.split(',')]
+                            return options
+            except Exception as e:
+                print(f"Error checking direct cell validation: {str(e)}")
             
-            # Track the widget indices to make sure we match them properly
-            industry_index = -1
-            sub_industry_index = -1
-            
-            # Find dropdowns for Industry and Sub-Industry by going through all widgets
-            for key, widget in self.data_fields.items():
-                if not key.startswith(sheet_name):
-                    continue  # Skip widgets from other sheets
-                
-                if isinstance(widget, QComboBox):
-                    # Extract current section and field index
-                    parts = key.split('_')
-                    if len(parts) >= 3:
+            # Method 3: Scan all validations and find matching cell coordinates
+            if hasattr(sheet, 'data_validations') and sheet.data_validations:
+                for validation in sheet.data_validations.dataValidation:
+                    if validation.type == "list":
                         try:
-                            field_index = int(parts[-1])
-                            # Assuming industry comes before sub-industry
-                            if field_index > industry_index:
-                                # First dropdown after index is industry
-                                if industry_dropdown is None:
-                                    industry_dropdown = widget
-                                    industry_index = field_index
-                                    print(f"Found Industry dropdown with key {key}")
-                                # Second dropdown after index is sub-industry    
-                                elif sub_industry_dropdown is None:
-                                    sub_industry_dropdown = widget
-                                    sub_industry_index = field_index
-                                    print(f"Found Sub-Industry dropdown with key {key}")
-                        except ValueError:
-                            # Not an integer index
-                            pass
+                            for coord_range in validation.sqref.ranges:
+                                # Check if our target coordinates fall within this range
+                                if (coord_range.min_row <= row_num <= coord_range.max_row and
+                                    coord_range.min_col <= col_num <= coord_range.max_col):
+                                    formula = validation.formula1
+                                    if formula:
+                                        if formula.startswith('"') and formula.endswith('"'):
+                                            formula = formula[1:-1]
+                                        options = [val.strip() for val in formula.split(',')]
+                                        return options
+                        except Exception as range_e:
+                            print(f"Error processing validation range: {str(range_e)}")
+                            continue
             
-            # Track changes
-            changes_made = 0
-            changes_log = []
-            
-            # Improved approach: Create a direct mapping between Excel cells and widgets
-            # This will help us match the correct widget to each cell
-            cell_to_widget_map = {}
-            
-            # First, map all left column fields (Column A/B pairs)
-            for row_idx in range(len(df)):
-                # Skip empty rows
-                if pd.isna(df.iloc[row_idx]).all():
-                    continue
+            return []
                     
-                first_col = df.iloc[row_idx, 0] if not pd.isna(df.iloc[row_idx, 0]) else ""
-                if not isinstance(first_col, str):
-                    try:
-                        first_col = str(first_col)
-                    except:
-                        continue
+        except Exception as e:
+            print(f"Error reading data validation for {cell_address}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
+        finally:
+            # Always close the workbook if it was opened
+            if workbook is not None:
+                try:
+                    workbook.close()
+                except Exception as close_e:
+                    print(f"Error closing workbook: {str(close_e)}")
+                                            
+    def save_sheet_data(self, sheet_name):
+        """Save the form data back to the Excel file with loading screen"""
+        
+        def save_process(progress_callback=None):
+            try:
+                if progress_callback:
+                    progress_callback(5, "Validating sheet data...")
                 
-                # Only process rows that start with field identifiers
-                if not (first_col.startswith('f_') or 
-                    first_col.startswith('fd_') or 
-                    first_col.startswith('fm_') or
-                    first_col.startswith('ft_')):
-                    continue
+                # Check if the sheet name exists
+                if not sheet_name.startswith("DIP_"):
+                    return "Only DIP sheets can be saved."
                 
-                # Get field properties
-                field_type = first_col[:3] if not first_col.startswith('f_') else first_col[:2]
-                field_name = first_col[3:] if not first_col.startswith('f_') else first_col[2:]
+                import pandas as pd
+                from openpyxl import load_workbook
+                import os
+                import time
                 
-                # Clean up the display name
-                display_name = field_name.strip()
-                if display_name and display_name[0].isdigit():
-                    for i, char in enumerate(display_name):
-                        if not char.isdigit():
-                            display_name = display_name[i:]
-                            break
+                if progress_callback:
+                    progress_callback(10, "Checking file accessibility...")
                 
-                # Get the section for this row
-                section_name = self._get_section_for_row(df, row_idx)
+                # Check if file exists and is accessible
+                if not os.path.exists(self.excel_path):
+                    return f"Excel file not found: {self.excel_path}"
+                    
+                # Check if file is not opened by another process
+                try:
+                    with open(self.excel_path, 'a'):
+                        pass
+                except PermissionError:
+                    return "Excel file is currently opened by another application. Please close it and try again."
                 
-                # Find the matching widget based on field type
-                if field_type == 'f_':
-                    # Regular input field
-                    field_id = first_col  # Simpan field identifier asli (dengan angka)
-                    original_field_name = field_name.strip()  # Simpan nama field asli (dengan angka)
-                    
-                    # Buat key khusus untuk pencocokan widget
-                    widget_key_prefix = f"{sheet_name}_{section_name}_"
-                    possible_keys = []
-                    
-                    # Coba berbagai kemungkinan kunci
-                    for i in range(100):
-                        possible_keys.append(f"{widget_key_prefix}{i}")
-                        possible_keys.append(f"{widget_key_prefix}{original_field_name}_{i}")
-                        possible_keys.append(f"{widget_key_prefix}{display_name}_{i}")
-                    
-                    # Tambahkan kunci berdasarkan nomor baris
-                    possible_keys.append(f"{widget_key_prefix}{row_idx}")
-                    
-                    # Coba semua kunci tersebut secara berurutan
-                    found_widget = None
-                    found_key = None
-                    
-                    for test_key in possible_keys:
-                        if test_key in self.data_fields:
-                            widget = self.data_fields[test_key]
-                            if (isinstance(widget, QLineEdit) and 
-                                test_key not in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]):
-                                
-                                placeholder = widget.placeholderText()
-                                # Prioritaskan kecocokan yang lebih spesifik
-                                if placeholder:
-                                    # Kecocokan paling spesifik: memuat field ID lengkap (dengan prefix angka)
-                                    if field_id in placeholder:
-                                        found_widget = widget
-                                        found_key = test_key
-                                        break
-                                    # Kecocokan level kedua: memuat nama field asli (dengan angka)
-                                    elif original_field_name in placeholder:
-                                        found_widget = widget
-                                        found_key = test_key
-                                        # Jangan break, karena masih mencari kecocokan terbaik
-                                    # Kecocokan level ketiga: memuat display name (tanpa angka)
-                                    elif display_name in placeholder and not found_widget:
-                                        found_widget = widget
-                                        found_key = test_key
-                                        # Jangan break, karena masih mencari kecocokan yang lebih baik
-                    
-                    # Jika widget ditemukan, petakan
-                    if found_widget:
-                        cell_key = f"row_{row_idx}_col_1"  # Column B
-                        cell_to_widget_map[cell_key] = {
-                            'widget': found_widget,
-                            'key': found_key,
-                            'type': 'text',
-                            'display_name': display_name,
-                            'original_field': original_field_name,
-                            'field_id': field_id
-                        }
-                    else:
-                        print(f"Warning: Could not find widget for field: {field_id}")
-                                        
-                elif field_type == 'fd_':
-                    # Dropdown field - requires special handling
-                    # For Industry Classification
-                    if "Industry Classification" in display_name and industry_dropdown:
-                        cell_key = f"row_{row_idx}_col_1"  # Column B
-                        cell_to_widget_map[cell_key] = {
-                            'widget': industry_dropdown,
-                            'key': 'industry_dropdown',
-                            'type': 'dropdown'
-                        }
-                    
-                    # For Sub Industry Specification
-                    elif "Sub Industry Specification" in display_name and sub_industry_dropdown:
-                        cell_key = f"row_{row_idx}_col_1"  # Column B
-                        cell_to_widget_map[cell_key] = {
-                            'widget': sub_industry_dropdown,
-                            'key': 'sub_industry_dropdown',
-                            'type': 'dropdown'
-                        }
-                    
-                    # For other dropdowns
-                    else:
-                        # Find the options for this dropdown
-                        dropdown_key = row_idx
-                        options = []
-                        
-                        if dropdown_key in dropdown_options:
-                            options = dropdown_options[dropdown_key]['options']
-                        
-                        # Find a QComboBox that isn't already mapped and has matching options
-                        for key, widget in self.data_fields.items():
-                            if not key.startswith(sheet_name):
-                                continue
-                                
-                            if isinstance(widget, QComboBox) and key not in cell_to_widget_map.values():
-                                # Skip industry and sub-industry dropdowns
-                                if widget is industry_dropdown or widget is sub_industry_dropdown:
-                                    continue
-                                    
-                                # Check if widget options match
-                                widget_options = [widget.itemText(i) for i in range(widget.count())]
-                                option_match = False
-                                
-                                # If there are options, check for matches
-                                if options:
-                                    option_match = any(opt in widget_options for opt in options)
-                                
-                                # If no specific options or matching options found, use this widget
-                                if not options or option_match or len(options) == 0:
-                                    cell_key = f"row_{row_idx}_col_1"  # Column B
-                                    cell_to_widget_map[cell_key] = {
-                                        'widget': widget,
-                                        'key': key,
-                                        'type': 'dropdown'
-                                    }
-                                    break
+                if progress_callback:
+                    progress_callback(15, "Creating backup...")
                 
-                elif field_type == 'fm_':
-                    # Multiple field (e.g., Name and Phone/Email)
-                    found_base_key = None
-                    
-                    # Cari berdasarkan nama bidang, dan juga coba variasi lain
-                    field_base = f"{sheet_name}_{section_name}_{field_name}"
-                    field_key_0 = f"{field_base}_0"
-                    field_key_1 = f"{field_base}_1"
-                    
-                    # Coba cari widget berdasarkan nama bidang lengkap terlebih dahulu
-                    if field_key_0 in self.data_fields and field_key_1 in self.data_fields:
-                        found_key_base = field_base
-                        widget_0 = self.data_fields[field_key_0]
-                        widget_1 = self.data_fields[field_key_1]
-                        
-                        # Map both widgets
-                        cell_key_0 = f"row_{row_idx}_col_1"  # Column B
-                        cell_key_1 = f"row_{row_idx}_col_2"  # Column C
-                        
-                        cell_to_widget_map[cell_key_0] = {
-                            'widget': widget_0,
-                            'key': field_key_0,
-                            'type': 'text'
-                        }
-                        
-                        cell_to_widget_map[cell_key_1] = {
-                            'widget': widget_1,
-                            'key': field_key_1,
-                            'type': 'text'
-                        }
-                    else:
-                        # Jika tidak ditemukan, cari berdasarkan indeks dan placeholder
-                        for i in range(100):
-                            test_base = f"{sheet_name}_{section_name}_{i}"
-                            test_key_0 = f"{test_base}_0"
-                            test_key_1 = f"{test_base}_1"
+                # Create a backup of the Excel file
+                backup_path = self.excel_path + ".bak"
+                try:
+                    import shutil
+                    shutil.copy2(self.excel_path, backup_path)
+                    print(f"Backup created at: {backup_path}")
+                except Exception as e:
+                    print(f"Warning: Could not create backup: {str(e)}")
+                
+                if progress_callback:
+                    progress_callback(20, "Loading Excel workbook...")
+                
+                # Load the Excel workbook with openpyxl
+                wb = load_workbook(self.excel_path)
+                
+                if sheet_name not in wb.sheetnames:
+                    return f"Sheet '{sheet_name}' not found in the Excel file."
+                
+                # Get the sheet
+                sheet = wb[sheet_name]
+                
+                if progress_callback:
+                    progress_callback(25, "Reading current data structure...")
+                
+                # Also load with pandas to help us find the field positions
+                df = pd.read_excel(self.excel_path, sheet_name=sheet_name, header=None)
+                
+                # Create validation data maps to help match dropdowns with their correct options
+                validation_data = {}
+                
+                if progress_callback:
+                    progress_callback(30, "Processing data validations...")
+                
+                # Load validation info from workbook
+                from openpyxl.worksheet.datavalidation import DataValidation
+                
+                # Process all data validations in the sheet
+                if hasattr(sheet, 'data_validations'):
+                    for validation in sheet.data_validations.dataValidation:
+                        if validation.type == 'list':
+                            # This is a dropdown validation
+                            formula = validation.formula1
+                            options = []
                             
-                            if test_key_0 in self.data_fields and test_key_1 in self.data_fields:
-                                widget_0 = self.data_fields[test_key_0]
-                                widget_1 = self.data_fields[test_key_1]
-                                
-                                # Skip jika sudah dipetakan
-                                if (test_key_0 in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info] or
-                                    test_key_1 in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]):
-                                    continue
-                                
-                                if isinstance(widget_0, QLineEdit) and isinstance(widget_1, QLineEdit):
-                                    # Periksa placeholder dengan kriteria yang lebih longgar
-                                    placeholder_0 = widget_0.placeholderText()
-                                    placeholder_1 = widget_1.placeholderText()
-                                    
-                                    # Gunakan pendekatan lebih fleksibel untuk mencocokkan placeholder
-                                    # Periksa jika nama tampilan ada di salah satu placeholder
-                                    # atau jika kita belum memetakan cukup banyak widget fm_
-                                    if ((placeholder_0 and display_name in placeholder_0) or 
-                                        (placeholder_1 and display_name in placeholder_1) or
-                                        len([k for k in cell_to_widget_map.keys() if '_col_2' in k]) < 10):  # Pastikan kita memetakan cukup banyak widget fm_
-                                        
-                                        # Map kedua widget
-                                        cell_key_0 = f"row_{row_idx}_col_1"  # Column B
-                                        cell_key_1 = f"row_{row_idx}_col_2"  # Column C
-                                        
-                                        cell_to_widget_map[cell_key_0] = {
-                                            'widget': widget_0,
-                                            'key': test_key_0,
-                                            'type': 'text'
+                            # Extract options from formula
+                            if formula.startswith('"') and formula.endswith('"'):
+                                formula = formula[1:-1]
+                                options = [opt.strip() for opt in formula.split(',')]
+                            
+                            # Get all cells this validation applies to
+                            for coord in validation.sqref.ranges:
+                                for row in range(coord.min_row, coord.max_row + 1):
+                                    for col in range(coord.min_col, coord.max_col + 1):
+                                        cell_key = f"row_{row-1}_col_{col-1}"  # Adjust for 0-based indexing
+                                        cell_address = f"{chr(64 + col)}{row}"  # Convert to A1 notation
+                                        validation_data[cell_key] = {
+                                            'options': options,
+                                            'cell': cell_address
                                         }
-                                        
-                                        cell_to_widget_map[cell_key_1] = {
-                                            'widget': widget_1,
-                                            'key': test_key_1,
-                                            'type': 'text'
-                                        }
-                                        
-                                        found_base_key = test_base
-                                        break
-                    
-                    if not found_base_key:
-                        print(f"Warning: Could not find widgets for multiple field: {display_name}")
+
+                if progress_callback:
+                    progress_callback(35, "Building field position mapping...")
                 
-                elif field_type == 'ft_':
-                    # Table item (checkboxes and remarks)
-                    # Keep track of which table items we've processed
-                    processed_table_items = getattr(self, '_processed_table_items', set())
-                    
-                    # For each row, find the FIRST unprocessed matching widget set
-                    found_base_key = None
-                    
-                    for i in range(100):  # Try different indexes
-                        base_key = f"{sheet_name}_{section_name}_{i}"
-                        client_key = f"{base_key}_client"
-                        contractor_key = f"{base_key}_contractor"
-                        remarks_key = f"{base_key}_remarks"
-                        
-                        # Check if all three widgets exist and none of them are already processed
-                        if (client_key in self.data_fields and 
-                            contractor_key in self.data_fields and 
-                            remarks_key in self.data_fields and
-                            base_key not in processed_table_items):
-                            
-                            client_widget = self.data_fields[client_key]
-                            contractor_widget = self.data_fields[contractor_key]
-                            remarks_widget = self.data_fields[remarks_key]
-                            
-                            if (isinstance(client_widget, QCheckBox) and 
-                                isinstance(contractor_widget, QCheckBox) and 
-                                isinstance(remarks_widget, QLineEdit)):
-                                
-                                # Map all three widgets
-                                cell_key_client = f"row_{row_idx}_col_1"  # Column B
-                                cell_key_contractor = f"row_{row_idx}_col_2"  # Column C
-                                cell_key_remarks = f"row_{row_idx}_col_3"  # Column D
-                                
-                                cell_to_widget_map[cell_key_client] = {
-                                    'widget': client_widget,
-                                    'key': client_key,
-                                    'type': 'checkbox'
-                                }
-                                
-                                cell_to_widget_map[cell_key_contractor] = {
-                                    'widget': contractor_widget,
-                                    'key': contractor_key,
-                                    'type': 'checkbox'
-                                }
-                                
-                                cell_to_widget_map[cell_key_remarks] = {
-                                    'widget': remarks_widget,
-                                    'key': remarks_key,
-                                    'type': 'text'
-                                }
-                                
-                                found_base_key = base_key
-                                processed_table_items.add(base_key)  # Mark this widget set as processed
-                                break
-                    
-                    # Store the processed items for later use
-                    self._processed_table_items = processed_table_items
-            
-            # Now, handle right column fields (Columns C/D, E/F, etc.)
-            for row_idx in range(len(df)):
-                # Skip empty rows
-                if pd.isna(df.iloc[row_idx]).all():
-                    continue
+                # Create mapping of field identifiers to their Excel row positions
+                field_positions = {}
                 
-                # Check columns starting from the third column (index 2 = column C)
-                # This is where right fields start
-                for col_idx in range(2, len(df.columns)):
-                    if col_idx >= len(df.columns):
-                        break
-                        
-                    # Get the value in this cell
-                    cell_value = ""
-                    if col_idx < len(df.iloc[row_idx]) and not pd.isna(df.iloc[row_idx, col_idx]):
-                        cell_value = df.iloc[row_idx, col_idx]
-                        
-                        # Convert to string if needed
-                        if not isinstance(cell_value, str):
-                            try:
-                                cell_value = str(cell_value)
-                            except:
-                                continue
-                    
-                    # Only process cells with field identifiers
-                    if not (cell_value.startswith('f_') or 
-                        cell_value.startswith('fd_') or 
-                        cell_value.startswith('fm_')):
+                # First pass: scan the Excel to build a map of field identifiers to row numbers
+                for row_idx, row in df.iterrows():
+                    # Skip empty rows
+                    if pd.isna(row).all():
                         continue
                     
-                    # Skip header cells
-                    if cell_value.startswith('fh_'):
+                    # Get first column value
+                    first_col = row.iloc[0] if not pd.isna(row.iloc[0]) else ""
+                    
+                    # Convert to string if not already
+                    if not isinstance(first_col, str):
+                        try:
+                            first_col = str(first_col)
+                        except:
+                            continue
+                    
+                    # Store the row index for field identifiers
+                    if first_col.startswith('fd_'):
+                        field_name = first_col[3:].strip()  # Remove 'fd_' prefix
+                        field_positions[field_name] = {
+                            'row_idx': row_idx,
+                            'excel_row': row_idx + 1,
+                            'field_id': first_col,
+                            'cell_address': f"B{row_idx + 1}"  # Column B
+                        }
+
+                if progress_callback:
+                    progress_callback(40, "Mapping specific dropdown widgets...")
+                
+                # Create specific widget mapping based on field names and positions
+                widget_mapping = {}
+                
+                # Find industry and sub-industry dropdown widgets
+                industry_dropdown = None
+                sub_industry_dropdown = None
+                province1_dropdown = None
+                city1_dropdown = None
+                province2_dropdown = None
+                city2_dropdown = None
+                
+                # Find specific dropdown widgets
+                for key, widget in self.data_fields.items():
+                    if not key.startswith(sheet_name) or not isinstance(widget, QComboBox):
+                        continue
+                    
+                    # Get the widget's label by looking at the grid layout
+                    widget_label = self._get_widget_label(widget)
+                    
+                    # Map based on widget labels or properties
+                    dropdown_type = widget.property("dropdown_type") or ""
+                    placeholder_type = widget.property("placeholder_type") or ""
+                    province_number = widget.property("province_number") or ""
+                    city_number = widget.property("city_number") or ""
+                    
+                    # Identify specific dropdowns
+                    if "Industry Classification" in widget_label:
+                        industry_dropdown = widget
+                        widget_mapping['Industry Classification'] = widget
+                    elif "Sub Industry" in widget_label:
+                        sub_industry_dropdown = widget
+                        widget_mapping['Sub Industry Specification'] = widget
+                    elif dropdown_type == "province" and province_number == "1":
+                        province1_dropdown = widget
+                        widget_mapping['1Province'] = widget
+                    elif placeholder_type == "city" and city_number == "1":
+                        city1_dropdown = widget
+                        widget_mapping['1City'] = widget
+                    elif dropdown_type == "province" and province_number == "2":
+                        province2_dropdown = widget
+                        widget_mapping['2Province'] = widget
+                    elif placeholder_type == "city" and city_number == "2":
+                        city2_dropdown = widget
+                        widget_mapping['2City'] = widget
+
+                if progress_callback:
+                    progress_callback(45, "Processing remaining dropdown widgets...")
+                
+                # Map remaining dropdown widgets based on field positions and validation data
+                remaining_widgets = []
+                for key, widget in self.data_fields.items():
+                    if (not key.startswith(sheet_name) or not isinstance(widget, QComboBox) or
+                        widget in [industry_dropdown, sub_industry_dropdown, province1_dropdown, 
+                                city1_dropdown, province2_dropdown, city2_dropdown]):
+                        continue
+                    remaining_widgets.append((key, widget))
+
+                # Match remaining widgets to field positions
+                for field_name, position_info in field_positions.items():
+                    if field_name in widget_mapping:
+                        continue  # Already mapped
+                    
+                    row_idx = position_info['row_idx']
+                    cell_address = position_info['cell_address']
+                    
+                    # Get validation data for this cell
+                    cell_key = f"row_{row_idx}_col_1"  # Column B (0-based: col_1)
+                    expected_options = []
+                    
+                    if cell_key in validation_data:
+                        expected_options = validation_data[cell_key]['options']
+                    
+                    # Find the best matching widget
+                    best_widget = None
+                    best_match_score = 0
+                    best_widget_key = None
+                    
+                    for widget_key, widget in remaining_widgets:
+                        if widget_key in [w[0] for w in widget_mapping.values() if isinstance(w, tuple)]:
+                            continue  # Already used
+                        
+                        # Get widget options
+                        widget_options = [widget.itemText(i) for i in range(widget.count())]
+                        
+                        # Calculate match score
+                        match_score = 0
+                        if expected_options:
+                            # Count exact matches
+                            exact_matches = len(set(expected_options) & set(widget_options))
+                            match_score = exact_matches / len(expected_options) if expected_options else 0
+                            
+                            # Bonus for complete match
+                            if exact_matches == len(expected_options):
+                                match_score += 1
+                        else:
+                            # If no expected options, any unmatched widget can be used
+                            match_score = 0.5
+                        
+                        if match_score > best_match_score:
+                            best_match_score = match_score
+                            best_widget = widget
+                            best_widget_key = widget_key
+                    
+                    # Map the best matching widget
+                    if best_widget:
+                        widget_mapping[field_name] = best_widget
+                        # Remove from remaining widgets
+                        remaining_widgets = [(k, w) for k, w in remaining_widgets if k != best_widget_key]
+
+                if progress_callback:
+                    progress_callback(50, "Saving dropdown field values...")
+                
+                # Track changes
+                changes_made = 0
+                changes_log = []
+
+                # Save values for all mapped fields
+                for field_name, widget in widget_mapping.items():
+                    if field_name not in field_positions:
+                        continue
+                        
+                    position_info = field_positions[field_name]
+                    excel_row = position_info['excel_row']
+                    
+                    # Get widget value
+                    value = widget.currentText()
+                    
+                    # Skip placeholder values
+                    if value == "-- Select Value --":
+                        value = ""
+                    
+                    # Update Excel cell
+                    target_cell = sheet.cell(row=excel_row, column=2)  # Column B
+                    old_value = target_cell.value
+                    target_cell.value = value
+                    
+                    changes_made += 1
+                    changes_log.append(f"Updated cell B{excel_row} ({field_name}): {old_value} -> {value}")
+
+                if progress_callback:
+                    progress_callback(55, "Processing text fields and form controls...")
+                
+                # Create cell-to-widget mapping for non-dropdown fields
+                cell_to_widget_map = {}
+                
+                # Store processed items to avoid duplicates
+                processed_table_items = set()
+                
+                # Map text fields (f_), multiple fields (fm_), and table fields (ft_)
+                for row_idx, row in df.iterrows():
+                    if pd.isna(row).all():
+                        continue
+                        
+                    first_col = row.iloc[0] if not pd.isna(row.iloc[0]) else ""
+                    if not isinstance(first_col, str):
+                        try:
+                            first_col = str(first_col)
+                        except:
+                            continue
+                    
+                    if not (first_col.startswith('f_') or first_col.startswith('fm_') or first_col.startswith('ft_')):
                         continue
                     
                     # Get field properties
-                    field_type = cell_value[:3] if not cell_value.startswith('f_') else cell_value[:2]
-                    field_name = cell_value[3:] if not cell_value.startswith('f_') else cell_value[2:]
+                    field_type = first_col[:3] if not first_col.startswith('f_') else first_col[:2]
+                    field_name = first_col[3:] if not first_col.startswith('f_') else first_col[2:]
                     
                     # Clean up the display name
                     display_name = field_name.strip()
@@ -4828,385 +4677,587 @@ class BDUGroupView(QMainWindow):
                                 display_name = display_name[i:]
                                 break
                     
-                    # Get the section for this row (either right section or default)
-                    section_name = self._get_right_section_for_row(df, row_idx, col_idx)
-                    if not section_name:
-                        section_name = self._get_section_for_row(df, row_idx)
+                    # Get the section for this row
+                    section_name = self._get_section_for_row(df, row_idx)
                     
-                    # Find the matching widget based on field type
+                    # Handle different field types
                     if field_type == 'f_':
                         # Regular input field
-                        # Look for a QLineEdit with this name in the placeholder
-                        for key, widget in self.data_fields.items():
-                            if not key.startswith(sheet_name):
-                                continue
-                                
-                            if isinstance(widget, QLineEdit) and key not in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]:
-                                placeholder = widget.placeholderText()
-                                if placeholder and display_name in placeholder:
-                                    target_col = col_idx + 1  # Next column
-                                    cell_key = f"row_{row_idx}_col_{target_col}"
-                                    cell_to_widget_map[cell_key] = {
-                                        'widget': widget,
-                                        'key': key,
-                                        'type': 'text'
-                                    }
-                                    break
-                    
-                    elif field_type == 'fd_':
-                        # Dropdown field
-                        # Find the options for this dropdown
-                        dropdown_key = f"{row_idx}_{col_idx}"
-                        options = []
+                        field_id = first_col
+                        original_field_name = field_name.strip()
                         
-                        if dropdown_key in dropdown_options:
-                            options = dropdown_options[dropdown_key]['options']
-                        else:
-                            # Try to get options from validation data
-                            validation_key = f"row_{row_idx}_col_{col_idx+1}"  # Next column
-                            if validation_key in validation_data:
-                                options = validation_data[validation_key]['options']
+                        widget_key_prefix = f"{sheet_name}_{section_name}_"
+                        possible_keys = []
                         
-                        # Find a QComboBox that isn't already mapped
-                        for key, widget in self.data_fields.items():
-                            if not key.startswith(sheet_name):
-                                continue
-                                
-                            if isinstance(widget, QComboBox) and key not in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]:
-                                # Skip industry and sub-industry dropdowns
-                                if widget is industry_dropdown or widget is sub_industry_dropdown:
-                                    continue
+                        for i in range(100):
+                            possible_keys.append(f"{widget_key_prefix}{i}")
+                            possible_keys.append(f"{widget_key_prefix}{original_field_name}_{i}")
+                            possible_keys.append(f"{widget_key_prefix}{display_name}_{i}")
+                        
+                        possible_keys.append(f"{widget_key_prefix}{row_idx}")
+                        
+                        found_widget = None
+                        found_key = None
+                        
+                        for test_key in possible_keys:
+                            if test_key in self.data_fields:
+                                widget = self.data_fields[test_key]
+                                if (isinstance(widget, QLineEdit) and 
+                                    test_key not in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]):
                                     
-                                # Check if widget options match
-                                widget_options = [widget.itemText(i) for i in range(widget.count())]
-                                option_match = False
-                                
-                                # If there are options, check for matches
-                                if options:
-                                    option_match = any(opt in widget_options for opt in options)
-                                
-                                # If no specific options or matching options found, use this widget
-                                if not options or option_match or len(options) == 0:
-                                    target_col = col_idx + 1  # Next column
-                                    cell_key = f"row_{row_idx}_col_{target_col}"
-                                    cell_to_widget_map[cell_key] = {
-                                        'widget': widget,
-                                        'key': key,
-                                        'type': 'dropdown',
-                                        'options': options
-                                    }
-                                    break
+                                    placeholder = widget.placeholderText()
+                                    if placeholder:
+                                        if field_id in placeholder:
+                                            found_widget = widget
+                                            found_key = test_key
+                                            break
+                                        elif original_field_name in placeholder:
+                                            found_widget = widget
+                                            found_key = test_key
+                                        elif display_name in placeholder and not found_widget:
+                                            found_widget = widget
+                                            found_key = test_key
+                        
+                        if found_widget:
+                            cell_key = f"row_{row_idx}_col_1"
+                            cell_to_widget_map[cell_key] = {
+                                'widget': found_widget,
+                                'key': found_key,
+                                'type': 'text',
+                                'display_name': display_name,
+                                'original_field': original_field_name,
+                                'field_id': field_id
+                            }
                     
                     elif field_type == 'fm_':
-                        # Multiple field (e.g., Name and Phone/Email)
-                        found_base_key = None
+                        # Multiple field handling
+                        field_base = f"{sheet_name}_{section_name}_{field_name}"
+                        field_key_0 = f"{field_base}_0"
+                        field_key_1 = f"{field_base}_1"
                         
-                        # Look for a pair of QLineEdit widgets for this field
-                        for i in range(100):
-                            base_key = f"{sheet_name}_{section_name}_{i}"
-                            key_0 = f"{base_key}_0"
-                            key_1 = f"{base_key}_1"
+                        if field_key_0 in self.data_fields and field_key_1 in self.data_fields:
+                            widget_0 = self.data_fields[field_key_0]
+                            widget_1 = self.data_fields[field_key_1]
                             
-                            if key_0 in self.data_fields and key_1 in self.data_fields:
-                                widget_0 = self.data_fields[key_0]
-                                widget_1 = self.data_fields[key_1]
-                                
-                                # Skip if already mapped
-                                if (key_0 in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info] or
-                                    key_1 in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]):
-                                    continue
-                                
-                                if isinstance(widget_0, QLineEdit) and isinstance(widget_1, QLineEdit):
-                                    # Check if placeholders contain the display name
-                                    placeholder_0 = widget_0.placeholderText()
-                                    placeholder_1 = widget_1.placeholderText()
-                                    
-                                    if ((placeholder_0 and display_name in placeholder_0) or 
-                                        (placeholder_1 and display_name in placeholder_1)):
-                                            
-                                        # Map both widgets
-                                        target_col_0 = col_idx + 1  # Next column
-                                        target_col_1 = col_idx + 2  # Next column + 1
-                                        
-                                        cell_key_0 = f"row_{row_idx}_col_{target_col_0}"
-                                        cell_key_1 = f"row_{row_idx}_col_{target_col_1}"
-                                        
-                                        cell_to_widget_map[cell_key_0] = {
-                                            'widget': widget_0,
-                                            'key': key_0,
-                                            'type': 'text'
-                                        }
-                                        
-                                        cell_to_widget_map[cell_key_1] = {
-                                            'widget': widget_1,
-                                            'key': key_1,
-                                            'type': 'text'
-                                        }
-                                        
-                                        found_base_key = base_key
-                                        break
-            
-            # Create a reverse mapping for debugging
-            widget_to_cell_map = {}
-            for cell_key, info in cell_to_widget_map.items():
-                if 'key' in info:
-                    widget_key = info['key']
-                    widget_to_cell_map[widget_key] = cell_key
-            
-            print(f"Mapped {len(cell_to_widget_map)} Excel cells to widgets")
-            
-            # Now use the cell-to-widget mapping to update cells
-            for cell_key, info in cell_to_widget_map.items():
-                if 'widget' not in info:
-                    continue
-                    
-                widget = info['widget']
-                widget_type = info.get('type', 'text')
-                
-                # Parse row and column from cell key
-                parts = cell_key.split('_')
-                row_idx = int(parts[1])
-                col_idx = int(parts[3])
-                
-                # Convert to Excel coordinates (1-based)
-                excel_row = row_idx + 1
-                excel_col = col_idx + 1
-                col_letter = chr(64 + excel_col)  # A=1, B=2, etc.
-                
-                # Get cell value based on widget type
-                if widget_type == 'text' and isinstance(widget, QLineEdit):
-                    value = widget.text()
-                elif widget_type == 'dropdown' and isinstance(widget, QComboBox):
-                    value = widget.currentText()
-                elif widget_type == 'checkbox' and isinstance(widget, QCheckBox):
-                    # Use 'ü' for checked boxes, empty string for unchecked
-                    value = 'ü' if widget.isChecked() else ''
-                    
-                    # Get the cell to update
-                    target_cell = sheet.cell(row=excel_row, column=excel_col)
-                    old_value = target_cell.value
-                    target_cell.value = value
-                    
-                    # Set the font to Wingdings for checkbox cells
-                    from openpyxl.styles import Font
-                    target_cell.font = Font(name='Wingdings', size=11)
-                else:
-                    continue  # Skip invalid combinations
-                
-                # Get display name for logging
-                display_name = ""
-                
-                # For left columns (A), get from column A
-                if col_idx == 1:  # Column B
-                    cell_a = df.iloc[row_idx, 0] if not pd.isna(df.iloc[row_idx, 0]) else ""
-                    if isinstance(cell_a, str):
-                        if cell_a.startswith('f_'):
-                            display_name = cell_a[2:].strip()
-                        elif cell_a.startswith('fd_') or cell_a.startswith('fm_') or cell_a.startswith('ft_'):
-                            display_name = cell_a[3:].strip()
-                # For right columns (C and beyond), get from the actual column
-                elif col_idx >= 2:  # Column C or beyond
-                    identifier_col = col_idx - 1
-                    if identifier_col < len(df.columns) and not pd.isna(df.iloc[row_idx, identifier_col]):
-                        cell_value = df.iloc[row_idx, identifier_col]
-                        if isinstance(cell_value, str):
-                            if cell_value.startswith('f_'):
-                                display_name = cell_value[2:].strip()
-                            elif cell_value.startswith('fd_') or cell_value.startswith('fm_'):
-                                display_name = cell_value[3:].strip()
-                
-                # Clean up display name
-                if display_name and display_name[0].isdigit():
-                    for i, char in enumerate(display_name):
-                        if not char.isdigit():
-                            display_name = display_name[i:]
-                            break
-                
-                # Add "Right" prefix for right columns
-                if col_idx >= 3:  # Column D and beyond
-                    display_name = f"Right {display_name}"
-                
-                # Update the cell
-                target_cell = sheet.cell(row=excel_row, column=excel_col)
-                old_value = target_cell.value
-                target_cell.value = value
-                
-                changes_made += 1
-                changes_log.append(f"Updated cell {col_letter}{excel_row} ({display_name}): {old_value} -> {value}")
-                print(f"Updated cell {col_letter}{excel_row} ({display_name}): {old_value} -> {value}")
-            
-            # Create special mapping for tdi_ fields with placeholders
-            placeholder_widgets = {}
-
-            # First, scan the Excel file to find cells with tdi_ and $P placeholders
-            for row_idx, row in df.iterrows():
-                if pd.isna(row).all():
-                    continue
-                    
-                # Check each column in the row
-                for col_idx in range(len(row)):
-                    cell_value = row.iloc[col_idx] if col_idx < len(row) and not pd.isna(row.iloc[col_idx]) else ""
-                    
-                    # Convert to string if needed
-                    if not isinstance(cell_value, str):
-                        try:
-                            cell_value = str(cell_value)
-                        except:
-                            continue
+                            cell_key_0 = f"row_{row_idx}_col_1"
+                            cell_key_1 = f"row_{row_idx}_col_2"
                             
-                    # Check if it's a tdi_ cell with placeholder
-                    if cell_value.startswith('tdi_') and ('$P1$' in cell_value or '$P2$' in cell_value or 
-                                                        '$P3$' in cell_value or '$P4$' in cell_value):
-                        # Store this cell location for later processing
-                        cell_key = f"row_{row_idx}_col_{col_idx}"
-                        placeholder_widgets[cell_key] = {
-                            'cell_value': cell_value,
-                            'row': row_idx,
-                            'col': col_idx,
-                            'placeholders': []
-                        }
-                        
-                        # Find all placeholders in this cell
-                        import re
-                        placeholders = re.findall(r'\$P\d+\$', cell_value)
-                        placeholder_widgets[cell_key]['placeholders'] = placeholders
-
-            # Now match up the input fields with the placeholders
-            for cell_key, info in placeholder_widgets.items():
-                row_idx = info['row']
-                col_idx = info['col']
-                cell_text = info['cell_value']
-                header_text = ""
-                
-                # Try to find the header for this row
-                # First, look for a header in the same row (for th_ fields)
-                if col_idx > 0:  # If not in first column
-                    header_cell = df.iloc[row_idx, 0] if not pd.isna(df.iloc[row_idx, 0]) else ""
-                    if isinstance(header_cell, str) and (header_cell.startswith('th_') or header_cell.startswith('thr_')):
-                        if header_cell.startswith('th_'):
-                            header_text = header_cell[3:].strip()  # Remove 'th_' prefix
-                        else:
-                            header_text = header_cell[4:].strip()  # Remove 'thr_' prefix
-                
-                # Now find matching input fields for each placeholder
-                placeholders = info['placeholders']
-                
-                # Look through all input fields to find matches
-                for key, widget in self.data_fields.items():
-                    # For each placeholder in this cell
-                    for placeholder in placeholders:
-                        # The key for input fields related to these placeholders follows this pattern
-                        placeholder_key = f"tdi_{placeholder}_{header_text}"
-                        placeholder_key_with_row = f"tdi_{placeholder}_{header_text}_{row_idx}"
-                        
-                        # Check both possible key patterns
-                        if (key == placeholder_key or key == placeholder_key_with_row) and isinstance(widget, QLineEdit):
-                            # Found a match!
-                            value = widget.text()
-                            
-                            # Add to our cell-to-widget mapping for the placeholder
-                            # We'll replace the placeholder in the cell value later
-                            if 'placeholder_inputs' not in placeholder_widgets[cell_key]:
-                                placeholder_widgets[cell_key]['placeholder_inputs'] = {}
-                                
-                            placeholder_widgets[cell_key]['placeholder_inputs'][placeholder] = {
-                                'widget': widget,
-                                'value': value,
-                                'key': key
+                            cell_to_widget_map[cell_key_0] = {
+                                'widget': widget_0,
+                                'key': field_key_0,
+                                'type': 'text'
                             }
                             
-                            print(f"Matched placeholder {placeholder} in row {row_idx}, col {col_idx} to widget {key} with value: {value}")
-                            break  # Found a match for this placeholder
-
-            # Now process all cells with placeholders
-            # We'll add this after the regular cell processing
-
-            # Store replacements for later processing
-            placeholder_replacements = []
-
-            # After regular cell processing is complete, handle placeholder cells
-            for cell_key, info in placeholder_widgets.items():
-                row_idx = info['row']
-                col_idx = info['col']
-                cell_text = info['cell_value']
-                
-                # Skip if no input widgets were found
-                if 'placeholder_inputs' not in info:
-                    continue
+                            cell_to_widget_map[cell_key_1] = {
+                                'widget': widget_1,
+                                'key': field_key_1,
+                                'type': 'text'
+                            }
                     
-                # Get Excel coordinates
-                excel_row = row_idx + 1
-                excel_col = col_idx + 1
-                col_letter = chr(64 + excel_col)  # Convert to A1 notation
-                
-                # Make a copy of the original text to modify
-                new_text = cell_text
-                
-                # Replace each placeholder with its input value
-                for placeholder, input_info in info['placeholder_inputs'].items():
-                    value = input_info['value']
-                    new_text = new_text.replace(placeholder, value)
-                
-                # Remove the 'tdi_' prefix from the beginning for Excel
-                if new_text.startswith('tdi_'):
-                    new_text = new_text[4:]
-                
-                # Store for later processing to avoid modifying the sheet while iterating
-                placeholder_replacements.append({
-                    'row': excel_row,
-                    'col': excel_col, 
-                    'value': new_text,
-                    'original': sheet.cell(row=excel_row, column=excel_col).value
-                })
-
-            # Now apply all placeholder replacements
-            for replacement in placeholder_replacements:
-                target_cell = sheet.cell(row=replacement['row'], column=replacement['col'])
-                old_value = replacement['original']
-                new_value = replacement['value']
-                
-                # Update the cell
-                target_cell.value = new_value
-                
-                # Log the change
-                col_letter = chr(64 + replacement['col'])
-                cell_address = f"{col_letter}{replacement['row']}"
-                changes_made += 1
-                changes_log.append(f"Updated placeholder cell {cell_address}: {old_value} -> {new_value}")
-                print(f"Updated placeholder cell {cell_address}: {old_value} -> {new_value}")
+                    elif field_type == 'ft_':
+                        # Table item handling
+                        processed_table_items = getattr(self, '_processed_table_items', set())
                         
-            # Save the workbook
-            print("Attempting to save workbook...")
-            try:
-                wb.save(self.excel_path)
-                print(f"Workbook saved successfully to: {self.excel_path}")
+                        found_base_key = None
+                        
+                        for i in range(100):
+                            base_key = f"{sheet_name}_{section_name}_{i}"
+                            client_key = f"{base_key}_client"
+                            contractor_key = f"{base_key}_contractor"
+                            remarks_key = f"{base_key}_remarks"
+                            
+                            if (client_key in self.data_fields and 
+                                contractor_key in self.data_fields and 
+                                remarks_key in self.data_fields and
+                                base_key not in processed_table_items):
+                                
+                                client_widget = self.data_fields[client_key]
+                                contractor_widget = self.data_fields[contractor_key]
+                                remarks_widget = self.data_fields[remarks_key]
+                                
+                                if (isinstance(client_widget, QCheckBox) and 
+                                    isinstance(contractor_widget, QCheckBox) and 
+                                    isinstance(remarks_widget, QLineEdit)):
+                                    
+                                    cell_key_client = f"row_{row_idx}_col_1"
+                                    cell_key_contractor = f"row_{row_idx}_col_2"
+                                    cell_key_remarks = f"row_{row_idx}_col_3"
+                                    
+                                    cell_to_widget_map[cell_key_client] = {
+                                        'widget': client_widget,
+                                        'key': client_key,
+                                        'type': 'checkbox'
+                                    }
+                                    
+                                    cell_to_widget_map[cell_key_contractor] = {
+                                        'widget': contractor_widget,
+                                        'key': contractor_key,
+                                        'type': 'checkbox'
+                                    }
+                                    
+                                    cell_to_widget_map[cell_key_remarks] = {
+                                        'widget': remarks_widget,
+                                        'key': remarks_key,
+                                        'type': 'text'
+                                    }
+                                    
+                                    found_base_key = base_key
+                                    processed_table_items.add(base_key)
+                                    break
+                        
+                        self._processed_table_items = processed_table_items
+
+                if progress_callback:
+                    progress_callback(60, "Processing right column fields...")
+
+                # NOW HANDLE RIGHT COLUMN FIELDS (Columns C/D, E/F, etc.)
+                # This is crucial for fields like "Competitor Information" 
+                for row_idx in range(len(df)):
+                    # Skip empty rows
+                    if pd.isna(df.iloc[row_idx]).all():
+                        continue
+                    
+                    # Check columns starting from the third column (index 2 = column C)
+                    # This is where right fields start
+                    for col_idx in range(2, len(df.columns)):
+                        if col_idx >= len(df.columns):
+                            break
+                            
+                        # Get the value in this cell
+                        cell_value = ""
+                        if col_idx < len(df.iloc[row_idx]) and not pd.isna(df.iloc[row_idx, col_idx]):
+                            cell_value = df.iloc[row_idx, col_idx]
+                            
+                            # Convert to string if needed
+                            if not isinstance(cell_value, str):
+                                try:
+                                    cell_value = str(cell_value)
+                                except:
+                                    continue
+                        
+                        # Only process cells with field identifiers
+                        if not (cell_value.startswith('f_') or 
+                            cell_value.startswith('fd_') or 
+                            cell_value.startswith('fm_')):
+                            continue
+                        
+                        # Skip header cells
+                        if cell_value.startswith('fh_'):
+                            continue
+                        
+                        # Get field properties
+                        field_type = cell_value[:3] if not cell_value.startswith('f_') else cell_value[:2]
+                        field_name = cell_value[3:] if not cell_value.startswith('f_') else cell_value[2:]
+                        
+                        # Clean up the display name
+                        display_name = field_name.strip()
+                        if display_name and display_name[0].isdigit():
+                            for i, char in enumerate(display_name):
+                                if not char.isdigit():
+                                    display_name = display_name[i:]
+                                    break
+                        
+                        # Get the section for this row (either right section or default)
+                        section_name = self._get_right_section_for_row(df, row_idx, col_idx)
+                        if not section_name:
+                            section_name = self._get_section_for_row(df, row_idx)
+                        
+                        # Find the matching widget based on field type
+                        if field_type == 'f_':
+                            # Regular input field
+                            # Look for a QLineEdit with this name in the placeholder
+                            for key, widget in self.data_fields.items():
+                                if not key.startswith(sheet_name):
+                                    continue
+                                    
+                                if isinstance(widget, QLineEdit) and key not in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]:
+                                    placeholder = widget.placeholderText()
+                                    if placeholder and display_name in placeholder:
+                                        target_col = col_idx + 1  # Next column
+                                        cell_key = f"row_{row_idx}_col_{target_col}"
+                                        cell_to_widget_map[cell_key] = {
+                                            'widget': widget,
+                                            'key': key,
+                                            'type': 'text'
+                                        }
+                                        break
+                        
+                        elif field_type == 'fd_':
+                            # Dropdown field - check if it's already mapped in our widget_mapping
+                            target_col = col_idx + 1  # Next column
+                            cell_key = f"row_{row_idx}_col_{target_col}"
+                            
+                            # Skip if this field is already handled in widget_mapping
+                            if field_name in widget_mapping:
+                                continue
+                            
+                            # Find the options for this dropdown
+                            dropdown_key = f"{row_idx}_{col_idx}"
+                            options = []
+                            
+                            # Try to get options from validation data
+                            validation_key = f"row_{row_idx}_col_{target_col}"
+                            if validation_key in validation_data:
+                                options = validation_data[validation_key]['options']
+                            
+                            # Find a QComboBox that isn't already mapped
+                            best_widget = None
+                            best_widget_key = None
+                            best_match_score = 0
+                            
+                            for key, widget in self.data_fields.items():
+                                if not key.startswith(sheet_name):
+                                    continue
+                                    
+                                if isinstance(widget, QComboBox) and key not in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]:
+                                    # Skip hardcode dropdowns that are already mapped
+                                    if (widget in [industry_dropdown, sub_industry_dropdown, province1_dropdown, 
+                                                city1_dropdown, province2_dropdown, city2_dropdown]):
+                                        continue
+                                    
+                                    # Skip if already used in widget_mapping
+                                    if widget in widget_mapping.values():
+                                        continue
+                                        
+                                    # Check if widget options match
+                                    widget_options = [widget.itemText(i) for i in range(widget.count())]
+                                    # Remove placeholder option for comparison
+                                    clean_widget_options = [opt for opt in widget_options if opt != "-- Select Value --"]
+                                    
+                                    match_score = 0
+                                    
+                                    if options:
+                                        # Calculate exact match score
+                                        exact_matches = len(set(options) & set(clean_widget_options))
+                                        if len(options) > 0:
+                                            match_score = exact_matches / len(options)
+                                        
+                                        # Bonus for having all expected options
+                                        if exact_matches == len(options):
+                                            match_score += 1
+                                            
+                                    else:
+                                        # If no validation options found, use any available dropdown
+                                        match_score = 0.5
+                                    
+                                    # Update best match
+                                    if match_score > best_match_score:
+                                        best_match_score = match_score
+                                        best_widget = widget
+                                        best_widget_key = key
+                            
+                            # Map the best matching widget
+                            if best_widget:
+                                cell_to_widget_map[cell_key] = {
+                                    'widget': best_widget,
+                                    'key': best_widget_key,
+                                    'type': 'dropdown',
+                                    'options': options,
+                                    'display_name': display_name
+                                }
+                            
+                        elif field_type == 'fm_':
+                            # Multiple field (e.g., Name and Phone/Email)
+                            found_base_key = None
+                            
+                            # Look for a pair of QLineEdit widgets for this field
+                            for i in range(100):
+                                base_key = f"{sheet_name}_{section_name}_{i}"
+                                key_0 = f"{base_key}_0"
+                                key_1 = f"{base_key}_1"
+                                
+                                if key_0 in self.data_fields and key_1 in self.data_fields:
+                                    widget_0 = self.data_fields[key_0]
+                                    widget_1 = self.data_fields[key_1]
+                                    
+                                    # Skip if already mapped
+                                    if (key_0 in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info] or
+                                        key_1 in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]):
+                                        continue
+                                    
+                                    if isinstance(widget_0, QLineEdit) and isinstance(widget_1, QLineEdit):
+                                        # Check if placeholders contain the display name
+                                        placeholder_0 = widget_0.placeholderText()
+                                        placeholder_1 = widget_1.placeholderText()
+                                        
+                                        if ((placeholder_0 and display_name in placeholder_0) or 
+                                            (placeholder_1 and display_name in placeholder_1)):
+                                                
+                                            # Map both widgets
+                                            target_col_0 = col_idx + 1  # Next column
+                                            target_col_1 = col_idx + 2  # Next column + 1
+                                            
+                                            cell_key_0 = f"row_{row_idx}_col_{target_col_0}"
+                                            cell_key_1 = f"row_{row_idx}_col_{target_col_1}"
+                                            
+                                            cell_to_widget_map[cell_key_0] = {
+                                                'widget': widget_0,
+                                                'key': key_0,
+                                                'type': 'text'
+                                            }
+                                            
+                                            cell_to_widget_map[cell_key_1] = {
+                                                'widget': widget_1,
+                                                'key': key_1,
+                                                'type': 'text'
+                                            }
+                                            
+                                            found_base_key = base_key
+                                            break
+
+                if progress_callback:
+                    progress_callback(70, "Processing tdi_ fields with placeholders...")
+
+                # Handle tdi_ fields with placeholders (existing code)
+                placeholder_widgets = {}
+
+                for row_idx, row in df.iterrows():
+                    if pd.isna(row).all():
+                        continue
+                        
+                    for col_idx in range(len(row)):
+                        cell_value = row.iloc[col_idx] if col_idx < len(row) and not pd.isna(row.iloc[col_idx]) else ""
+                        
+                        if not isinstance(cell_value, str):
+                            try:
+                                cell_value = str(cell_value)
+                            except:
+                                continue
+                                
+                        if cell_value.startswith('tdi_') and ('$P1$' in cell_value or '$P2$' in cell_value or 
+                                                            '$P3$' in cell_value or '$P4$' in cell_value):
+                            cell_key = f"row_{row_idx}_col_{col_idx}"
+                            placeholder_widgets[cell_key] = {
+                                'cell_value': cell_value,
+                                'row': row_idx,
+                                'col': col_idx,
+                                'placeholders': []
+                            }
+                            
+                            import re
+                            placeholders = re.findall(r'\$P\d+\$', cell_value)
+                            placeholder_widgets[cell_key]['placeholders'] = placeholders
+
+                # Process placeholder widgets (existing code)
+                for cell_key, info in placeholder_widgets.items():
+                    row_idx = info['row']
+                    col_idx = info['col']
+                    cell_text = info['cell_value']
+                    header_text = ""
+                    
+                    if col_idx > 0:
+                        header_cell = df.iloc[row_idx, 0] if not pd.isna(df.iloc[row_idx, 0]) else ""
+                        if isinstance(header_cell, str) and (header_cell.startswith('th_') or header_cell.startswith('thr_')):
+                            if header_cell.startswith('th_'):
+                                header_text = header_cell[3:].strip()
+                            else:
+                                header_text = header_cell[4:].strip()
+                    
+                    placeholders = info['placeholders']
+                    
+                    for key, widget in self.data_fields.items():
+                        for placeholder in placeholders:
+                            placeholder_key = f"tdi_{placeholder}_{header_text}"
+                            placeholder_key_with_row = f"tdi_{placeholder}_{header_text}_{row_idx}"
+                            
+                            if (key == placeholder_key or key == placeholder_key_with_row) and isinstance(widget, QLineEdit):
+                                value = widget.text()
+                                
+                                if 'placeholder_inputs' not in placeholder_widgets[cell_key]:
+                                    placeholder_widgets[cell_key]['placeholder_inputs'] = {}
+                                    
+                                placeholder_widgets[cell_key]['placeholder_inputs'][placeholder] = {
+                                    'widget': widget,
+                                    'value': value,
+                                    'key': key
+                                }
+                                
+                                break
+
+                if progress_callback:
+                    progress_callback(80, "Updating Excel cells with new values...")
+
+                # Update cells for ALL fields including right dropdown fields
+                for cell_key, info in cell_to_widget_map.items():
+                    if 'widget' not in info:
+                        continue
+                        
+                    widget = info['widget']
+                    widget_type = info.get('type', 'text')
+                    
+                    # Parse row and column from cell key
+                    parts = cell_key.split('_')
+                    row_idx = int(parts[1])
+                    col_idx = int(parts[3])
+                    
+                    # Convert to Excel coordinates (1-based)
+                    excel_row = row_idx + 1
+                    excel_col = col_idx + 1
+                    col_letter = chr(64 + excel_col)
+                    
+                    # Get cell value based on widget type
+                    if widget_type == 'text' and isinstance(widget, QLineEdit):
+                        value = widget.text()
+                    elif widget_type == 'dropdown' and isinstance(widget, QComboBox):
+                        # Handle dropdown fields (including right dropdown fields)
+                        value = widget.currentText()
+                        # Skip placeholder values
+                        if value == "-- Select Value --":
+                            value = ""
+                    elif widget_type == 'checkbox' and isinstance(widget, QCheckBox):
+                        value = 'ü' if widget.isChecked() else ''
+                        target_cell = sheet.cell(row=excel_row, column=excel_col)
+                        old_value = target_cell.value
+                        target_cell.value = value
+                        
+                        from openpyxl.styles import Font
+                        target_cell.font = Font(name='Wingdings', size=11)
+                    else:
+                        continue
+                    
+                    # Get display name for logging
+                    display_name = info.get('display_name', '')
+                    if not display_name:
+                        # Try to determine field name from Excel content
+                        if row_idx < len(df):
+                            # For right fields, look at the identifier column
+                            identifier_col = col_idx - 1
+                            if identifier_col >= 2 and identifier_col < len(df.columns):
+                                identifier_cell = df.iloc[row_idx, identifier_col] if not pd.isna(df.iloc[row_idx, identifier_col]) else ""
+                                if isinstance(identifier_cell, str):
+                                    if identifier_cell.startswith('fd_'):
+                                        display_name = identifier_cell[3:].strip()
+                                    elif identifier_cell.startswith('f_'):
+                                        display_name = identifier_cell[2:].strip()
+                                    
+                                    # Clean up display name
+                                    if display_name and display_name[0].isdigit():
+                                        for i, char in enumerate(display_name):
+                                            if not char.isdigit():
+                                                display_name = display_name[i:]
+                                                break
+                    
+                    # Add "Right" prefix for right columns
+                    if col_idx >= 3:
+                        display_name = f"Right {display_name}" if display_name else f"Right Field"
+                    
+                    # Update the cell
+                    if widget_type != 'checkbox':  # Checkbox already handled above
+                        target_cell = sheet.cell(row=excel_row, column=excel_col)
+                        old_value = target_cell.value
+                        target_cell.value = value
+                    
+                    changes_made += 1
+                    changes_log.append(f"Updated cell {col_letter}{excel_row} ({display_name}): {old_value} -> {value}")
+
+                if progress_callback:
+                    progress_callback(85, "Processing placeholder replacements...")
+
+                # Apply placeholder replacements
+                placeholder_replacements = []
+
+                for cell_key, info in placeholder_widgets.items():
+                    row_idx = info['row']
+                    col_idx = info['col']
+                    cell_text = info['cell_value']
+                    
+                    if 'placeholder_inputs' not in info:
+                        continue
+                        
+                    excel_row = row_idx + 1
+                    excel_col = col_idx + 1
+                    col_letter = chr(64 + excel_col)
+                    
+                    new_text = cell_text
+                    
+                    for placeholder, input_info in info['placeholder_inputs'].items():
+                        value = input_info['value']
+                        new_text = new_text.replace(placeholder, value)
+                    
+                    if new_text.startswith('tdi_'):
+                        new_text = new_text[4:]
+                    
+                    placeholder_replacements.append({
+                        'row': excel_row,
+                        'col': excel_col, 
+                        'value': new_text,
+                        'original': sheet.cell(row=excel_row, column=excel_col).value
+                    })
+
+                for replacement in placeholder_replacements:
+                    target_cell = sheet.cell(row=replacement['row'], column=replacement['col'])
+                    old_value = replacement['original']
+                    new_value = replacement['value']
+                    
+                    target_cell.value = new_value
+                    
+                    col_letter = chr(64 + replacement['col'])
+                    cell_address = f"{col_letter}{replacement['row']}"
+                    changes_made += 1
+                    changes_log.append(f"Updated placeholder cell {cell_address}: {old_value} -> {new_value}")
+
+                if progress_callback:
+                    progress_callback(90, "Saving Excel workbook...")
+                                
+                # Save the workbook
+                try:
+                    wb.save(self.excel_path)
+                    
+                    if progress_callback:
+                        progress_callback(95, "Updating calculations...")
+                    
+                    # Force calculation after save
+                    self.force_excel_calculation(self.excel_path)
+                    
+                    if progress_callback:
+                        progress_callback(98, "Writing change log...")
+                    
+                    # Write detailed log to file for debugging
+                    log_path = os.path.join(os.path.dirname(self.excel_path), "save_changes_log.txt")
+                    with open(log_path, 'w') as log_file:
+                        log_file.write(f"Save operation at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                        log_file.write(f"Excel file: {self.excel_path}\n")
+                        log_file.write(f"Sheet: {sheet_name}\n")
+                        log_file.write(f"Total changes: {changes_made}\n\n")
+                        log_file.write("Detailed changes:\n")
+                        for change in changes_log:
+                            log_file.write(f"- {change}\n")
+                    
+                    if progress_callback:
+                        progress_callback(100, "Save completed successfully!")
+                    
+                    return f"Data successfully saved to {sheet_name} with {changes_made} changes."
+                    
+                except PermissionError:
+                    return "Could not save the file. Make sure it is not open in Excel or another program."
+                except Exception as e:
+                    return f"Could not save the file: {str(e)}"
                 
-                # Show success message
+            except Exception as e:
+                if progress_callback:
+                    progress_callback(100, f"Error: {str(e)}")
+                return f"An error occurred while processing data: {str(e)}"
+        
+        # Show loading screen for save operation
+        loading_screen = LoadingScreen(
+            parent=self,
+            title="Saving Data",
+            message=f"Saving changes to {sheet_name}..."
+        )
+        loading_screen.show()
+        loading_screen.start_loading(save_process)
+        
+        # Connect completion handler
+        def on_save_complete(success, message):
+            if success and "successfully saved" in message:
                 QMessageBox.information(
                     self, 
                     "Save Successful", 
-                    f"Data successfully saved to {sheet_name} with {changes_made} changes."
+                    message
                 )
-                
-                # Write detailed log to file for debugging
-                log_path = os.path.join(os.path.dirname(self.excel_path), "save_changes_log.txt")
-                with open(log_path, 'w') as log_file:
-                    log_file.write(f"Save operation at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                    log_file.write(f"Excel file: {self.excel_path}\n")
-                    log_file.write(f"Sheet: {sheet_name}\n")
-                    log_file.write(f"Total changes: {changes_made}\n\n")
-                    log_file.write("Detailed changes:\n")
-                    for change in changes_log:
-                        log_file.write(f"- {change}\n")
-                
-                # Important: Force application to process events before reloading
-                QApplication.processEvents()
                 
                 # Reload the data to reflect changes - just reload the current tab
                 current_tab_index = self.tab_widget.currentIndex()
-                current_tab_text = self.tab_widget.tabText(current_tab_index)
-                
-                print(f"Reloading data for tab: {current_tab_text}")
                 
                 # Only reload the data for the current sheet to avoid freezing
                 if sheet_name in self.sheet_tabs:
@@ -5238,43 +5289,45 @@ class BDUGroupView(QMainWindow):
                                     QApplication.processEvents()
                                     scroll_area.verticalScrollBar().setValue(scroll_pos)
                                     
-                                    print(f"Successfully reloaded tab: {current_tab_text}")
                     except Exception as e:
-                        print(f"Error reloading tab {current_tab_text}: {str(e)}")
                         import traceback
                         traceback.print_exc()
-                
-            except PermissionError:
+            else:
                 QMessageBox.critical(
                     self, 
-                    "Permission Error", 
-                    "Could not save the file. Make sure it is not open in Excel or another program."
+                    "Save Error", 
+                    message
                 )
-            except Exception as e:
-                QMessageBox.critical(
-                    self, 
-                    "Error Saving File", 
-                    f"Could not save the file: {str(e)}"
-                )
-                print(f"Error saving workbook: {str(e)}")
-            
+        
+        loading_screen.worker.task_completed.connect(on_save_complete)
+    
+    def _get_widget_label(self, widget):
+        """Helper method to get the label text for a widget by looking at the grid layout"""
+        try:
+            # Find all grid layouts in the widget hierarchy
+            for section_grid in self.findChildren(QGridLayout):
+                for row in range(section_grid.rowCount()):
+                    for col in range(section_grid.columnCount()):
+                        # Check if this position contains our target widget
+                        widget_item = section_grid.itemAtPosition(row, col)
+                        if widget_item and widget_item.widget() == widget:
+                            # Look for a label in the previous column (usually column 0)
+                            label_item = section_grid.itemAtPosition(row, col-1)
+                            if label_item and label_item.widget():
+                                label_widget = label_item.widget()
+                                if isinstance(label_widget, QLabel):
+                                    return label_widget.text()
+            return ""
         except Exception as e:
-            QMessageBox.critical(
-                self, 
-                "Error Saving Data", 
-                f"An error occurred while processing data: {str(e)}"
-            )
-            print(f"Error in save_sheet_data: {str(e)}")
-            import traceback
-            traceback.print_exc()
-    
-    
+            print(f"Error getting widget label: {str(e)}")
+            return ""
+
     def _get_right_section_for_row(self, df, row_idx, col_idx):
         """Helper untuk mendapatkan section dari kolom kanan untuk baris tertentu"""
         # Start from the top and look for 'sub_' in the specified column
         current_right_section = None
         
-        for i in range(row_idx):
+        for i in range(row_idx + 1):  # Include current row
             if i >= len(df):
                 break
                 
@@ -5290,15 +5343,13 @@ class BDUGroupView(QMainWindow):
                 current_right_section = col_value[4:].strip()
         
         return current_right_section
-                        
-            
-        
+
     def _get_section_for_row(self, df, row_idx):
         """Helper untuk mendapatkan section dari baris tertentu"""
         current_section = "Default"
         
         # Cari section terdekat sebelum row_idx
-        for i in range(row_idx):
+        for i in range(row_idx + 1):  # Include current row
             if i >= len(df):
                 break
                 
@@ -5309,7 +5360,7 @@ class BDUGroupView(QMainWindow):
                 current_section = first_col[4:].strip()
         
         return current_section
-        
+
     def create_data_table(self, df, layout):
         """Create a table view for DATA sheets"""
         # Create a table widget
