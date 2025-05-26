@@ -2,6 +2,12 @@
 
 import os
 import sys
+import warnings
+
+# Suppress SIP deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=".*sip.*")
+warnings.filterwarnings("ignore", message=".*sipPyTypeDict.*")
+
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtWidgets import QApplication, QSplashScreen, QMessageBox
 from PyQt5.QtGui import QPixmap, QIcon
@@ -262,7 +268,6 @@ class DIACApplication:
             self.dashboard_view.activateWindow()
             self.dashboard_view.setFocus()
             QApplication.processEvents()
-            print("Dashboard should now be visible and clickable")
     
     def _do_show_customer_search(self):
         """Actually show customer search - guaranteed main thread"""
