@@ -36,7 +36,7 @@ class SimpleLoadingDialog(QtWidgets.QDialog):
         self.setModal(False)  # Non-modal agar tidak blocking
         
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(20)
+        layout.setSpacing(10)
         layout.setContentsMargins(30, 30, 30, 30)
         
         # Title

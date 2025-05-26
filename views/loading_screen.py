@@ -8,24 +8,8 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QPropertyAnimation, QE
 
 # Import local modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import APP_NAME, APP_LOGO, PRIMARY_COLOR, SECONDARY_COLOR
+from config import APP_NAME, PRIMARY_COLOR, SECONDARY_COLOR
 
-class PulseAnimation(QPropertyAnimation):
-    """Animasi pulse untuk elemen loading"""
-    def __init__(self, target, property_name):
-        # Pastikan property_name dalam format yang benar untuk QPropertyAnimation
-        if isinstance(property_name, str):
-            property_name = property_name.encode()
-        elif isinstance(property_name, bytes):
-            # Jika sudah bytes, tidak perlu encode lagi
-            pass
-        super().__init__(target, property_name)
-        self.setDuration(1000)
-        self.setStartValue(0.7)
-        self.setEndValue(1.0)
-        self.setEasingCurve(QEasingCurve.InOutQuad)
-        self.setLoopCount(-1)  # Loop infinitely
-        
 class LoadingWorker(QThread):
     """Worker thread untuk menjalankan task di background"""
     progress_updated = pyqtSignal(int, str)  # progress percentage, status text
@@ -75,26 +59,24 @@ class LoadingWorker(QThread):
                 self.task_completed.emit(False, str(e))
 
 class LoadingScreen(QWidget):
-    """Modern loading screen dengan progress bar dan animasi"""
+    """Modern loading screen dengan progress bar tanpa logo"""
     
     def __init__(self, parent=None, title="Loading...", message="Please wait while we process your request"):
         super().__init__(parent)
         self.title = title
         self.message = message
         self.worker = None
-        self.animation = None
         self._is_closing = False
         
         self.setupUI()
         self.setupAnimations()
         
     def setupUI(self):
-        """Setup UI loading screen"""
-        # Set window properties - PENTING: Jangan set modal atau stay on top
+        """Setup UI loading screen tanpa logo"""
+        # Set window properties
         self.setWindowTitle("Loading")
-        self.setFixedSize(500, 350)
+        self.setFixedSize(500, 300)  # Ukuran lebih kecil tanpa logo
         self.setWindowFlags(Qt.Dialog | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
-        # HAPUS Qt.WindowModal untuk mencegah blocking
         self.setAttribute(Qt.WA_TranslucentBackground)
         
         # Main container dengan border radius
@@ -116,30 +98,9 @@ class LoadingScreen(QWidget):
         # Container layout
         container_layout = QVBoxLayout(self.container)
         container_layout.setContentsMargins(40, 40, 40, 40)
-        container_layout.setSpacing(20)
+        container_layout.setSpacing(25)
         container_layout.setAlignment(Qt.AlignCenter)
-        
-        # Logo dengan animasi pulse
-        self.logo_container = QFrame()
-        self.logo_container.setFixedSize(100, 100)
-        logo_layout = QVBoxLayout(self.logo_container)
-        logo_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.logo_label = QLabel()
-        if os.path.exists(APP_LOGO):
-            logo_pixmap = QPixmap(APP_LOGO)
-            logo_pixmap = logo_pixmap.scaled(80, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.logo_label.setPixmap(logo_pixmap)
-        else:
-            # Fallback jika logo tidak ada
-            self.logo_label.setText("📊")
-            self.logo_label.setFont(QFont("Segoe UI", 48))
-            self.logo_label.setStyleSheet(f"color: {PRIMARY_COLOR};")
-        
-        self.logo_label.setAlignment(Qt.AlignCenter)
-        logo_layout.addWidget(self.logo_label)
-        container_layout.addWidget(self.logo_container, 0, Qt.AlignCenter)
-        
+         
         # Title
         self.title_label = QLabel(self.title)
         self.title_label.setFont(QFont("Segoe UI", 18, QFont.Bold))
@@ -185,17 +146,11 @@ class LoadingScreen(QWidget):
         self.status_label.setAlignment(Qt.AlignCenter)
         container_layout.addWidget(self.status_label)
         
-        # Spacer untuk membuat layout lebih balanced
-        container_layout.addSpacing(20)
-        
         # Center the window
         self.center_on_screen()
         
     def setupAnimations(self):
-        """Setup animasi untuk loading screen"""
-        # Pulse animation untuk logo - PERBAIKAN: gunakan string, bukan bytes
-        self.pulse_animation = PulseAnimation(self.logo_container, "windowOpacity")
-        
+        """Setup animasi untuk loading screen tanpa logo"""
         # Timer untuk simulasi progress jika tidak ada worker
         self.progress_timer = QTimer()
         self.progress_timer.timeout.connect(self.simulate_progress)
@@ -213,11 +168,7 @@ class LoadingScreen(QWidget):
         """Start loading process"""
         if self._is_closing:
             return
-            
-        # Start pulse animation
-        if self.pulse_animation:
-            self.pulse_animation.start()
-        
+                 
         if task_function:
             # Jalankan task di background thread
             self.worker = LoadingWorker(task_function, *args, **kwargs)
@@ -316,14 +267,10 @@ class LoadingScreen(QWidget):
     def cleanup_and_close(self):
         """Cleanup resources dan tutup loading screen"""
         try:
-            # Stop animations
-            if self.pulse_animation:
-                self.pulse_animation.stop()
-                
             # Stop timers
             if self.progress_timer:
                 self.progress_timer.stop()
-                
+                     
             # Stop worker thread dengan aman
             if self.worker and self.worker.isRunning():
                 self.worker.stop()
@@ -357,14 +304,10 @@ class LoadingScreen(QWidget):
             self._is_closing = True
             
         try:
-            # Stop animations
-            if self.pulse_animation:
-                self.pulse_animation.stop()
-                
             # Stop timers
             if self.progress_timer:
                 self.progress_timer.stop()
-                
+                     
             # Stop worker thread dengan aman
             if self.worker and self.worker.isRunning():
                 self.worker.stop()
@@ -379,25 +322,18 @@ class LoadingScreen(QWidget):
         event.accept()
 
 class QuickLoadingDialog(QtWidgets.QDialog):
-    """Dialog loading sederhana untuk operasi cepat"""
+    """Dialog loading sederhana untuk operasi cepat tanpa logo"""
     
     def __init__(self, parent=None, message="Loading..."):
         super().__init__(parent)
         self.setWindowTitle("Loading")
         self.setFixedSize(300, 120)
-        # PERBAIKAN: Jangan set modal untuk mencegah blocking
         self.setWindowFlags(Qt.Dialog | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
         
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
         layout.setContentsMargins(30, 20, 30, 20)
-        
-        # Spinner icon (menggunakan emoji)
-        spinner_label = QLabel("⏳")
-        spinner_label.setFont(QFont("Segoe UI", 24))
-        spinner_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(spinner_label)
-        
+         
         # Message
         message_label = QLabel(message)
         message_label.setFont(QFont("Segoe UI", 11))
