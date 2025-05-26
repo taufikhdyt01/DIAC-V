@@ -4417,7 +4417,7 @@ class BDUGroupView(QMainWindow):
                     print(f"Warning: Could not create backup: {str(e)}")
                 
                 if progress_callback:
-                    progress_callback(25, "Loading Excel workbook...")
+                    progress_callback(20, "Loading Excel workbook...")
                 
                 # Load the Excel workbook with openpyxl
                 wb = load_workbook(self.excel_path)
@@ -4429,13 +4429,46 @@ class BDUGroupView(QMainWindow):
                 sheet = wb[sheet_name]
                 
                 if progress_callback:
-                    progress_callback(35, "Reading current data structure...")
+                    progress_callback(25, "Reading current data structure...")
                 
                 # Also load with pandas to help us find the field positions
                 df = pd.read_excel(self.excel_path, sheet_name=sheet_name, header=None)
                 
+                # Create validation data maps to help match dropdowns with their correct options
+                validation_data = {}
+                
                 if progress_callback:
-                    progress_callback(45, "Processing field mappings...")
+                    progress_callback(30, "Processing data validations...")
+                
+                # Load validation info from workbook
+                from openpyxl.worksheet.datavalidation import DataValidation
+                
+                # Process all data validations in the sheet
+                if hasattr(sheet, 'data_validations'):
+                    for validation in sheet.data_validations.dataValidation:
+                        if validation.type == 'list':
+                            # This is a dropdown validation
+                            formula = validation.formula1
+                            options = []
+                            
+                            # Extract options from formula
+                            if formula.startswith('"') and formula.endswith('"'):
+                                formula = formula[1:-1]
+                                options = [opt.strip() for opt in formula.split(',')]
+                            
+                            # Get all cells this validation applies to
+                            for coord in validation.sqref.ranges:
+                                for row in range(coord.min_row, coord.max_row + 1):
+                                    for col in range(coord.min_col, coord.max_col + 1):
+                                        cell_key = f"row_{row-1}_col_{col-1}"  # Adjust for 0-based indexing
+                                        cell_address = f"{chr(64 + col)}{row}"  # Convert to A1 notation
+                                        validation_data[cell_key] = {
+                                            'options': options,
+                                            'cell': cell_address
+                                        }
+
+                if progress_callback:
+                    progress_callback(35, "Building field position mapping...")
                 
                 # Create mapping of field identifiers to their Excel row positions
                 field_positions = {}
@@ -4465,11 +4498,11 @@ class BDUGroupView(QMainWindow):
                             'field_id': first_col,
                             'cell_address': f"B{row_idx + 1}"  # Column B
                         }
-                
+
                 if progress_callback:
-                    progress_callback(55, "Mapping widget data to Excel cells...")
+                    progress_callback(40, "Mapping specific dropdown widgets...")
                 
-                # Find specific dropdown widgets and map them
+                # Create specific widget mapping based on field names and positions
                 widget_mapping = {}
                 
                 # Find industry and sub-industry dropdown widgets
@@ -4513,9 +4546,73 @@ class BDUGroupView(QMainWindow):
                     elif placeholder_type == "city" and city_number == "2":
                         city2_dropdown = widget
                         widget_mapping['2City'] = widget
-                
+
                 if progress_callback:
-                    progress_callback(65, "Saving dropdown field values...")
+                    progress_callback(45, "Processing remaining dropdown widgets...")
+                
+                # Map remaining dropdown widgets based on field positions and validation data
+                remaining_widgets = []
+                for key, widget in self.data_fields.items():
+                    if (not key.startswith(sheet_name) or not isinstance(widget, QComboBox) or
+                        widget in [industry_dropdown, sub_industry_dropdown, province1_dropdown, 
+                                city1_dropdown, province2_dropdown, city2_dropdown]):
+                        continue
+                    remaining_widgets.append((key, widget))
+
+                # Match remaining widgets to field positions
+                for field_name, position_info in field_positions.items():
+                    if field_name in widget_mapping:
+                        continue  # Already mapped
+                    
+                    row_idx = position_info['row_idx']
+                    cell_address = position_info['cell_address']
+                    
+                    # Get validation data for this cell
+                    cell_key = f"row_{row_idx}_col_1"  # Column B (0-based: col_1)
+                    expected_options = []
+                    
+                    if cell_key in validation_data:
+                        expected_options = validation_data[cell_key]['options']
+                    
+                    # Find the best matching widget
+                    best_widget = None
+                    best_match_score = 0
+                    best_widget_key = None
+                    
+                    for widget_key, widget in remaining_widgets:
+                        if widget_key in [w[0] for w in widget_mapping.values() if isinstance(w, tuple)]:
+                            continue  # Already used
+                        
+                        # Get widget options
+                        widget_options = [widget.itemText(i) for i in range(widget.count())]
+                        
+                        # Calculate match score
+                        match_score = 0
+                        if expected_options:
+                            # Count exact matches
+                            exact_matches = len(set(expected_options) & set(widget_options))
+                            match_score = exact_matches / len(expected_options) if expected_options else 0
+                            
+                            # Bonus for complete match
+                            if exact_matches == len(expected_options):
+                                match_score += 1
+                        else:
+                            # If no expected options, any unmatched widget can be used
+                            match_score = 0.5
+                        
+                        if match_score > best_match_score:
+                            best_match_score = match_score
+                            best_widget = widget
+                            best_widget_key = widget_key
+                    
+                    # Map the best matching widget
+                    if best_widget:
+                        widget_mapping[field_name] = best_widget
+                        # Remove from remaining widgets
+                        remaining_widgets = [(k, w) for k, w in remaining_widgets if k != best_widget_key]
+
+                if progress_callback:
+                    progress_callback(50, "Saving dropdown field values...")
                 
                 # Track changes
                 changes_made = 0
@@ -4543,12 +4640,15 @@ class BDUGroupView(QMainWindow):
                     
                     changes_made += 1
                     changes_log.append(f"Updated cell B{excel_row} ({field_name}): {old_value} -> {value}")
-                
+
                 if progress_callback:
-                    progress_callback(75, "Processing text fields and other inputs...")
+                    progress_callback(55, "Processing text fields and form controls...")
                 
                 # Create cell-to-widget mapping for non-dropdown fields
                 cell_to_widget_map = {}
+                
+                # Store processed items to avoid duplicates
+                processed_table_items = set()
                 
                 # Map text fields (f_), multiple fields (fm_), and table fields (ft_)
                 for row_idx, row in df.iterrows():
@@ -4582,7 +4682,7 @@ class BDUGroupView(QMainWindow):
                     
                     # Handle different field types
                     if field_type == 'f_':
-                        # Regular input field processing
+                        # Regular input field
                         field_id = first_col
                         original_field_name = field_name.strip()
                         
@@ -4629,13 +4729,355 @@ class BDUGroupView(QMainWindow):
                                 'field_id': field_id
                             }
                     
-                    # Handle fm_ and ft_ fields similarly...
-                    # (Code untuk fm_ dan ft_ fields sama seperti di implementasi asli)
-                
+                    elif field_type == 'fm_':
+                        # Multiple field handling
+                        field_base = f"{sheet_name}_{section_name}_{field_name}"
+                        field_key_0 = f"{field_base}_0"
+                        field_key_1 = f"{field_base}_1"
+                        
+                        if field_key_0 in self.data_fields and field_key_1 in self.data_fields:
+                            widget_0 = self.data_fields[field_key_0]
+                            widget_1 = self.data_fields[field_key_1]
+                            
+                            cell_key_0 = f"row_{row_idx}_col_1"
+                            cell_key_1 = f"row_{row_idx}_col_2"
+                            
+                            cell_to_widget_map[cell_key_0] = {
+                                'widget': widget_0,
+                                'key': field_key_0,
+                                'type': 'text'
+                            }
+                            
+                            cell_to_widget_map[cell_key_1] = {
+                                'widget': widget_1,
+                                'key': field_key_1,
+                                'type': 'text'
+                            }
+                    
+                    elif field_type == 'ft_':
+                        # Table item handling
+                        processed_table_items = getattr(self, '_processed_table_items', set())
+                        
+                        found_base_key = None
+                        
+                        for i in range(100):
+                            base_key = f"{sheet_name}_{section_name}_{i}"
+                            client_key = f"{base_key}_client"
+                            contractor_key = f"{base_key}_contractor"
+                            remarks_key = f"{base_key}_remarks"
+                            
+                            if (client_key in self.data_fields and 
+                                contractor_key in self.data_fields and 
+                                remarks_key in self.data_fields and
+                                base_key not in processed_table_items):
+                                
+                                client_widget = self.data_fields[client_key]
+                                contractor_widget = self.data_fields[contractor_key]
+                                remarks_widget = self.data_fields[remarks_key]
+                                
+                                if (isinstance(client_widget, QCheckBox) and 
+                                    isinstance(contractor_widget, QCheckBox) and 
+                                    isinstance(remarks_widget, QLineEdit)):
+                                    
+                                    cell_key_client = f"row_{row_idx}_col_1"
+                                    cell_key_contractor = f"row_{row_idx}_col_2"
+                                    cell_key_remarks = f"row_{row_idx}_col_3"
+                                    
+                                    cell_to_widget_map[cell_key_client] = {
+                                        'widget': client_widget,
+                                        'key': client_key,
+                                        'type': 'checkbox'
+                                    }
+                                    
+                                    cell_to_widget_map[cell_key_contractor] = {
+                                        'widget': contractor_widget,
+                                        'key': contractor_key,
+                                        'type': 'checkbox'
+                                    }
+                                    
+                                    cell_to_widget_map[cell_key_remarks] = {
+                                        'widget': remarks_widget,
+                                        'key': remarks_key,
+                                        'type': 'text'
+                                    }
+                                    
+                                    found_base_key = base_key
+                                    processed_table_items.add(base_key)
+                                    break
+                        
+                        self._processed_table_items = processed_table_items
+
                 if progress_callback:
-                    progress_callback(85, "Updating Excel cells with new values...")
-                
-                # Update cells for ALL fields
+                    progress_callback(60, "Processing right column fields...")
+
+                # NOW HANDLE RIGHT COLUMN FIELDS (Columns C/D, E/F, etc.)
+                # This is crucial for fields like "Competitor Information" 
+                for row_idx in range(len(df)):
+                    # Skip empty rows
+                    if pd.isna(df.iloc[row_idx]).all():
+                        continue
+                    
+                    # Check columns starting from the third column (index 2 = column C)
+                    # This is where right fields start
+                    for col_idx in range(2, len(df.columns)):
+                        if col_idx >= len(df.columns):
+                            break
+                            
+                        # Get the value in this cell
+                        cell_value = ""
+                        if col_idx < len(df.iloc[row_idx]) and not pd.isna(df.iloc[row_idx, col_idx]):
+                            cell_value = df.iloc[row_idx, col_idx]
+                            
+                            # Convert to string if needed
+                            if not isinstance(cell_value, str):
+                                try:
+                                    cell_value = str(cell_value)
+                                except:
+                                    continue
+                        
+                        # Only process cells with field identifiers
+                        if not (cell_value.startswith('f_') or 
+                            cell_value.startswith('fd_') or 
+                            cell_value.startswith('fm_')):
+                            continue
+                        
+                        # Skip header cells
+                        if cell_value.startswith('fh_'):
+                            continue
+                        
+                        # Get field properties
+                        field_type = cell_value[:3] if not cell_value.startswith('f_') else cell_value[:2]
+                        field_name = cell_value[3:] if not cell_value.startswith('f_') else cell_value[2:]
+                        
+                        # Clean up the display name
+                        display_name = field_name.strip()
+                        if display_name and display_name[0].isdigit():
+                            for i, char in enumerate(display_name):
+                                if not char.isdigit():
+                                    display_name = display_name[i:]
+                                    break
+                        
+                        # Get the section for this row (either right section or default)
+                        section_name = self._get_right_section_for_row(df, row_idx, col_idx)
+                        if not section_name:
+                            section_name = self._get_section_for_row(df, row_idx)
+                        
+                        # Find the matching widget based on field type
+                        if field_type == 'f_':
+                            # Regular input field
+                            # Look for a QLineEdit with this name in the placeholder
+                            for key, widget in self.data_fields.items():
+                                if not key.startswith(sheet_name):
+                                    continue
+                                    
+                                if isinstance(widget, QLineEdit) and key not in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]:
+                                    placeholder = widget.placeholderText()
+                                    if placeholder and display_name in placeholder:
+                                        target_col = col_idx + 1  # Next column
+                                        cell_key = f"row_{row_idx}_col_{target_col}"
+                                        cell_to_widget_map[cell_key] = {
+                                            'widget': widget,
+                                            'key': key,
+                                            'type': 'text'
+                                        }
+                                        break
+                        
+                        elif field_type == 'fd_':
+                            # Dropdown field - check if it's already mapped in our widget_mapping
+                            target_col = col_idx + 1  # Next column
+                            cell_key = f"row_{row_idx}_col_{target_col}"
+                            
+                            # Skip if this field is already handled in widget_mapping
+                            if field_name in widget_mapping:
+                                continue
+                            
+                            # Find the options for this dropdown
+                            dropdown_key = f"{row_idx}_{col_idx}"
+                            options = []
+                            
+                            # Try to get options from validation data
+                            validation_key = f"row_{row_idx}_col_{target_col}"
+                            if validation_key in validation_data:
+                                options = validation_data[validation_key]['options']
+                            
+                            # Find a QComboBox that isn't already mapped
+                            best_widget = None
+                            best_widget_key = None
+                            best_match_score = 0
+                            
+                            for key, widget in self.data_fields.items():
+                                if not key.startswith(sheet_name):
+                                    continue
+                                    
+                                if isinstance(widget, QComboBox) and key not in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]:
+                                    # Skip hardcode dropdowns that are already mapped
+                                    if (widget in [industry_dropdown, sub_industry_dropdown, province1_dropdown, 
+                                                city1_dropdown, province2_dropdown, city2_dropdown]):
+                                        continue
+                                    
+                                    # Skip if already used in widget_mapping
+                                    if widget in widget_mapping.values():
+                                        continue
+                                        
+                                    # Check if widget options match
+                                    widget_options = [widget.itemText(i) for i in range(widget.count())]
+                                    # Remove placeholder option for comparison
+                                    clean_widget_options = [opt for opt in widget_options if opt != "-- Select Value --"]
+                                    
+                                    match_score = 0
+                                    
+                                    if options:
+                                        # Calculate exact match score
+                                        exact_matches = len(set(options) & set(clean_widget_options))
+                                        if len(options) > 0:
+                                            match_score = exact_matches / len(options)
+                                        
+                                        # Bonus for having all expected options
+                                        if exact_matches == len(options):
+                                            match_score += 1
+                                            
+                                    else:
+                                        # If no validation options found, use any available dropdown
+                                        match_score = 0.5
+                                    
+                                    # Update best match
+                                    if match_score > best_match_score:
+                                        best_match_score = match_score
+                                        best_widget = widget
+                                        best_widget_key = key
+                            
+                            # Map the best matching widget
+                            if best_widget:
+                                cell_to_widget_map[cell_key] = {
+                                    'widget': best_widget,
+                                    'key': best_widget_key,
+                                    'type': 'dropdown',
+                                    'options': options,
+                                    'display_name': display_name
+                                }
+                            
+                        elif field_type == 'fm_':
+                            # Multiple field (e.g., Name and Phone/Email)
+                            found_base_key = None
+                            
+                            # Look for a pair of QLineEdit widgets for this field
+                            for i in range(100):
+                                base_key = f"{sheet_name}_{section_name}_{i}"
+                                key_0 = f"{base_key}_0"
+                                key_1 = f"{base_key}_1"
+                                
+                                if key_0 in self.data_fields and key_1 in self.data_fields:
+                                    widget_0 = self.data_fields[key_0]
+                                    widget_1 = self.data_fields[key_1]
+                                    
+                                    # Skip if already mapped
+                                    if (key_0 in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info] or
+                                        key_1 in [info.get('key') for info in cell_to_widget_map.values() if 'key' in info]):
+                                        continue
+                                    
+                                    if isinstance(widget_0, QLineEdit) and isinstance(widget_1, QLineEdit):
+                                        # Check if placeholders contain the display name
+                                        placeholder_0 = widget_0.placeholderText()
+                                        placeholder_1 = widget_1.placeholderText()
+                                        
+                                        if ((placeholder_0 and display_name in placeholder_0) or 
+                                            (placeholder_1 and display_name in placeholder_1)):
+                                                
+                                            # Map both widgets
+                                            target_col_0 = col_idx + 1  # Next column
+                                            target_col_1 = col_idx + 2  # Next column + 1
+                                            
+                                            cell_key_0 = f"row_{row_idx}_col_{target_col_0}"
+                                            cell_key_1 = f"row_{row_idx}_col_{target_col_1}"
+                                            
+                                            cell_to_widget_map[cell_key_0] = {
+                                                'widget': widget_0,
+                                                'key': key_0,
+                                                'type': 'text'
+                                            }
+                                            
+                                            cell_to_widget_map[cell_key_1] = {
+                                                'widget': widget_1,
+                                                'key': key_1,
+                                                'type': 'text'
+                                            }
+                                            
+                                            found_base_key = base_key
+                                            break
+
+                if progress_callback:
+                    progress_callback(70, "Processing tdi_ fields with placeholders...")
+
+                # Handle tdi_ fields with placeholders (existing code)
+                placeholder_widgets = {}
+
+                for row_idx, row in df.iterrows():
+                    if pd.isna(row).all():
+                        continue
+                        
+                    for col_idx in range(len(row)):
+                        cell_value = row.iloc[col_idx] if col_idx < len(row) and not pd.isna(row.iloc[col_idx]) else ""
+                        
+                        if not isinstance(cell_value, str):
+                            try:
+                                cell_value = str(cell_value)
+                            except:
+                                continue
+                                
+                        if cell_value.startswith('tdi_') and ('$P1$' in cell_value or '$P2$' in cell_value or 
+                                                            '$P3$' in cell_value or '$P4$' in cell_value):
+                            cell_key = f"row_{row_idx}_col_{col_idx}"
+                            placeholder_widgets[cell_key] = {
+                                'cell_value': cell_value,
+                                'row': row_idx,
+                                'col': col_idx,
+                                'placeholders': []
+                            }
+                            
+                            import re
+                            placeholders = re.findall(r'\$P\d+\$', cell_value)
+                            placeholder_widgets[cell_key]['placeholders'] = placeholders
+
+                # Process placeholder widgets (existing code)
+                for cell_key, info in placeholder_widgets.items():
+                    row_idx = info['row']
+                    col_idx = info['col']
+                    cell_text = info['cell_value']
+                    header_text = ""
+                    
+                    if col_idx > 0:
+                        header_cell = df.iloc[row_idx, 0] if not pd.isna(df.iloc[row_idx, 0]) else ""
+                        if isinstance(header_cell, str) and (header_cell.startswith('th_') or header_cell.startswith('thr_')):
+                            if header_cell.startswith('th_'):
+                                header_text = header_cell[3:].strip()
+                            else:
+                                header_text = header_cell[4:].strip()
+                    
+                    placeholders = info['placeholders']
+                    
+                    for key, widget in self.data_fields.items():
+                        for placeholder in placeholders:
+                            placeholder_key = f"tdi_{placeholder}_{header_text}"
+                            placeholder_key_with_row = f"tdi_{placeholder}_{header_text}_{row_idx}"
+                            
+                            if (key == placeholder_key or key == placeholder_key_with_row) and isinstance(widget, QLineEdit):
+                                value = widget.text()
+                                
+                                if 'placeholder_inputs' not in placeholder_widgets[cell_key]:
+                                    placeholder_widgets[cell_key]['placeholder_inputs'] = {}
+                                    
+                                placeholder_widgets[cell_key]['placeholder_inputs'][placeholder] = {
+                                    'widget': widget,
+                                    'value': value,
+                                    'key': key
+                                }
+                                
+                                break
+
+                if progress_callback:
+                    progress_callback(80, "Updating Excel cells with new values...")
+
+                # Update cells for ALL fields including right dropdown fields
                 for cell_key, info in cell_to_widget_map.items():
                     if 'widget' not in info:
                         continue
@@ -4657,6 +5099,7 @@ class BDUGroupView(QMainWindow):
                     if widget_type == 'text' and isinstance(widget, QLineEdit):
                         value = widget.text()
                     elif widget_type == 'dropdown' and isinstance(widget, QComboBox):
+                        # Handle dropdown fields (including right dropdown fields)
                         value = widget.currentText()
                         # Skip placeholder values
                         if value == "-- Select Value --":
@@ -4672,6 +5115,32 @@ class BDUGroupView(QMainWindow):
                     else:
                         continue
                     
+                    # Get display name for logging
+                    display_name = info.get('display_name', '')
+                    if not display_name:
+                        # Try to determine field name from Excel content
+                        if row_idx < len(df):
+                            # For right fields, look at the identifier column
+                            identifier_col = col_idx - 1
+                            if identifier_col >= 2 and identifier_col < len(df.columns):
+                                identifier_cell = df.iloc[row_idx, identifier_col] if not pd.isna(df.iloc[row_idx, identifier_col]) else ""
+                                if isinstance(identifier_cell, str):
+                                    if identifier_cell.startswith('fd_'):
+                                        display_name = identifier_cell[3:].strip()
+                                    elif identifier_cell.startswith('f_'):
+                                        display_name = identifier_cell[2:].strip()
+                                    
+                                    # Clean up display name
+                                    if display_name and display_name[0].isdigit():
+                                        for i, char in enumerate(display_name):
+                                            if not char.isdigit():
+                                                display_name = display_name[i:]
+                                                break
+                    
+                    # Add "Right" prefix for right columns
+                    if col_idx >= 3:
+                        display_name = f"Right {display_name}" if display_name else f"Right Field"
+                    
                     # Update the cell
                     if widget_type != 'checkbox':  # Checkbox already handled above
                         target_cell = sheet.cell(row=excel_row, column=excel_col)
@@ -4679,12 +5148,57 @@ class BDUGroupView(QMainWindow):
                         target_cell.value = value
                     
                     changes_made += 1
-                    display_name = info.get('display_name', f"Field at {col_letter}{excel_row}")
                     changes_log.append(f"Updated cell {col_letter}{excel_row} ({display_name}): {old_value} -> {value}")
-                
+
                 if progress_callback:
-                    progress_callback(92, "Saving Excel workbook...")
-                
+                    progress_callback(85, "Processing placeholder replacements...")
+
+                # Apply placeholder replacements
+                placeholder_replacements = []
+
+                for cell_key, info in placeholder_widgets.items():
+                    row_idx = info['row']
+                    col_idx = info['col']
+                    cell_text = info['cell_value']
+                    
+                    if 'placeholder_inputs' not in info:
+                        continue
+                        
+                    excel_row = row_idx + 1
+                    excel_col = col_idx + 1
+                    col_letter = chr(64 + excel_col)
+                    
+                    new_text = cell_text
+                    
+                    for placeholder, input_info in info['placeholder_inputs'].items():
+                        value = input_info['value']
+                        new_text = new_text.replace(placeholder, value)
+                    
+                    if new_text.startswith('tdi_'):
+                        new_text = new_text[4:]
+                    
+                    placeholder_replacements.append({
+                        'row': excel_row,
+                        'col': excel_col, 
+                        'value': new_text,
+                        'original': sheet.cell(row=excel_row, column=excel_col).value
+                    })
+
+                for replacement in placeholder_replacements:
+                    target_cell = sheet.cell(row=replacement['row'], column=replacement['col'])
+                    old_value = replacement['original']
+                    new_value = replacement['value']
+                    
+                    target_cell.value = new_value
+                    
+                    col_letter = chr(64 + replacement['col'])
+                    cell_address = f"{col_letter}{replacement['row']}"
+                    changes_made += 1
+                    changes_log.append(f"Updated placeholder cell {cell_address}: {old_value} -> {new_value}")
+
+                if progress_callback:
+                    progress_callback(90, "Saving Excel workbook...")
+                                
                 # Save the workbook
                 try:
                     wb.save(self.excel_path)
