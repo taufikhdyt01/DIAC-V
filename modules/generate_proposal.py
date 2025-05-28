@@ -10,6 +10,172 @@ from docx.oxml import parse_xml
 from docx.shared import RGBColor
 from docx.enum.text import WD_COLOR_INDEX
 
+def clean_filename(filename):
+    """
+    Membersihkan nama file dari karakter yang tidak valid
+    
+    Parameters:
+    - filename: string nama file
+    
+    Returns:
+    - string: nama file yang sudah dibersihkan
+    """
+    # Karakter yang tidak diizinkan dalam nama file Windows
+    invalid_chars = '<>:"/\\|?*'
+    
+    # Ganti karakter tidak valid dengan underscore
+    for char in invalid_chars:
+        filename = filename.replace(char, '_')
+    
+    # Ganti multiple spaces dengan single space
+    filename = re.sub(r'\s+', ' ', filename)
+    
+    # Ganti multiple underscores dengan single underscore
+    filename = re.sub(r'_+', '_', filename)
+    
+    # Trim spaces di awal dan akhir
+    filename = filename.strip()
+    
+    # Batasi panjang nama file (Windows limit ~255 karakter, kita buat 200 untuk safety)
+    if len(filename) > 200:
+        # Potong tapi pertahankan ekstensi
+        name, ext = os.path.splitext(filename)
+        filename = name[:200-len(ext)] + ext
+    
+    return filename
+
+def get_proposal_data_for_filename(workbook):
+    """
+    Mengambil data yang diperlukan untuk membuat nama file proposal
+    
+    Parameters:
+    - workbook: openpyxl workbook object
+    
+    Returns:
+    - dict: data untuk nama file
+    """
+    data = {
+        'project_type': '',
+        'capacity': '',
+        'company_name': '',
+        'user_code': ''
+    }
+    
+    try:
+        # 1. Project Type dari DIP_Project_Information.B3
+        if 'DIP_Project Information' in workbook.sheetnames:
+            sheet = workbook['DIP_Project Information']
+            try:
+                project_type = sheet['B3'].value
+                if project_type:
+                    data['project_type'] = str(project_type).strip()
+                    print(f"Project Type: {data['project_type']}")
+            except Exception as e:
+                print(f"Error membaca project type: {str(e)}")
+        
+        # 2. Capacity dari DIP_Project_Information.B60
+        if 'DIP_Project Information' in workbook.sheetnames:
+            sheet = workbook['DIP_Project Information']
+            try:
+                capacity = sheet['B60'].value
+                if capacity:
+                    data['capacity'] = str(capacity).strip()
+                    print(f"Capacity: {data['capacity']}")
+            except Exception as e:
+                print(f"Error membaca capacity: {str(e)}")
+        
+        # 3. Company Name dari DIP_Customer_Information.B4
+        if 'DIP_Customer Information' in workbook.sheetnames:
+            sheet = workbook['DIP_Customer Information']
+            try:
+                company_name = sheet['B4'].value
+                if company_name:
+                    data['company_name'] = str(company_name).strip()
+                    print(f"Company Name: {data['company_name']}")
+            except Exception as e:
+                print(f"Error membaca company name: {str(e)}")
+        
+        # 4. User Code dari DATA_TEMP.B1
+        if 'DATA_TEMP' in workbook.sheetnames:
+            sheet = workbook['DATA_TEMP']
+            try:
+                user_code = sheet['B1'].value
+                if user_code:
+                    data['user_code'] = str(user_code).strip()
+                    print(f"User Code: {data['user_code']}")
+            except Exception as e:
+                print(f"Error membaca user code: {str(e)}")
+        
+        return data
+        
+    except Exception as e:
+        print(f"Error mengambil data untuk filename: {str(e)}")
+        return data
+
+def generate_dynamic_filename(workbook, fallback_customer_name=None, version="01"):
+    """
+    Generate nama file proposal yang dinamis
+    
+    Format: Commercial and Technical_Project Type Capacity CMD_Company Name_Ver.01_BDE/PSE Code
+    
+    Parameters:
+    - workbook: openpyxl workbook object
+    - fallback_customer_name: nama customer fallback jika tidak ada di Excel
+    - version: versi proposal (default "01")
+    
+    Returns:
+    - string: nama file yang sudah dibersihkan
+    """
+    try:
+        # Ambil data dari Excel
+        data = get_proposal_data_for_filename(workbook)
+        
+        # Component 1: Fixed prefix
+        prefix = "Commercial and Technical"
+        
+        # Component 2: Project Type
+        project_type = data['project_type'] if data['project_type'] else "WWTP Project"
+        
+        # Component 3: Capacity dengan CMD
+        capacity = data['capacity'] if data['capacity'] else "100"
+        capacity_part = f"{capacity} CMD"
+        
+        # Component 4: Company Name
+        company_name = data['company_name'] if data['company_name'] else fallback_customer_name if fallback_customer_name else "Unknown Company"
+        
+        # Component 5: Version
+        version_part = f"Ver.{version}"
+        
+        # Component 6: User Code
+        user_code = data['user_code'] if data['user_code'] else "000"
+        
+        # Gabungkan semua komponen
+        filename_parts = [
+            prefix,
+            f"{project_type} {capacity_part}",
+            company_name,
+            version_part,
+            user_code
+        ]
+        
+        # Gabung dengan separator underscore
+        filename = "_".join(filename_parts)
+        
+        # Tambahkan ekstensi
+        filename += ".docx"
+        
+        # Bersihkan nama file
+        clean_name = clean_filename(filename)
+        
+        print(f"Generated filename: {clean_name}")
+        return clean_name
+        
+    except Exception as e:
+        print(f"Error generating dynamic filename: {str(e)}")
+        # Fallback ke nama sederhana
+        fallback_name = f"WWTP_Quotation_{fallback_customer_name or 'Result'}_{version}.docx"
+        return clean_filename(fallback_name)
+
 def get_user_data_by_code(workbook, user_code):
     """
     Mengambil data user berdasarkan user code dari sheet 'User Code'
@@ -479,37 +645,64 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
     return success
 
 # Fungsi utama yang bisa dipanggil dari aplikasi lain
-def generate_proposal(excel_path, template_path, output_path, selected_user_code=None):
+def generate_proposal(excel_path, template_path, output_dir, selected_user_code=None, customer_name=None, version="01"):
     """
-    Fungsi utama untuk dipanggil dari aplikasi lain.
+    Fungsi utama untuk dipanggil dari aplikasi lain dengan dynamic filename.
     
     Parameters:
     - excel_path: Path ke file Excel yang berisi data
     - template_path: Path ke template Word
-    - output_path: Path untuk menyimpan hasil output Word
+    - output_dir: Directory untuk menyimpan hasil output Word
     - selected_user_code: User code yang dipilih dari dropdown
+    - customer_name: Nama customer untuk fallback filename
+    - version: Versi proposal (default "01")
     
     Returns:
-    - bool: True jika berhasil, False jika gagal
+    - tuple: (bool success, str output_path) - True jika berhasil dan path file hasil
     """
     # Validasi path input
     if not os.path.exists(excel_path):
         print(f"Error: File Excel tidak ditemukan: {excel_path}")
-        return False
+        return False, ""
         
     if not os.path.exists(template_path):
         print(f"Error: Template Word tidak ditemukan: {template_path}")
-        return False
+        return False, ""
     
     # Pastikan direktori output ada
-    output_dir = os.path.dirname(output_path)
-    if output_dir and not os.path.exists(output_dir):
+    if not os.path.exists(output_dir):
         try:
             os.makedirs(output_dir, exist_ok=True)
             print(f"Membuat direktori output: {output_dir}")
         except Exception as e:
             print(f"Error membuat direktori output: {e}")
-            return False
+            return False, ""
+    
+    try:
+        # Buka workbook untuk generate filename
+        workbook = openpyxl.load_workbook(excel_path, data_only=True)
+        
+        # Generate nama file dinamis
+        dynamic_filename = generate_dynamic_filename(
+            workbook, 
+            fallback_customer_name=customer_name, 
+            version=version
+        )
+        
+        # Tutup workbook sementara
+        workbook.close()
+        
+        # Path output lengkap
+        output_path = os.path.join(output_dir, dynamic_filename)
+        
+        print(f"Menggunakan nama file: {dynamic_filename}")
+        
+    except Exception as e:
+        print(f"Error generating dynamic filename: {str(e)}")
+        # Fallback ke nama file sederhana
+        fallback_filename = f"WWTP_Quotation_{customer_name or 'Result'}_{version}.docx"
+        output_path = os.path.join(output_dir, clean_filename(fallback_filename))
+        print(f"Menggunakan nama file fallback: {os.path.basename(output_path)}")
             
     # Jalankan fungsi untuk membuat dokumen
     success = excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_code)
@@ -547,12 +740,14 @@ def generate_proposal(excel_path, template_path, output_path, selected_user_code
                 # Simpan workbook
                 wb.save(excel_path)
                 print(f"Berhasil memperbarui file Excel: {excel_path}")
+                wb.close()
             else:
                 print("Sheet DATA_PROPOSAL tidak ditemukan di file Excel")
+                wb.close()
         except Exception as e:
             print(f"Error saat memperbarui sel A1 di sheet DATA_PROPOSAL: {e}")
     
-    return success
+    return success, output_path if success else ""
 
 # Jika script ini dijalankan secara langsung (bukan diimport)
 if __name__ == "__main__":
@@ -560,20 +755,22 @@ if __name__ == "__main__":
     kode ini memungkinkan penggunaan customer path jika diberikan sebagai argumen.
     
     Penggunaan:
-    python generate_proposal.py [customer_name] [user_code]
+    python generate_proposal.py [customer_name] [user_code] [version]
     
     Jika customer_name diberikan, script akan memproses file SET_BDU.xlsx
     di folder customer tersebut dan menyimpan output di folder yang sama.
     
     Jika user_code diberikan, script akan menggunakan data user tersebut.
+    Jika version diberikan, akan digunakan untuk penamaan file.
     """
     # Import argparse untuk menangani argumen command line
     import argparse
     
     # Buat parser argumen
-    parser = argparse.ArgumentParser(description='Generate proposal from SET_BDU.xlsx')
+    parser = argparse.ArgumentParser(description='Generate proposal from SET_BDU.xlsx with dynamic filename')
     parser.add_argument('customer_name', nargs='?', help='Optional customer name')
     parser.add_argument('user_code', nargs='?', help='Optional user code')
+    parser.add_argument('version', nargs='?', default='01', help='Optional version number (default: 01)')
     
     # Parse argumen
     args = parser.parse_args()
@@ -590,13 +787,13 @@ if __name__ == "__main__":
         
         # Path file customer
         excel_file = os.path.join(customer_folder, "SET_BDU.xlsx")
-        output_file = os.path.join(customer_folder, f"WWTP_Quotation_{args.customer_name}.docx")
+        output_dir = customer_folder
         
         # Path template tetap mengacu ke folder data utama
         template_file = os.path.join(root_dir, "data", "Trial WWTP ANP Quotation Template.docx")
         
         print(f"Menggunakan file Excel customer: {excel_file}")
-        print(f"Output akan disimpan ke: {output_file}")
+        print(f"Output akan disimpan ke: {output_dir}")
     else:
         # Gunakan path default jika tidak ada customer_name
         data_folder = os.path.join(root_dir, "data")
@@ -604,18 +801,16 @@ if __name__ == "__main__":
         # Nama file
         excel_filename = "SET_BDU.xlsx"
         template_filename = "Trial WWTP ANP Quotation Template.docx"
-        output_filename = "WWTP_Quotation_Result.docx"
         
         # Path lengkap
         excel_file = os.path.join(data_folder, excel_filename)
         template_file = os.path.join(data_folder, template_filename)
-        output_file = os.path.join(data_folder, output_filename)
+        output_dir = data_folder
     
     # Pastikan folder data ada
-    output_folder = os.path.dirname(output_file)
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder, exist_ok=True)
-        print(f"Folder {output_folder} dibuat.")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"Folder {output_dir} dibuat.")
     
     # Periksa apakah file yang diperlukan ada
     if not os.path.exists(excel_file):
@@ -624,5 +819,17 @@ if __name__ == "__main__":
         print(f"KESALAHAN: File template Word '{template_file}' tidak ditemukan!")
     else:
         print(f"Mulai memproses file...")
-        # Panggil generate_proposal dengan user_code jika diberikan
-        generate_proposal(excel_file, template_file, output_file, args.user_code)
+        # Panggil generate_proposal dengan parameter lengkap
+        success, output_file = generate_proposal(
+            excel_file, 
+            template_file, 
+            output_dir, 
+            selected_user_code=args.user_code,
+            customer_name=args.customer_name,
+            version=args.version
+        )
+        
+        if success:
+            print(f"✅ Proposal berhasil digenerate: {output_file}")
+        else:
+            print("❌ Gagal menggenerate proposal")

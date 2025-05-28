@@ -1839,7 +1839,7 @@ class BDUGroupView(QMainWindow):
         loading_screen.worker.task_completed.connect(on_projection_complete)                
     
     def run_generate_proposal(self):
-        """Fungsi untuk menjalankan generate proposal dengan loading screen - UPDATED VERSION"""
+        """Fungsi untuk menjalankan generate proposal dengan loading screen dan dynamic filename"""
         
         def generate_proposal_process(progress_callback=None):
             try:
@@ -1850,6 +1850,7 @@ class BDUGroupView(QMainWindow):
                 if not hasattr(self, 'customer_name') or not self.customer_name:
                     excel_path = self.excel_path
                     output_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    customer_name = None
                 else:
                     from modules.fix_customer_system import clean_folder_name
                     
@@ -1860,14 +1861,11 @@ class BDUGroupView(QMainWindow):
                     
                     excel_path = os.path.join(customer_folder, "SET_BDU.xlsx")
                     output_dir = customer_folder
+                    customer_name = self.customer_name
                 
                 # Path to the Word template
                 template_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
                                         "data", "Trial WWTP ANP Quotation Template.docx")
-                
-                # Path for the output file
-                output_filename = f"WWTP_Quotation_{self.customer_name or 'Result'}.docx"
-                output_path = os.path.join(output_dir, output_filename)
                 
                 if progress_callback:
                     progress_callback(20, "Getting selected user code...")
@@ -1881,7 +1879,33 @@ class BDUGroupView(QMainWindow):
                         print(f"Using selected user code: {selected_user_code}")
                 
                 if progress_callback:
-                    progress_callback(30, "Loading generate_proposal module...")
+                    progress_callback(25, "Preparing dynamic filename...")
+                
+                # Preview nama file yang akan dibuat
+                try:
+                    import openpyxl
+                    from modules.generate_proposal import generate_dynamic_filename
+                    
+                    wb_preview = openpyxl.load_workbook(excel_path, data_only=True)
+                    preview_filename = generate_dynamic_filename(
+                        wb_preview, 
+                        fallback_customer_name=customer_name, 
+                        version="01"
+                    )
+                    wb_preview.close()
+                    
+                    if progress_callback:
+                        progress_callback(30, f"Will create: {preview_filename}")
+                    
+                    print(f"Preview filename: {preview_filename}")
+                    
+                except Exception as e:
+                    print(f"Error creating filename preview: {str(e)}")
+                    if progress_callback:
+                        progress_callback(30, "Preparing proposal...")
+                
+                if progress_callback:
+                    progress_callback(35, "Loading generate_proposal module...")
                 
                 # Import the generate_proposal module
                 import importlib.util
@@ -1896,22 +1920,17 @@ class BDUGroupView(QMainWindow):
                 if progress_callback:
                     progress_callback(40, "Processing Excel data...")
                 
-                # Call the function with progress updates and selected user code
-                def proposal_progress_wrapper(percentage, message=""):
-                    if progress_callback:
-                        # Map the proposal progress to our overall progress (40-90%)
-                        overall_progress = 40 + (percentage * 0.5)
-                        progress_callback(int(overall_progress), f"Generating proposal: {message}")
-                
                 if progress_callback:
                     progress_callback(50, "Creating Word document from template...")
                 
-                # Pass selected_user_code to generate_proposal function
-                success = generate_proposal.generate_proposal(
-                    excel_path, 
-                    template_path, 
-                    output_path, 
-                    selected_user_code=selected_user_code
+                # Call the updated function with directory instead of full path
+                success, output_path = generate_proposal.generate_proposal(
+                    excel_path=excel_path,
+                    template_path=template_path, 
+                    output_dir=output_dir,
+                    selected_user_code=selected_user_code,
+                    customer_name=customer_name,
+                    version="01"  # Bisa dibuat dynamic jika diperlukan
                 )
                 
                 if progress_callback:
@@ -1921,9 +1940,15 @@ class BDUGroupView(QMainWindow):
                     if progress_callback:
                         progress_callback(100, "Proposal generated successfully!")
                     
-                    result_message = f"Proposal successfully generated and saved to: {output_path}"
+                    # Extract just the filename from the full path
+                    filename = os.path.basename(output_path)
+                    
+                    result_message = f"Proposal successfully generated!\n\n"
+                    result_message += f"File: {filename}\n"
+                    result_message += f"Location: {output_path}\n"
+                    
                     if selected_user_code:
-                        result_message += f"\nUsing contact person: User Code {selected_user_code}"
+                        result_message += f"\nContact Person: User Code {selected_user_code}"
                     
                     return result_message
                 else:
@@ -1935,10 +1960,11 @@ class BDUGroupView(QMainWindow):
                 return f"An error occurred while generating proposal: {str(e)}"
         
         # Show loading screen
+        from views.loading_screen import LoadingScreen
         loading_screen = LoadingScreen(
             parent=self,
             title="Generating Proposal",
-            message="Creating proposal document from Excel data..."
+            message="Creating proposal document with dynamic filename..."
         )
         loading_screen.show()
         loading_screen.start_loading(generate_proposal_process)
@@ -1946,14 +1972,16 @@ class BDUGroupView(QMainWindow):
         # Connect completion handler
         def on_proposal_complete(success, message):
             if success and "successfully generated" in message:
+                from PyQt5.QtWidgets import QMessageBox
                 QMessageBox.information(
                     self,
-                    "Success",
+                    "Proposal Generated Successfully",
                     message
                 )
                 # Refresh display to show the new file
                 self.load_excel_data()
             else:
+                from PyQt5.QtWidgets import QMessageBox
                 QMessageBox.critical(
                     self,
                     "Error",
@@ -1963,21 +1991,81 @@ class BDUGroupView(QMainWindow):
             self.statusBar().clearMessage()
         
         loading_screen.worker.task_completed.connect(on_proposal_complete)
+
+    def preview_proposal_filename(self):
+        """Preview nama file proposal yang akan dibuat"""
+        try:
+            # Get necessary data
+            excel_path = self.excel_path
+            customer_name = getattr(self, 'customer_name', None)
             
+            # Get selected user code
+            selected_user_code = None
+            if hasattr(self, 'user_code_dropdown') and self.user_code_dropdown:
+                current_selection = self.user_code_dropdown.currentText()
+                if current_selection and current_selection not in ["-- Select User Code --", "-- No User Codes Available --"]:
+                    selected_user_code = current_selection
+            
+            # Generate preview filename
+            import openpyxl
+            from modules.generate_proposal import generate_dynamic_filename, clean_filename
+            
+            wb = openpyxl.load_workbook(excel_path, data_only=True)
+            
+            # Simulate the user code being saved to DATA_TEMP.B1
+            if selected_user_code and 'DATA_TEMP' in wb.sheetnames:
+                sheet = wb['DATA_TEMP']
+                sheet['B1'] = selected_user_code
+            
+            preview_filename = generate_dynamic_filename(
+                wb, 
+                fallback_customer_name=customer_name, 
+                version="01"
+            )
+            
+            wb.close()
+            
+            return preview_filename
+            
+        except Exception as e:
+            print(f"Error generating filename preview: {str(e)}")
+            fallback_name = f"WWTP_Quotation_{customer_name or 'Result'}_Ver.01.docx"
+            return clean_filename(fallback_name)
+
+    def show_filename_preview(self):
+        """Tampilkan preview nama file di UI"""
+        try:
+            filename = self.preview_proposal_filename()
+            
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Filename Preview",
+                f"Proposal akan disimpan dengan nama:\n\n{filename}"
+            )
+            
+        except Exception as e:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "Preview Error",
+                f"Cannot generate filename preview: {str(e)}"
+            )
+                    
     def on_generate_proposal_finished(self, success, output):
         """Handler ketika proses generate proposal selesai"""
         if success:
             QMessageBox.information(
                 self,
-                "Sukses",
-                "Proposal berhasil digenerate. Silakan refresh halaman untuk melihat hasilnya."
+                "Success",
+                "The proposal has been successfully generated. Please refresh the page to view the result."
             )
             print("Output generate-proposal.py:", output)
         else:
             QMessageBox.critical(
                 self,
                 "Error",
-                f"Gagal menghasilkan proposal: {output}"
+                f"Failed to generate the proposal. {output}"
             )
             print("Error generate-proposal.py:", output)
         
