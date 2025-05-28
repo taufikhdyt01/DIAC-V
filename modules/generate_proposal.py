@@ -10,7 +10,79 @@ from docx.oxml import parse_xml
 from docx.shared import RGBColor
 from docx.enum.text import WD_COLOR_INDEX
 
-def excel_to_word_by_cell(excel_path, template_path, output_path):
+def get_user_data_by_code(workbook, user_code):
+    """
+    Mengambil data user berdasarkan user code dari sheet 'User Code'
+    
+    Parameters:
+    - workbook: openpyxl workbook object
+    - user_code: string user code yang dipilih
+    
+    Returns:
+    - dict: data user atau dict kosong jika tidak ditemukan
+    """
+    try:
+        if 'User Code' not in workbook.sheetnames:
+            print("Sheet 'User Code' tidak ditemukan")
+            return {}
+        
+        # Baca sheet User Code menggunakan pandas untuk kemudahan
+        # Konversi workbook ke pandas DataFrame
+        df = pd.read_excel(workbook, sheet_name='User Code', dtype={'Code': str})
+        
+        # Cari row yang sesuai dengan user_code
+        user_row = df[df['Code'].astype(str).str.strip() == str(user_code).strip()]
+        
+        if user_row.empty:
+            print(f"User code '{user_code}' tidak ditemukan")
+            return {}
+        
+        # Ambil data dari row pertama (jika ada duplikat)
+        user_data = user_row.iloc[0].to_dict()
+        
+        # Bersihkan data dari NaN values
+        cleaned_data = {}
+        for key, value in user_data.items():
+            if pd.isna(value):
+                cleaned_data[key] = ""
+            else:
+                cleaned_data[key] = str(value).strip()
+        
+        print(f"Data user ditemukan untuk code '{user_code}': {cleaned_data.get('Name', 'Unknown')}")
+        return cleaned_data
+        
+    except Exception as e:
+        print(f"Error saat mengambil data user: {str(e)}")
+        return {}
+
+def get_selected_user_code_from_excel(workbook):
+    """
+    Mengambil user code yang dipilih dari DATA_TEMP.B1
+    """
+    try:
+        # Lokasi penyimpanan selected user code: DATA_TEMP.B1
+        if 'DATA_TEMP' in workbook.sheetnames:
+            sheet = workbook['DATA_TEMP']
+            try:
+                cell_value = sheet['B1'].value
+                if cell_value and str(cell_value).strip():
+                    print(f"Selected user code ditemukan di DATA_TEMP.B1: {cell_value}")
+                    return str(cell_value).strip()
+                else:
+                    print("DATA_TEMP.B1 kosong atau tidak valid")
+                    return None
+            except Exception as e:
+                print(f"Error membaca DATA_TEMP.B1: {str(e)}")
+                return None
+        else:
+            print("Sheet DATA_TEMP tidak ditemukan")
+            return None
+        
+    except Exception as e:
+        print(f"Error saat mencari selected user code: {str(e)}")
+        return None
+
+def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_code=None):
     """
     Mengisi template Word dengan data dari file Excel berdasarkan referensi sel.
     Mempertahankan format font saat mengganti placeholder.
@@ -19,11 +91,13 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
     Mengubah semua teks footer menjadi kapital.
     Mendukung placeholder tanggal.
     Mendukung placeholder matematika $P1$ - $P4$ dengan nilai tetap.
+    Mendukung placeholder USER_CODE untuk data contact person.
     
     Parameters:
     - excel_path: Path ke file Excel yang berisi data
     - template_path: Path ke template Word
     - output_path: Path untuk menyimpan hasil output Word
+    - selected_user_code: User code yang dipilih (optional)
     
     Returns:
     - bool: True jika berhasil, False jika gagal
@@ -31,6 +105,7 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
     print(f"Membuka file Excel: {excel_path}")
     print(f"Membuka template Word: {template_path}")
     print(f"Output akan disimpan ke: {output_path}")
+    print(f"Selected user code: {selected_user_code}")
     
     # Siapkan data tanggal untuk placeholder
     now = datetime.datetime.now()
@@ -68,6 +143,25 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
         print(f"Error saat membuka file Excel: {e}")
         return False
     
+    # Ambil selected user code jika tidak diberikan sebagai parameter
+    if not selected_user_code:
+        selected_user_code = get_selected_user_code_from_excel(workbook)
+    
+    # Ambil data user berdasarkan selected user code
+    user_data = {}
+    if selected_user_code:
+        user_data = get_user_data_by_code(workbook, selected_user_code)
+    
+    # Siapkan data USER_CODE untuk placeholder
+    user_code_data = {
+        "NAME": user_data.get('Name', 'Tia Amelia'),  # Default fallback
+        "POSITION": user_data.get('Position', 'Product Strategist Engineer'),
+        "EMAIL": user_data.get('Email', 'tiamalia@grinvirobiotekno.com'),
+        "MOBILE": user_data.get('Mobile', '+62 856-5504-9457')
+    }
+    
+    print(f"Data USER_CODE yang akan digunakan: {user_code_data}")
+    
     # Baca template Word
     try:
         doc = Document(template_path)
@@ -81,8 +175,16 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
         def __init__(self):
             self.replacement_count = 0
             self.math_replacement_count = 0
+            self.user_code_replacement_count = 0
             
         def get_cell_value(self, sheet_name, cell_ref):
+            # Cek apakah ini placeholder USER_CODE
+            if sheet_name == "USER_CODE" and cell_ref in user_code_data:
+                value = user_code_data[cell_ref]
+                print(f"Menggunakan placeholder USER_CODE.{cell_ref} = {value}")
+                self.user_code_replacement_count += 1
+                return value
+            
             # Cek apakah ini placeholder tanggal khusus
             if sheet_name == "DATE" and cell_ref in tanggal_data:
                 value = tanggal_data[cell_ref]
@@ -150,7 +252,7 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
         
         def replace_in_paragraph_runs(self, paragraph, is_footer=False):
             """Mengganti placeholder dalam paragraf dengan mempertahankan format"""
-            # Pola untuk mendeteksi placeholder Excel, mis: {{Sheet1.A1}} atau {{DATE.NOW}}
+            # Pola untuk mendeteksi placeholder Excel, mis: {{Sheet1.A1}}, {{DATE.NOW}}, atau {{USER_CODE.NAME}}
             pattern = r'\{\{([^}]+)\.([A-Z0-9_]+)\}\}'
             
             # Sebelum memproses placeholder Excel, cek apakah ada placeholder matematika
@@ -181,14 +283,14 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
                     matches = list(re.finditer(pattern, full_placeholder))
                     for match in matches:
                         # Simpan informasi tentang placeholder ini
-                        placeholder_text = match.group(0)  # {{Sheet1.A1}} atau {{DATE.NOW}}
-                        sheet_name = match.group(1)        # Sheet1 atau DATE
-                        cell_ref = match.group(2)          # A1 atau NOW
+                        placeholder_text = match.group(0)  # {{Sheet1.A1}}, {{USER_CODE.NAME}}, dll
+                        sheet_name = match.group(1)        # Sheet1, USER_CODE, DATE
+                        cell_ref = match.group(2)          # A1, NAME, NOW
                         
                         # Debug output
                         print(f"Menemukan placeholder: {placeholder_text}, sheet: {sheet_name}, ref: {cell_ref}")
                         
-                        # Dapatkan nilai dari Excel atau placeholder tanggal
+                        # Dapatkan nilai dari Excel, USER_CODE, atau placeholder tanggal
                         value = self.get_cell_value(sheet_name, cell_ref)
                         if value is not None:
                             value = str(value)
@@ -351,6 +453,7 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
             # Laporan hasil
             print(f"Total {self.replacement_count} penggantian placeholder Excel dilakukan.")
             print(f"Total {self.math_replacement_count} penggantian placeholder matematika dilakukan.")
+            print(f"Total {self.user_code_replacement_count} penggantian placeholder USER_CODE dilakukan.")
     
     # Gunakan kelas Replacer untuk memproses dokumen
     replacer = Replacer()
@@ -376,7 +479,7 @@ def excel_to_word_by_cell(excel_path, template_path, output_path):
     return success
 
 # Fungsi utama yang bisa dipanggil dari aplikasi lain
-def generate_proposal(excel_path, template_path, output_path):
+def generate_proposal(excel_path, template_path, output_path, selected_user_code=None):
     """
     Fungsi utama untuk dipanggil dari aplikasi lain.
     
@@ -384,6 +487,7 @@ def generate_proposal(excel_path, template_path, output_path):
     - excel_path: Path ke file Excel yang berisi data
     - template_path: Path ke template Word
     - output_path: Path untuk menyimpan hasil output Word
+    - selected_user_code: User code yang dipilih dari dropdown
     
     Returns:
     - bool: True jika berhasil, False jika gagal
@@ -408,7 +512,7 @@ def generate_proposal(excel_path, template_path, output_path):
             return False
             
     # Jalankan fungsi untuk membuat dokumen
-    success = excel_to_word_by_cell(excel_path, template_path, output_path)
+    success = excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_code)
     
     # Jika berhasil generate proposal, update sel A1 pada sheet DATA_PROPOSAL
     if success:
@@ -456,10 +560,12 @@ if __name__ == "__main__":
     kode ini memungkinkan penggunaan customer path jika diberikan sebagai argumen.
     
     Penggunaan:
-    python generate_proposal.py [customer_name]
+    python generate_proposal.py [customer_name] [user_code]
     
     Jika customer_name diberikan, script akan memproses file SET_BDU.xlsx
     di folder customer tersebut dan menyimpan output di folder yang sama.
+    
+    Jika user_code diberikan, script akan menggunakan data user tersebut.
     """
     # Import argparse untuk menangani argumen command line
     import argparse
@@ -467,6 +573,7 @@ if __name__ == "__main__":
     # Buat parser argumen
     parser = argparse.ArgumentParser(description='Generate proposal from SET_BDU.xlsx')
     parser.add_argument('customer_name', nargs='?', help='Optional customer name')
+    parser.add_argument('user_code', nargs='?', help='Optional user code')
     
     # Parse argumen
     args = parser.parse_args()
@@ -517,5 +624,5 @@ if __name__ == "__main__":
         print(f"KESALAHAN: File template Word '{template_file}' tidak ditemukan!")
     else:
         print(f"Mulai memproses file...")
-        # Panggil generate_proposal
-        generate_proposal(excel_file, template_file, output_file)
+        # Panggil generate_proposal dengan user_code jika diberikan
+        generate_proposal(excel_file, template_file, output_file, args.user_code)

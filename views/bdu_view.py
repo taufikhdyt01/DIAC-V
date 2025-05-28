@@ -840,8 +840,11 @@ class BDUGroupView(QMainWindow):
             self.user_code_dropdown.setEnabled(False)
 
     def on_user_code_changed(self, selected_code):
-        """Handle user code selection change"""
+        """Handle user code selection change - UPDATED VERSION"""
         if selected_code and selected_code != "-- Select User Code --" and selected_code != "-- No User Codes Available --":
+            
+            # Simpan user code yang dipilih ke Excel
+            self.save_selected_user_code_to_excel(selected_code)
             
             # Update status bar to show selected user code
             self.statusBar().showMessage(f"BDU Group Module | User: {self.current_user['username']} | Selected Code: {selected_code}")
@@ -850,14 +853,45 @@ class BDUGroupView(QMainWindow):
             user_details = self.get_user_details_by_code(selected_code)
             if user_details:
                 print(f"User details: {user_details}")
-                # Di sini Anda bisa menambahkan logika untuk:
-                # - Update form fields dengan data user
-                # - Filter data berdasarkan user code
-                # - Menampilkan informasi user di interface
+                
+                # Show user info in status or somewhere in UI
+                user_info = f"Selected: {user_details.get('Name', 'Unknown')} ({user_details.get('Position', 'Unknown')})"
+                print(f"User info: {user_info}")
+            
         else:
             # Reset status bar if no valid code selected
             self.statusBar().showMessage(f"BDU Group Module | User: {self.current_user['username']}")
 
+    def save_selected_user_code_to_excel(self, user_code):
+        """Simpan user code yang dipilih ke Excel DATA_TEMP.B1 untuk digunakan saat generate proposal"""
+        try:
+            from openpyxl import load_workbook
+            
+            # Load workbook
+            wb = load_workbook(self.excel_path)
+            
+            # Cek apakah sheet DATA_TEMP ada
+            if 'DATA_TEMP' not in wb.sheetnames:
+                print(f"Warning: Sheet DATA_TEMP tidak ditemukan, membuat sheet baru")
+                # Buat sheet baru jika tidak ada
+                sheet = wb.create_sheet('DATA_TEMP')
+            else:
+                sheet = wb['DATA_TEMP']
+            
+            # Simpan user code di cell B1
+            sheet['B1'] = user_code
+            print(f"User code '{user_code}' disimpan ke DATA_TEMP.B1")
+            
+            # Simpan workbook
+            wb.save(self.excel_path)
+            wb.close()
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error saat menyimpan user code ke Excel: {str(e)}")
+            return False
+    
     def get_user_details_by_code(self, selected_code):
         """Get user details from Excel for the selected code"""
         try:
@@ -1805,7 +1839,7 @@ class BDUGroupView(QMainWindow):
         loading_screen.worker.task_completed.connect(on_projection_complete)                
     
     def run_generate_proposal(self):
-        """Fungsi untuk menjalankan generate proposal dengan loading screen"""
+        """Fungsi untuk menjalankan generate proposal dengan loading screen - UPDATED VERSION"""
         
         def generate_proposal_process(progress_callback=None):
             try:
@@ -1836,7 +1870,18 @@ class BDUGroupView(QMainWindow):
                 output_path = os.path.join(output_dir, output_filename)
                 
                 if progress_callback:
-                    progress_callback(20, "Loading generate_proposal module...")
+                    progress_callback(20, "Getting selected user code...")
+                
+                # Ambil user code yang dipilih dari dropdown
+                selected_user_code = None
+                if hasattr(self, 'user_code_dropdown') and self.user_code_dropdown:
+                    current_selection = self.user_code_dropdown.currentText()
+                    if current_selection and current_selection not in ["-- Select User Code --", "-- No User Codes Available --"]:
+                        selected_user_code = current_selection
+                        print(f"Using selected user code: {selected_user_code}")
+                
+                if progress_callback:
+                    progress_callback(30, "Loading generate_proposal module...")
                 
                 # Import the generate_proposal module
                 import importlib.util
@@ -1849,19 +1894,25 @@ class BDUGroupView(QMainWindow):
                 spec.loader.exec_module(generate_proposal)
                 
                 if progress_callback:
-                    progress_callback(30, "Processing Excel data...")
+                    progress_callback(40, "Processing Excel data...")
                 
-                # Call the function with progress updates
+                # Call the function with progress updates and selected user code
                 def proposal_progress_wrapper(percentage, message=""):
                     if progress_callback:
-                        # Map the proposal progress to our overall progress (30-90%)
-                        overall_progress = 30 + (percentage * 0.6)
+                        # Map the proposal progress to our overall progress (40-90%)
+                        overall_progress = 40 + (percentage * 0.5)
                         progress_callback(int(overall_progress), f"Generating proposal: {message}")
                 
                 if progress_callback:
-                    progress_callback(40, "Creating Word document from template...")
+                    progress_callback(50, "Creating Word document from template...")
                 
-                success = generate_proposal.generate_proposal(excel_path, template_path, output_path)
+                # Pass selected_user_code to generate_proposal function
+                success = generate_proposal.generate_proposal(
+                    excel_path, 
+                    template_path, 
+                    output_path, 
+                    selected_user_code=selected_user_code
+                )
                 
                 if progress_callback:
                     progress_callback(95, "Finalizing document...")
@@ -1869,7 +1920,12 @@ class BDUGroupView(QMainWindow):
                 if success:
                     if progress_callback:
                         progress_callback(100, "Proposal generated successfully!")
-                    return f"Proposal successfully generated and saved to: {output_path}"
+                    
+                    result_message = f"Proposal successfully generated and saved to: {output_path}"
+                    if selected_user_code:
+                        result_message += f"\nUsing contact person: User Code {selected_user_code}"
+                    
+                    return result_message
                 else:
                     return "Failed to generate proposal. Check the console for more details."
                 
@@ -1907,7 +1963,7 @@ class BDUGroupView(QMainWindow):
             self.statusBar().clearMessage()
         
         loading_screen.worker.task_completed.connect(on_proposal_complete)
-        
+            
     def on_generate_proposal_finished(self, success, output):
         """Handler ketika proses generate proposal selesai"""
         if success:
