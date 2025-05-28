@@ -596,6 +596,7 @@ class BDUGroupView(QMainWindow):
         self.sheet_tabs = {}
         self.data_fields = {}
         self.linked_dropdowns = {}
+        self.user_codes = []
         
         # Excel path
         self.excel_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "SET_BDU.xlsx")
@@ -671,6 +672,43 @@ class BDUGroupView(QMainWindow):
         title_layout.addWidget(page_title)
         title_layout.addStretch()
         
+        # User Code Dropdown
+        user_code_label = QLabel("User Code:")
+        user_code_label.setFont(QFont("Segoe UI", 10))
+        user_code_label.setStyleSheet("color: #666;")
+        
+        self.user_code_dropdown = QComboBox()
+        self.user_code_dropdown.setFont(QFont("Segoe UI", 10))
+        self.user_code_dropdown.setMinimumWidth(100)
+        self.user_code_dropdown.setStyleSheet(f"""
+            QComboBox {{
+                padding: 5px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                background-color: white;
+                min-height: 25px;
+            }}
+            QComboBox:hover {{
+                border: 1px solid {SECONDARY_COLOR};
+            }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+                border-left-width: 1px;
+                border-left-color: #ccc;
+                border-left-style: solid;
+                border-top-right-radius: 4px;
+                border-bottom-right-radius: 4px;
+            }}
+        """)
+        self.user_code_dropdown.currentTextChanged.connect(self.on_user_code_changed)
+        
+        # Add User Code dropdown to title layout
+        title_layout.addWidget(user_code_label)
+        title_layout.addWidget(self.user_code_dropdown)
+        title_layout.addSpacing(15)
+        
         # Add refresh button
         refresh_btn = QPushButton("Refresh Data")
         refresh_btn.setFont(QFont("Segoe UI", 10))
@@ -737,6 +775,117 @@ class BDUGroupView(QMainWindow):
         # Status bar
         self.statusBar().showMessage(f"BDU Group Module | User: {self.current_user['username']}")
         self.statusBar().setStyleSheet("background-color: #f0f0f0; color: #555;")
+    
+    def load_user_codes_from_excel(self):
+        """Load user codes from 'User Code' sheet in Excel - FIXED VERSION"""
+        try:
+            if not os.path.exists(self.excel_path):
+                print(f"Excel file not found: {self.excel_path}")
+                return
+            
+            # SOLUSI: Specify dtype untuk kolom Code sebagai string
+            # Ini akan mempertahankan leading zeros
+            dtype_dict = {'Code': str}  # Force Code column to be read as string
+            
+            # Read the 'User Code' sheet dengan dtype specification
+            df = pd.read_excel(self.excel_path, sheet_name='User Code', dtype=dtype_dict)
+            
+            # Check if 'Code' column exists
+            if 'Code' in df.columns:
+                # Get all codes, filter out NaN values - sudah dalam format string
+                codes = df['Code'].dropna().tolist()
+                
+                # Filter out empty strings dan pastikan format string
+                self.user_codes = []
+                for code in codes:
+                    code_str = str(code).strip()
+                    if code_str and code_str.lower() != 'nan':
+                        self.user_codes.append(code_str)
+                
+                # Update dropdown
+                self.update_user_code_dropdown()
+            else:
+                print("'Code' column not found in 'User Code' sheet")
+                print(f"Available columns: {df.columns.tolist()}")
+                self.user_codes = []
+                
+        except Exception as e:
+            print(f"Error loading user codes from Excel: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            self.user_codes = []
+
+    def update_user_code_dropdown(self):
+        """Update the user code dropdown with loaded codes"""
+        self.user_code_dropdown.clear()
+        
+        if self.user_codes:
+            # Add placeholder option
+            self.user_code_dropdown.addItem("-- Select User Code --")
+            
+            # Add all user codes
+            for code in self.user_codes:
+                self.user_code_dropdown.addItem(code)
+            
+            # Style the placeholder item
+            self.user_code_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+            self.user_code_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+            self.user_code_dropdown.setCurrentIndex(0)
+            
+        else:
+            # No codes available
+            self.user_code_dropdown.addItem("-- No User Codes Available --")
+            self.user_code_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+            self.user_code_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+            self.user_code_dropdown.setEnabled(False)
+
+    def on_user_code_changed(self, selected_code):
+        """Handle user code selection change"""
+        if selected_code and selected_code != "-- Select User Code --" and selected_code != "-- No User Codes Available --":
+            
+            # Update status bar to show selected user code
+            self.statusBar().showMessage(f"BDU Group Module | User: {self.current_user['username']} | Selected Code: {selected_code}")
+            
+            # Get user details for selected code
+            user_details = self.get_user_details_by_code(selected_code)
+            if user_details:
+                print(f"User details: {user_details}")
+                # Di sini Anda bisa menambahkan logika untuk:
+                # - Update form fields dengan data user
+                # - Filter data berdasarkan user code
+                # - Menampilkan informasi user di interface
+        else:
+            # Reset status bar if no valid code selected
+            self.statusBar().showMessage(f"BDU Group Module | User: {self.current_user['username']}")
+
+    def get_user_details_by_code(self, selected_code):
+        """Get user details from Excel for the selected code"""
+        try:
+            if not os.path.exists(self.excel_path):
+                return None
+            
+            # Read the 'User Code' sheet
+            df = pd.read_excel(self.excel_path, sheet_name='User Code')
+            
+            # Find the row with matching code
+            user_row = df[df['Code'].astype(str).str.strip() == selected_code]
+            
+            if not user_row.empty:
+                # Convert the row to dictionary and return
+                user_details = user_row.iloc[0].to_dict()
+                
+                # Clean up NaN values
+                for key, value in user_details.items():
+                    if pd.isna(value):
+                        user_details[key] = ""
+                
+                return user_details
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error getting user details for code {selected_code}: {str(e)}")
+            return None
     
     def setup_header(self):
         """Setup header widget dengan logo, judul, dan menu"""
@@ -1065,6 +1214,12 @@ class BDUGroupView(QMainWindow):
                     return f"Error: File SET_BDU.xlsx not found in the data directory."
                 
                 if progress_callback:
+                    progress_callback(10, "Loading user codes...")
+                
+                # Load user codes first
+                self.load_user_codes_from_excel()
+                
+                if progress_callback:
                     progress_callback(15, "Forcing Excel calculations...")
                 
                 # Force calculation before reading
@@ -1368,19 +1523,19 @@ class BDUGroupView(QMainWindow):
                 wb_bdu = load_workbook(set_bdu_path, data_only=True)
                 
                 if progress_callback:
-                    progress_callback(20, "Reading data from DIP_Technical Information...")
+                    progress_callback(20, "Reading data from DIP_Project Information...")
                 
                 # Ambil data yang diperlukan dari DIP_Technical Information
-                sheet_dip = wb_bdu["DIP_Technical Information"]
+                sheet_dip = wb_bdu["DIP_Project Information"]
                 values_to_transfer = {
-                    'C37': sheet_dip['B9'].value,  # B9 -> C37
-                    'C38': sheet_dip['B10'].value, # B10 -> C38
-                    'C39': sheet_dip['B11'].value, # B11 -> C39
-                    'C40': sheet_dip['B12'].value, # B12 -> C40
-                    'C41': sheet_dip['B13'].value, # B13 -> C41
-                    'C42': sheet_dip['B16'].value, # B16 -> C42
-                    'C43': sheet_dip['B17'].value, # B17 -> C43
-                    'C46': sheet_dip['B21'].value  # B21 -> C46
+                    'C37': sheet_dip['B49'].value,  # B9 -> C37
+                    'C38': sheet_dip['B50'].value, # B10 -> C38
+                    'C39': sheet_dip['B51'].value, # B11 -> C39
+                    'C40': sheet_dip['B52'].value, # B12 -> C40
+                    'C41': sheet_dip['B53'].value, # B13 -> C41
+                    'C42': sheet_dip['B55'].value, # B16 -> C42
+                    'C43': sheet_dip['B56'].value, # B17 -> C43
+                    'C46': sheet_dip['B59'].value  # B21 -> C46
                 }
                 
                 wb_bdu.close()
@@ -1554,14 +1709,14 @@ class BDUGroupView(QMainWindow):
                 # Ambil nilai dari sheet DATA_OUTPUT
                 output_values = {}
                 try:
-                    output_values['B3'] = sheet_output['C20'].value
-                    output_values['B4'] = sheet_output['C21'].value
-                    output_values['B5'] = sheet_output['C22'].value
-                    output_values['B6'] = sheet_output['C23'].value
-                    output_values['B7'] = sheet_output['C24'].value
-                    output_values['B8'] = sheet_output['C25'].value
-                    output_values['B10'] = sheet_output['C30'].value
-                    output_values['B11'] = sheet_output['C31'].value
+                    output_values['B4'] = sheet_output['C20'].value
+                    output_values['B5'] = sheet_output['C21'].value
+                    output_values['B6'] = sheet_output['C22'].value
+                    output_values['B7'] = sheet_output['C23'].value
+                    output_values['B8'] = sheet_output['C24'].value
+                    output_values['B9'] = sheet_output['C25'].value
+                    output_values['B11'] = sheet_output['C30'].value
+                    output_values['B12'] = sheet_output['C31'].value
                 except Exception as e:
                     print(f"Error reading DATA_OUTPUT values: {str(e)}")
                 
@@ -1577,8 +1732,8 @@ class BDUGroupView(QMainWindow):
                 if "DATA INPUT" in wb_pump_input.sheetnames:
                     sheet_pump_input = wb_pump_input["DATA INPUT"]
                     try:
-                        output_values['B13'] = sheet_pump_input['B13'].value
-                        output_values['B14'] = sheet_pump_input['B14'].value
+                        output_values['B14'] = sheet_pump_input['B13'].value
+                        output_values['B15'] = sheet_pump_input['B14'].value
                     except Exception as e:
                         print(f"Error reading DATA INPUT values: {str(e)}")
                 
@@ -1586,7 +1741,7 @@ class BDUGroupView(QMainWindow):
                 if "DATA ENGINE" in wb_pump_input.sheetnames:
                     sheet_pump_engine = wb_pump_input["DATA ENGINE"]
                     try:
-                        output_values['B15'] = sheet_pump_engine['B19'].value
+                        output_values['B16'] = sheet_pump_engine['B19'].value
                     except Exception as e:
                         print(f"Error reading DATA ENGINE values: {str(e)}")
                 
