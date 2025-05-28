@@ -84,6 +84,9 @@ class DIACApplication:
         self.app.setApplicationName(APP_NAME)
         self.app.setWindowIcon(QIcon(APP_LOGO))
         
+        # PENTING: Set agar aplikasi tidak keluar saat window disembunyikan
+        self.app.setQuitOnLastWindowClosed(False)
+        
         # Set style aplikasi
         self.setup_styles()
         
