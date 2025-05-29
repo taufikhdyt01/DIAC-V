@@ -44,6 +44,118 @@ def clean_filename(filename):
     
     return filename
 
+def get_quotation_number_by_company(workbook, company_name):
+    """
+    Mencari quotation number berdasarkan company name dari sheet 'No of Quotation'
+    
+    Parameters:
+    - workbook: openpyxl workbook object
+    - company_name: nama perusahaan untuk dicari
+    
+    Returns:
+    - string: quotation number atau default jika tidak ditemukan
+    """
+    try:
+        if 'No of Quotation' not in workbook.sheetnames:
+            print("Sheet 'No of Quotation' tidak ditemukan")
+            return "021/01/PTC/MBR/2025"  # Default fallback
+        
+        # Akses sheet menggunakan openpyxl
+        sheet = workbook['No of Quotation']
+        
+        print(f"Mencari quotation number untuk company: '{company_name}'")
+        
+        # Baca header dari baris pertama untuk menentukan kolom
+        headers = []
+        for col in range(1, sheet.max_column + 1):
+            cell_value = sheet.cell(row=1, column=col).value
+            if cell_value:
+                headers.append(str(cell_value).strip())
+            else:
+                headers.append(f"Col_{col}")
+        
+        print(f"Available columns: {headers}")
+        
+        # Cari indeks kolom yang diperlukan dengan exact match
+        company_col_idx = None
+        quotation_col_idx = None
+        
+        for idx, header in enumerate(headers):
+            col_idx = idx + 1  # openpyxl uses 1-based indexing
+            
+            # Exact match untuk menghindari ambiguitas
+            if header == 'Company Name':  # Harus exact match
+                company_col_idx = col_idx
+                print(f"Found 'Company Name' at column {col_idx}")
+            elif header == 'Quotation No.' or header == 'Quotation No':  # Support both formats
+                quotation_col_idx = col_idx
+                print(f"Found 'Quotation No.' at column {col_idx}")
+        
+        if company_col_idx is None:
+            print("Kolom 'Company Name' tidak ditemukan")
+            print("Header yang tersedia:")
+            for idx, header in enumerate(headers):
+                print(f"  Column {idx+1}: '{header}'")
+            return "021/01/PTC/MBR/2025"
+            
+        if quotation_col_idx is None:
+            print("Kolom 'Quotation No.' tidak ditemukan")
+            print("Header yang tersedia:")
+            for idx, header in enumerate(headers):
+                print(f"  Column {idx+1}: '{header}'")
+            return "021/01/PTC/MBR/2025"
+        
+        print(f"Company column index: {company_col_idx}, Quotation column index: {quotation_col_idx}")
+        
+        # Bersihkan nama perusahaan untuk pencarian yang lebih akurat
+        company_name_clean = str(company_name).strip().lower()
+        
+        # Cari data mulai dari baris 2 (baris 1 adalah header)
+        available_companies = []
+        
+        for row in range(2, sheet.max_row + 1):
+            company_cell = sheet.cell(row=row, column=company_col_idx).value
+            quotation_cell = sheet.cell(row=row, column=quotation_col_idx).value
+            
+            if company_cell and quotation_cell:
+                row_company = str(company_cell).strip()
+                row_company_clean = row_company.lower()
+                quotation_no = str(quotation_cell).strip()
+                
+                available_companies.append(row_company)
+                
+                # Coba exact match terlebih dahulu
+                if row_company_clean == company_name_clean:
+                    print(f"Exact match ditemukan: {quotation_no}")
+                    return quotation_no
+        
+        # Jika exact match tidak ditemukan, coba partial match
+        for row in range(2, sheet.max_row + 1):
+            company_cell = sheet.cell(row=row, column=company_col_idx).value
+            quotation_cell = sheet.cell(row=row, column=quotation_col_idx).value
+            
+            if company_cell and quotation_cell:
+                row_company_clean = str(company_cell).strip().lower()
+                quotation_no = str(quotation_cell).strip()
+                
+                # Partial match - cek apakah company name ada dalam row atau sebaliknya
+                if (company_name_clean in row_company_clean) or (row_company_clean in company_name_clean):
+                    print(f"Partial match ditemukan: {quotation_no}")
+                    return quotation_no
+        
+        print(f"Company '{company_name}' tidak ditemukan dalam database quotation")
+        print("Available companies:")
+        for company in available_companies:
+            print(f"  - {company}")
+            
+        return "021/01/PTC/MBR/2025"  # Default fallback
+        
+    except Exception as e:
+        print(f"Error saat mengambil quotation number: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return "021/01/PTC/MBR/2025"  # Default fallback
+
 def get_proposal_data_for_filename(workbook):
     """
     Mengambil data yang diperlukan untuk membuat nama file proposal
@@ -192,33 +304,92 @@ def get_user_data_by_code(workbook, user_code):
             print("Sheet 'User Code' tidak ditemukan")
             return {}
         
-        # Baca sheet User Code menggunakan pandas untuk kemudahan
-        # Konversi workbook ke pandas DataFrame
-        df = pd.read_excel(workbook, sheet_name='User Code', dtype={'Code': str})
+        # Akses sheet menggunakan openpyxl
+        sheet = workbook['User Code']
         
-        # Cari row yang sesuai dengan user_code
-        user_row = df[df['Code'].astype(str).str.strip() == str(user_code).strip()]
+        print(f"Mencari user data untuk code: '{user_code}'")
         
-        if user_row.empty:
-            print(f"User code '{user_code}' tidak ditemukan")
+        # Baca header dari baris pertama untuk menentukan kolom
+        headers = []
+        for col in range(1, sheet.max_column + 1):
+            cell_value = sheet.cell(row=1, column=col).value
+            if cell_value:
+                headers.append(str(cell_value).strip())
+            else:
+                headers.append(f"Col_{col}")
+        
+        print(f"Available columns in User Code sheet: {headers}")
+        
+        # Cari indeks kolom yang diperlukan
+        code_col_idx = None
+        
+        # Mapping kolom untuk data user
+        column_mapping = {}
+        
+        for idx, header in enumerate(headers):
+            col_idx = idx + 1  # openpyxl uses 1-based indexing
+            
+            if 'Code' in header:
+                code_col_idx = col_idx
+                column_mapping['Code'] = col_idx
+            elif 'Name' in header:
+                column_mapping['Name'] = col_idx
+            elif 'Position' in header:
+                column_mapping['Position'] = col_idx
+            elif 'Email' in header:
+                column_mapping['Email'] = col_idx
+            elif 'Mobile' in header or 'Phone' in header:
+                column_mapping['Mobile'] = col_idx
+            else:
+                # Tambahkan kolom lain yang mungkin ada
+                column_mapping[header] = col_idx
+        
+        if code_col_idx is None:
+            print("Kolom 'Code' tidak ditemukan dalam sheet User Code")
             return {}
         
-        # Ambil data dari row pertama (jika ada duplikat)
-        user_data = user_row.iloc[0].to_dict()
+        print(f"Column mapping: {column_mapping}")
         
-        # Bersihkan data dari NaN values
-        cleaned_data = {}
-        for key, value in user_data.items():
-            if pd.isna(value):
-                cleaned_data[key] = ""
-            else:
-                cleaned_data[key] = str(value).strip()
+        # Bersihkan user code untuk pencarian
+        user_code_clean = str(user_code).strip()
         
-        print(f"Data user ditemukan untuk code '{user_code}': {cleaned_data.get('Name', 'Unknown')}")
-        return cleaned_data
+        # Cari data mulai dari baris 2 (baris 1 adalah header)
+        available_codes = []
+        
+        for row in range(2, sheet.max_row + 1):
+            code_cell = sheet.cell(row=row, column=code_col_idx).value
+            
+            if code_cell:
+                row_code = str(code_cell).strip()
+                available_codes.append(row_code)
+                
+                # Coba exact match
+                if row_code == user_code_clean:
+                    print(f"User code match ditemukan untuk: {user_code_clean}")
+                    
+                    # Ambil semua data untuk user ini
+                    user_data = {}
+                    for column_name, col_idx in column_mapping.items():
+                        cell_value = sheet.cell(row=row, column=col_idx).value
+                        if cell_value is not None:
+                            user_data[column_name] = str(cell_value).strip()
+                        else:
+                            user_data[column_name] = ""
+                    
+                    print(f"Data user ditemukan untuk code '{user_code}': {user_data.get('Name', 'Unknown')}")
+                    return user_data
+        
+        print(f"User code '{user_code}' tidak ditemukan dalam database")
+        print("Available user codes:")
+        for code in available_codes:
+            print(f"  - {code}")
+            
+        return {}
         
     except Exception as e:
         print(f"Error saat mengambil data user: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {}
 
 def get_selected_user_code_from_excel(workbook):
@@ -258,6 +429,7 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
     Mendukung placeholder tanggal.
     Mendukung placeholder matematika $P1$ - $P4$ dengan nilai tetap.
     Mendukung placeholder USER_CODE untuk data contact person.
+    Mendukung placeholder QUOTATION_NO untuk nomor quotation otomatis.
     
     Parameters:
     - excel_path: Path ke file Excel yang berisi data
@@ -328,6 +500,28 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
     
     print(f"Data USER_CODE yang akan digunakan: {user_code_data}")
     
+    # Ambil company name untuk mencari quotation number
+    company_name = ""
+    try:
+        if 'DIP_Customer Information' in workbook.sheetnames:
+            sheet = workbook['DIP_Customer Information']
+            company_cell = sheet['B4'].value
+            if company_cell:
+                company_name = str(company_cell).strip()
+                print(f"Company name ditemukan: {company_name}")
+    except Exception as e:
+        print(f"Error mengambil company name: {str(e)}")
+    
+    # Dapatkan quotation number berdasarkan company name
+    quotation_number = get_quotation_number_by_company(workbook, company_name)
+    
+    # Siapkan data QUOTATION_NO untuk placeholder
+    quotation_data = {
+        "NO": quotation_number
+    }
+    
+    print(f"Data QUOTATION_NO yang akan digunakan: {quotation_data}")
+    
     # Baca template Word
     try:
         doc = Document(template_path)
@@ -342,6 +536,7 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
             self.replacement_count = 0
             self.math_replacement_count = 0
             self.user_code_replacement_count = 0
+            self.quotation_no_replacement_count = 0
             
         def get_cell_value(self, sheet_name, cell_ref):
             # Cek apakah ini placeholder USER_CODE
@@ -349,6 +544,13 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
                 value = user_code_data[cell_ref]
                 print(f"Menggunakan placeholder USER_CODE.{cell_ref} = {value}")
                 self.user_code_replacement_count += 1
+                return value
+            
+            # Cek apakah ini placeholder QUOTATION_NO
+            if sheet_name == "QUOTATION_NO" and cell_ref in quotation_data:
+                value = quotation_data[cell_ref]
+                print(f"Menggunakan placeholder QUOTATION_NO.{cell_ref} = {value}")
+                self.quotation_no_replacement_count += 1
                 return value
             
             # Cek apakah ini placeholder tanggal khusus
@@ -418,7 +620,7 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
         
         def replace_in_paragraph_runs(self, paragraph, is_footer=False):
             """Mengganti placeholder dalam paragraf dengan mempertahankan format"""
-            # Pola untuk mendeteksi placeholder Excel, mis: {{Sheet1.A1}}, {{DATE.NOW}}, atau {{USER_CODE.NAME}}
+            # Pola untuk mendeteksi placeholder Excel, mis: {{Sheet1.A1}}, {{DATE.NOW}}, {{USER_CODE.NAME}}, atau {{QUOTATION_NO.NO}}
             pattern = r'\{\{([^}]+)\.([A-Z0-9_]+)\}\}'
             
             # Sebelum memproses placeholder Excel, cek apakah ada placeholder matematika
@@ -449,14 +651,14 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
                     matches = list(re.finditer(pattern, full_placeholder))
                     for match in matches:
                         # Simpan informasi tentang placeholder ini
-                        placeholder_text = match.group(0)  # {{Sheet1.A1}}, {{USER_CODE.NAME}}, dll
-                        sheet_name = match.group(1)        # Sheet1, USER_CODE, DATE
-                        cell_ref = match.group(2)          # A1, NAME, NOW
+                        placeholder_text = match.group(0)  # {{Sheet1.A1}}, {{USER_CODE.NAME}}, {{QUOTATION_NO.NO}}, dll
+                        sheet_name = match.group(1)        # Sheet1, USER_CODE, DATE, QUOTATION_NO
+                        cell_ref = match.group(2)          # A1, NAME, NOW, NO
                         
                         # Debug output
                         print(f"Menemukan placeholder: {placeholder_text}, sheet: {sheet_name}, ref: {cell_ref}")
                         
-                        # Dapatkan nilai dari Excel, USER_CODE, atau placeholder tanggal
+                        # Dapatkan nilai dari Excel, USER_CODE, QUOTATION_NO, atau placeholder tanggal
                         value = self.get_cell_value(sheet_name, cell_ref)
                         if value is not None:
                             value = str(value)
@@ -620,6 +822,7 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
             print(f"Total {self.replacement_count} penggantian placeholder Excel dilakukan.")
             print(f"Total {self.math_replacement_count} penggantian placeholder matematika dilakukan.")
             print(f"Total {self.user_code_replacement_count} penggantian placeholder USER_CODE dilakukan.")
+            print(f"Total {self.quotation_no_replacement_count} penggantian placeholder QUOTATION_NO dilakukan.")
     
     # Gunakan kelas Replacer untuk memproses dokumen
     replacer = Replacer()
@@ -767,7 +970,7 @@ if __name__ == "__main__":
     import argparse
     
     # Buat parser argumen
-    parser = argparse.ArgumentParser(description='Generate proposal from SET_BDU.xlsx with dynamic filename')
+    parser = argparse.ArgumentParser(description='Generate proposal from SET_BDU.xlsx with dynamic filename and quotation number lookup')
     parser.add_argument('customer_name', nargs='?', help='Optional customer name')
     parser.add_argument('user_code', nargs='?', help='Optional user code')
     parser.add_argument('version', nargs='?', default='01', help='Optional version number (default: 01)')
