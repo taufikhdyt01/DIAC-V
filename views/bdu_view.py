@@ -880,7 +880,6 @@ class BDUGroupView(QMainWindow):
             
             # Simpan user code di cell B1
             sheet['B1'] = user_code
-            print(f"User code '{user_code}' disimpan ke DATA_TEMP.B1")
             
             # Simpan workbook
             wb.save(self.excel_path)
@@ -1876,7 +1875,6 @@ class BDUGroupView(QMainWindow):
                     current_selection = self.user_code_dropdown.currentText()
                     if current_selection and current_selection not in ["-- Select User Code --", "-- No User Codes Available --"]:
                         selected_user_code = current_selection
-                        print(f"Using selected user code: {selected_user_code}")
                 
                 if progress_callback:
                     progress_callback(25, "Preparing dynamic filename...")
