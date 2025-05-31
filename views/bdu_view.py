@@ -367,6 +367,16 @@ INDONESIA_CITIES = {
     ]
 }
 
+EFFLUENT_WARRANTY_OPTIONS = [
+    "PERMENKES No. 2 Tahun 2023 (Parameter Wajib Air Minum)",
+    "PERMENKES No. 2 Tahun 2023 (Parameter Air untuk Keperluan Higiene dan Sanitasi)",
+    "PERMENLHK RI No. P.68 Tahun 2016 (Baku Mutu Air Limbah Domestik)",
+    "PP RI No. 22 Tahun 2021 (Baku Mutu Air Sungai Kelas 1 dan Sejenisnya)",
+    "PP RI No. 22 Tahun 2021 (Baku Mutu Air Sungai Kelas 2 dan Sejenisnya)",
+    "PP RI No. 22 Tahun 2021 (Baku Mutu Air Sungai Kelas 3 dan Sejenisnya)",
+    "PP RI No. 22 Tahun 2021 (Baku Mutu Air Sungai Kelas 4 dan Sejenisnya)"
+]
+
 # Pengecekan opsional untuk modul docx2pdf
 HAS_DOCX2PDF = False
 try:
@@ -3594,7 +3604,6 @@ class BDUGroupView(QMainWindow):
                 current_row += 1
                 continue
             
-            # Check if it's a field dropdown (fd_)
             if first_col.startswith('fd_'):
                 field_name = first_col[3:].strip()  # Remove 'fd_' prefix
 
@@ -3605,7 +3614,7 @@ class BDUGroupView(QMainWindow):
                         if not char.isdigit():
                             display_name = field_name[i:]
                             break
-                        
+                            
                 field_key = f"{sheet_name}_{current_section}_{field_count}"
                 field_count += 1
 
@@ -3613,7 +3622,7 @@ class BDUGroupView(QMainWindow):
                 label = QLabel(display_name)
                 label.setFont(QFont("Segoe UI", 11))
                 label.setStyleSheet("color: #333; background-color: transparent;")
-                label.setMinimumWidth(250)  # Set minimum width for consistent layout
+                label.setMinimumWidth(250)
                 
                 # Add label to grid
                 section_grid.addWidget(label, current_row, 0)
@@ -3621,7 +3630,7 @@ class BDUGroupView(QMainWindow):
                 # Create dropdown
                 input_field = QComboBox()
                 input_field.setFont(QFont("Segoe UI", 11))
-                input_field.setMinimumWidth(200)  # Set minimum width for consistent layout
+                input_field.setMinimumWidth(200)
                 input_field.setStyleSheet("""
                     QComboBox {
                         padding: 5px;
@@ -3645,6 +3654,8 @@ class BDUGroupView(QMainWindow):
                     }
                 """)
                 
+                # BAGIAN BARU: Deteksi field "Effluent Warranty" dan gunakan hard coded options
+                is_effluent_warranty_field = "Effluent Warranty" in field_name
                 is_industry_field = field_name == "Industry Classification"
                 is_sub_industry_field = field_name == "Sub Industry Specification"
                 is_province1_field = field_name == "1Province"
@@ -3659,10 +3670,12 @@ class BDUGroupView(QMainWindow):
                 excel_row = index + 1  # Convert to 1-based Excel row
                 excel_col = 2  # Column B
                 cell_address = f"B{excel_row}"
-            
-                # Untuk field Industry Classification, gunakan data dari mapping
-                if is_industry_field:
-                    # Gunakan list industry dari mapping
+
+                # Untuk field Effluent Warranty
+                if is_effluent_warranty_field:
+                    options = EFFLUENT_WARRANTY_OPTIONS
+                # Untuk field Industry Classification
+                elif is_industry_field:
                     options = list(INDUSTRY_SUBTYPE_MAPPING.keys())
                     industry_dropdown = input_field
                     industry_field_key = field_key
@@ -3670,7 +3683,6 @@ class BDUGroupView(QMainWindow):
                 elif is_sub_industry_field:
                     sub_industry_dropdown = input_field
                     sub_industry_field_key = field_key
-                    # Add placeholder for now, will be populated when industry is selected
                     options = ["-- Select Industry First --"]
                 # Untuk field 1Province
                 elif is_province1_field:
@@ -3679,13 +3691,12 @@ class BDUGroupView(QMainWindow):
                     province1_field_key = field_key
                     input_field.setProperty("dropdown_type", "province")
                     input_field.setProperty("province_number", "1")
-                    # Untuk field 1City
+                # Untuk field 1City
                 elif is_city1_field:
                     city1_dropdown = input_field
                     city1_field_key = field_key
                     input_field.setProperty("placeholder_type", "city")
                     input_field.setProperty("city_number", "1")
-                    # Add placeholder for now, will be populated when province is selected
                     options = ["-- Select Province First --"]
                 # Untuk field 2Province
                 elif is_province2_field:
@@ -3700,15 +3711,14 @@ class BDUGroupView(QMainWindow):
                     city2_field_key = field_key
                     input_field.setProperty("placeholder_type", "city")
                     input_field.setProperty("city_number", "2")
-                    # Add placeholder for now, will be populated when province is selected
                     options = ["-- Select Province First --"]
                 else:
                     # Try multiple cell addresses in case the calculation is off
                     possible_addresses = [
-                        cell_address,  # B{excel_row}
-                        f"C{excel_row}",  # Sometimes validation is on the next column
-                        f"B{excel_row + 1}",  # Sometimes there's an offset
-                        f"B{excel_row - 1}"   # Sometimes there's a negative offset
+                        cell_address,
+                        f"C{excel_row}",
+                        f"B{excel_row + 1}",
+                        f"B{excel_row - 1}"
                     ]
                     
                     validation_options = []
@@ -3726,28 +3736,13 @@ class BDUGroupView(QMainWindow):
                             if options_str and options_str != "nan":
                                 options = [opt.strip() for opt in options_str.split(',')]
                         
-                    # Simpan Process options untuk digunakan bersama
+                    # Process options untuk field Process yang sama
                     if "Process" in field_name and field_name.replace("Process ", "").strip().isdigit():
-                        # Jika ini Process 1, simpan opsinya untuk field Process lainnya
                         if "Process 1" in field_name:
                             self.process_field_options = options
-                        # Jika ini Process 2-9, gunakan opsi dari Process 1 jika tersedia
                         elif hasattr(self, 'process_field_options') and self.process_field_options:
                             options = self.process_field_options
 
-                # Tambahkan stylesheet untuk tooltip
-                app = QApplication.instance()
-                app.setStyleSheet("""
-                    QToolTip {
-                        background-color: #F5F5F5;
-                        color: #333333;
-                        border: 1px solid #CCCCCC;
-                        padding: 5px;
-                        font: 10pt "Segoe UI";
-                        opacity: 255;
-                    }
-                """)
-                
                 # Set default value if available
                 default_value = ""
                 if len(row) > 1 and not pd.isna(row.iloc[1]):
@@ -3792,7 +3787,7 @@ class BDUGroupView(QMainWindow):
                     input_field.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
                     input_field.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
                 
-                # Add tooltips for special fields
+                # Add tooltips for special fields (existing code continues...)
                 if field_name == "Seismic Hazard Zone":
                     for i in range(input_field.count()):
                         zone_text = input_field.itemText(i)
