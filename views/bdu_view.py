@@ -377,6 +377,195 @@ EFFLUENT_WARRANTY_OPTIONS = [
     "PP RI No. 22 Tahun 2021 (Baku Mutu Air Sungai Kelas 4 dan Sejenisnya)"
 ]
 
+def get_effluent_warranty_parameters_for_tooltip(warranty_type):
+    """
+    Get effluent warranty parameters in simple format for tooltip
+    
+    Parameters:
+    - warranty_type: Selected warranty type
+    
+    Returns:
+    - str: Formatted parameter string for tooltip (vertical format)
+    """
+    
+    # Data parameter berdasarkan tabel yang Anda berikan
+    parameter_data = {
+        "PERMENKES No. 2 Tahun 2023 (Parameter Wajib Air Minum)": [
+            "pH: 6.5-8.5",
+            "TDS: <300 mg/L",
+            "Turbidity: <3 NTU", 
+            "Color: 10 TCU",
+            "Nitrate: 20 mg/L",
+            "Nitrite: 3 mg/L",
+            "Cr6+: 0.01 mg/L",
+            "Fe: 0.2 mg/L",
+            "Mn: 0.1 mg/L",
+            "Sisa Cl: 0.2-0.5 mg/L",
+            "As: 0.01 mg/L",
+            "Cd: 0.003 mg/L",
+            "Pb: 0.01 mg/L",
+            "F: 1.5 mg/L",
+            "Al: 0.2 mg/L",
+            "E.Coli: 0 CFU/100 mL",
+            "Total Coliform: 0 CFU/100 mL",
+            "Odor: odorless"
+        ],
+        
+        "PERMENKES No. 2 Tahun 2023 (Parameter Air untuk Keperluan Higiene dan Sanitasi)": [
+            "pH: 6.5-8.5",
+            "TDS: <300 mg/L",
+            "Turbidity: <3 NTU",
+            "Color: 10 TCU", 
+            "Nitrate: 20 mg/L",
+            "Nitrite: 3 mg/L",
+            "Cr6+: 0.01 mg/L",
+            "Fe: 0.2 mg/L",
+            "Mn: 0.1 mg/L",
+            "E.Coli: 0 CFU/100 mL",
+            "Total Coliform: 0 CFU/100 mL",
+            "Odor: odorless"
+        ],
+        
+        "PERMENLHK RI No. P.68 Tahun 2016 (Baku Mutu Air Limbah Domestik)": [
+            "pH: 6-9",
+            "BOD: 30 mg/L",
+            "COD: 100 mg/L",
+            "TSS: 30 mg/L",
+            "FOG: 5 mg/L",
+            "Ammonia: 10 mg/L",
+            "Total Coliform: 3000 jumlah/100 mL"
+        ],
+        
+        "PP RI No. 22 Tahun 2021 (Baku Mutu Air Sungai Kelas 1 dan Sejenisnya)": [
+            "pH: 6-9",
+            "TDS: 1000 mg/L",
+            "TSS: 40 mg/L",
+            "Color: 15 Pt-Co Unit",
+            "BOD: 2 mg/L",
+            "COD: 10 mg/L",
+            "DO: 6 mg/L",
+            "Sulfate: 300 mg/L",
+            "Chloride: 300 mg/L",
+            "Nitrate: 10 mg/L",
+            "Nitrite: 0.06 mg/L",
+            "Ammonia: 0.1 mg/L",
+            "Total Nitrogen: 15 mg/L",
+            "Total Phospate: 0.2 mg/L",
+            "Fluoride: 1 mg/L",
+            "Sulphure as H2S: 0.002 mg/L",
+            "Cyanide: 0.02 mg/L",
+            "Free Chlorine: 0.03 mg/L",
+            "Oil and Grease: 1 mg/L",
+            "Total Detergent: 0.2 mg/L",
+            "Fecal Coliform: 100 MPN/100 mL",
+            "Total Coliform: 1000 MPN/100 mL"
+        ],
+        
+        "PP RI No. 22 Tahun 2021 (Baku Mutu Air Sungai Kelas 2 dan Sejenisnya)": [
+            "pH: 6-9",
+            "TDS: 1000 mg/L",
+            "TSS: 50 mg/L",
+            "Color: 50 Pt-Co Unit",
+            "BOD: 3 mg/L",
+            "COD: 25 mg/L",
+            "DO: 4 mg/L",
+            "Sulfate: 300 mg/L",
+            "Chloride: 300 mg/L",
+            "Nitrate: 10 mg/L",
+            "Nitrite: 0.06 mg/L",
+            "Ammonia: 0.2 mg/L",
+            "Total Nitrogen: 15 mg/L",
+            "Total Phospate: 0.2 mg/L",
+            "Fluoride: 1.5 mg/L",
+            "Sulphure as H2S: 0.002 mg/L",
+            "Cyanide: 0.02 mg/L",
+            "Free Chlorine: 0.03 mg/L",
+            "Oil and Grease: 1 mg/L",
+            "Total Detergent: 0.2 mg/L",
+            "Fecal Coliform: 1000 MPN/100 mL",
+            "Total Coliform: 5000 MPN/100 mL"
+        ],
+        
+        "PP RI No. 22 Tahun 2021 (Baku Mutu Air Sungai Kelas 3 dan Sejenisnya)": [
+            "pH: 6-9",
+            "TDS: 1000 mg/L",
+            "TSS: 100 mg/L",
+            "Color: 100 Pt-Co Unit",
+            "BOD: 6 mg/L",
+            "COD: 40 mg/L",
+            "DO: 3 mg/L",
+            "Sulfate: 300 mg/L",
+            "Chloride: 300 mg/L",
+            "Nitrate: 20 mg/L",
+            "Nitrite: 0.06 mg/L",
+            "Ammonia: 0.5 mg/L",
+            "Total Nitrogen: 25 mg/L",
+            "Total Phospate: 1 mg/L",
+            "Fluoride: 1.5 mg/L",
+            "Sulphure as H2S: 0.002 mg/L",
+            "Cyanide: 0.02 mg/L",
+            "Free Chlorine: 0.03 mg/L",
+            "Oil and Grease: 1 mg/L",
+            "Total Detergent: 0.2 mg/L",
+            "Fecal Coliform: 2000 MPN/100 mL",
+            "Total Coliform: 10000 MPN/100 mL"
+        ],
+        
+        "PP RI No. 22 Tahun 2021 (Baku Mutu Air Sungai Kelas 4 dan Sejenisnya)": [
+            "pH: 6-9",
+            "TDS: 2000 mg/L",
+            "TSS: 400 mg/L",
+            "BOD: 12 mg/L",
+            "COD: 80 mg/L",
+            "DO: 1 mg/L",
+            "Sulfate: 400 mg/L",
+            "Chloride: 600 mg/L",
+            "Nitrate: 20 mg/L",
+            "Oil and Grease: 10 mg/L",
+            "Fecal Coliform: 2000 MPN/100 mL",
+            "Total Coliform: 10000 MPN/100 mL"
+        ]
+    }
+    
+    # Ambil parameter untuk warranty type yang dipilih
+    parameters = parameter_data.get(warranty_type, [])
+    
+    if not parameters:
+        return "No parameters available"
+    
+    formatted_params = []
+    
+    for param in parameters: 
+        formatted_params.append(f"• {param}")
+    
+    # JOIN DENGAN \n UNTUK FORMAT VERTIKAL (KE BAWAH)
+    return "\n".join(formatted_params)
+
+def setup_effluent_warranty_item_tooltips(dropdown_widget):
+    """
+    Setup tooltip pada setiap item di dropdown Effluent Warranty
+    
+    Parameters:
+    - dropdown_widget: QComboBox widget
+    """
+    try:
+        # Loop through all items in dropdown
+        for i in range(dropdown_widget.count()):
+            item_text = dropdown_widget.itemText(i)
+            
+            # Skip placeholder item
+            if item_text == "-- Select Value --":
+                continue
+            
+            # Get parameters for this warranty type
+            tooltip_text = get_effluent_warranty_parameters_for_tooltip(item_text)
+            
+            # Set tooltip untuk item ini menggunakan setItemData dengan Qt.ToolTipRole
+            dropdown_widget.setItemData(i, tooltip_text, Qt.ToolTipRole)
+        
+    except Exception as e:
+        print(f"Error setting up item tooltips: {str(e)}")
+        
 # Pengecekan opsional untuk modul docx2pdf
 HAS_DOCX2PDF = False
 try:
@@ -3673,7 +3862,7 @@ class BDUGroupView(QMainWindow):
 
                 # Untuk field Effluent Warranty
                 if is_effluent_warranty_field:
-                    options = EFFLUENT_WARRANTY_OPTIONS
+                    options = EFFLUENT_WARRANTY_OPTIONS                    
                 # Untuk field Industry Classification
                 elif is_industry_field:
                     options = list(INDUSTRY_SUBTYPE_MAPPING.keys())
@@ -3787,6 +3976,33 @@ class BDUGroupView(QMainWindow):
                     input_field.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
                     input_field.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
                 
+                # Stylesheet untuk tooltip
+                app = QApplication.instance()
+                app.setStyleSheet("""
+                    QToolTip {
+                        background-color: #F5F5F5;
+                        color: #333333;
+                        border: 1px solid #CCCCCC;
+                        padding: 5px;
+                        font: 10pt "Segoe UI";
+                        opacity: 255;
+                    }
+                """)
+                
+                if is_effluent_warranty_field:
+                    # Setup tooltip pada setiap item dropdown
+                    setup_effluent_warranty_item_tooltips(input_field)
+                    
+                    # PERBAIKAN STYLING: Set warna teks menjadi hitam untuk semua item
+                    for i in range(input_field.count()):
+                        # Set warna teks hitam untuk setiap item
+                        input_field.setItemData(i, QtGui.QColor("#000000"), Qt.ForegroundRole)
+                        
+                        # Kecuali untuk placeholder, tetap abu-abu
+                        if input_field.itemText(i) == "-- Select Value --":
+                            input_field.setItemData(i, QtGui.QColor("#999999"), Qt.ForegroundRole)
+                            input_field.setItemData(i, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+                    
                 # Add tooltips for special fields (existing code continues...)
                 if field_name == "Seismic Hazard Zone":
                     for i in range(input_field.count()):

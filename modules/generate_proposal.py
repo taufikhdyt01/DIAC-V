@@ -91,8 +91,6 @@ def get_quotation_number_by_company(workbook, company_name):
         company_name_clean = str(company_name).strip().lower()
         
         # Search data starting from row 2 (row 1 is header)
-        available_companies = []
-        
         for row in range(2, sheet.max_row + 1):
             company_cell = sheet.cell(row=row, column=company_col_idx).value
             quotation_cell = sheet.cell(row=row, column=quotation_col_idx).value
@@ -101,8 +99,6 @@ def get_quotation_number_by_company(workbook, company_name):
                 row_company = str(company_cell).strip()
                 row_company_clean = row_company.lower()
                 quotation_no = str(quotation_cell).strip()
-                
-                available_companies.append(row_company)
                 
                 # Try exact match first
                 if row_company_clean == company_name_clean:
@@ -126,6 +122,353 @@ def get_quotation_number_by_company(workbook, company_name):
     except Exception as e:
         print(f"Error getting quotation number: {str(e)}")
         return "-"  # Default fallback
+
+def get_effluent_warranty_data(workbook, selected_warranty_type):
+    """
+    Get effluent warranty parameters based on selected warranty type
+    
+    Parameters:
+    - workbook: openpyxl workbook object
+    - selected_warranty_type: warranty type from DIP_Project Information.B83
+    
+    Returns:
+    - dict: effluent warranty data with parameters and remarks
+    """
+    try:
+        if 'Effluent Warranty' not in workbook.sheetnames:
+            print("Warning: 'Effluent Warranty' sheet not found")
+            return {}
+        
+        sheet = workbook['Effluent Warranty']
+        
+        # Read headers from first row
+        headers = {}
+        for col in range(1, sheet.max_column + 1):
+            cell_value = sheet.cell(row=1, column=col).value
+            if cell_value:
+                headers[str(cell_value).strip()] = col
+        
+        # Check required columns
+        required_cols = ['Warranty_Type', 'Parameter_Name', 'Value', 'Unit', 'Row_Order']
+        for req_col in required_cols:
+            if req_col not in headers:
+                print(f"Warning: Column '{req_col}' not found in Effluent Warranty sheet")
+                return {}
+        
+        # Get column indices
+        type_col = headers['Warranty_Type']
+        param_col = headers['Parameter_Name']
+        value_col = headers['Value']
+        unit_col = headers['Unit']
+        order_col = headers['Row_Order']
+        
+        # Find matching warranty type parameters
+        warranty_params = []
+        
+        for row in range(2, sheet.max_row + 1):
+            warranty_type = sheet.cell(row=row, column=type_col).value
+            
+            if warranty_type and str(warranty_type).strip() == str(selected_warranty_type).strip():
+                param_name = sheet.cell(row=row, column=param_col).value
+                param_value = sheet.cell(row=row, column=value_col).value
+                param_unit = sheet.cell(row=row, column=unit_col).value
+                row_order = sheet.cell(row=row, column=order_col).value
+                
+                # Skip if essential data is missing
+                if not param_name:
+                    continue
+                
+                # Handle Value: convert 0 to string "0", keep other values as string
+                if param_value is None or param_value == "":
+                    param_value_str = ""
+                elif param_value == 0 or str(param_value).strip() == "0":
+                    param_value_str = "0"  # Explicitly set to "0" string
+                else:
+                    param_value_str = str(param_value).strip()
+                
+                warranty_params.append({
+                    'name': str(param_name).strip() if param_name else "",
+                    'value': param_value_str,
+                    'unit': str(param_unit).strip() if param_unit else "",
+                    'order': int(row_order) if row_order and str(row_order).isdigit() else 999
+                })
+        
+        # Sort by row order
+        warranty_params.sort(key=lambda x: x['order'])
+        
+        # Set remarks to the selected warranty type itself
+        warranty_remarks = selected_warranty_type
+        
+        # Create effluent data dictionary
+        effluent_data = {}
+        
+        # Add parameters up to 22 (as specified in template)
+        for i in range(1, 23):  # PARAM_1 to PARAM_22
+            if i <= len(warranty_params):
+                param = warranty_params[i-1]
+                effluent_data[f'PARAM_{i}_NAME'] = param['name']
+                effluent_data[f'PARAM_{i}_VALUE'] = param['value']
+                effluent_data[f'PARAM_{i}_UNIT'] = param['unit']
+            else:
+                # Empty parameters for unused slots
+                effluent_data[f'PARAM_{i}_NAME'] = ""
+                effluent_data[f'PARAM_{i}_VALUE'] = ""
+                effluent_data[f'PARAM_{i}_UNIT'] = ""
+        
+        # Add remarks from warranty type
+        effluent_data['REMARKS'] = warranty_remarks
+        
+        # Store the actual number of parameters for table row management
+        effluent_data['_PARAM_COUNT'] = len(warranty_params)
+        
+        return effluent_data
+        
+    except Exception as e:
+        print(f"Error getting effluent warranty data: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {}
+
+def remove_empty_effluent_table_rows(table, param_count):
+    """
+    Remove unused rows from effluent warranty table based on actual parameter count
+    
+    Parameters:
+    - table: Word table object containing effluent parameters
+    - param_count: actual number of parameters (rows to keep)
+    
+    Returns:
+    - bool: True if successful
+    """
+    try:
+        # Template has 22 parameter rows (PARAM_1 to PARAM_22)
+        MAX_TEMPLATE_PARAMS = 22
+        
+        # Calculate how many rows need to be removed
+        rows_to_remove_count = MAX_TEMPLATE_PARAMS - param_count
+        
+        if rows_to_remove_count <= 0:
+            print(f"No rows to remove. Template has {MAX_TEMPLATE_PARAMS} rows, warranty type has {param_count} parameters")
+            return True
+    
+        # Find all rows that contain parameter data
+        # We'll use a different approach: look for specific patterns or count rows
+        
+        # Strategy 1: Look for remaining EFFLUENT placeholders (if any)
+        effluent_rows_with_placeholders = []
+        
+        for i, row in enumerate(table.rows):
+            row_has_effluent = False
+            param_numbers = []
+            
+            # Check all cells in the row for EFFLUENT placeholders
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    cell_text = para.text
+                    
+                    # Look for EFFLUENT patterns (with or without {{}})
+                    if "EFFLUENT.PARAM_" in cell_text:
+                        row_has_effluent = True
+                        # Extract all parameter numbers from this row
+                        import re
+                        param_matches = re.findall(r'EFFLUENT\.PARAM_(\d+)_', cell_text)
+                        for match in param_matches:
+                            param_numbers.append(int(match))
+                    
+                    # Also look for already replaced content patterns
+                    # Check if this might be a parameter row by looking for specific content
+                    if not row_has_effluent:
+                        # Look for pattern: parameter name in first column, value in second, unit in third
+                        # This is a heuristic approach
+                        pass
+            
+            if row_has_effluent and param_numbers:
+                # Use the minimum parameter number found in this row
+                min_param_num = min(param_numbers)
+                effluent_rows_with_placeholders.append((i, min_param_num, row))
+        
+        # Strategy 2: If no placeholders found (already replaced), use heuristic approach
+        if not effluent_rows_with_placeholders:
+            print("No placeholders found, using heuristic approach to identify parameter rows...")
+            
+            # Look for table structure pattern: find the "WWTP Effluent Warranty" header
+            # and then count parameter rows from there
+            header_row_idx = -1
+            
+            for i, row in enumerate(table.rows):
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        if "WWTP Effluent Warranty" in para.text or "Effluent Warranty" in para.text:
+                            header_row_idx = i
+                            break
+                    if header_row_idx >= 0:
+                        break
+                if header_row_idx >= 0:
+                    break
+            
+            if header_row_idx >= 0:
+                # Assume parameter rows start after header (usually next row)
+                # and we need to remove the last (22 - param_count) rows
+                total_rows = len(table.rows)
+                
+                # Calculate which rows to remove
+                # Remove from the end backwards
+                rows_to_remove = []
+                start_remove_from = total_rows - rows_to_remove_count
+                
+                for i in range(start_remove_from, total_rows):
+                    if i < len(table.rows):  # Safety check
+                        rows_to_remove.append((i, 999, table.rows[i]))  # 999 as dummy param number
+                
+                effluent_rows_with_placeholders = rows_to_remove
+        
+        # Strategy 3: Simple approach - remove last N rows if nothing else works
+        if not effluent_rows_with_placeholders:
+            print("Using simple approach: removing last N rows from table...")
+            
+            total_rows = len(table.rows)
+            rows_to_remove = []
+            
+            # Remove the last rows_to_remove_count rows
+            start_remove_from = max(1, total_rows - rows_to_remove_count)  # Keep at least header row
+            
+            for i in range(start_remove_from, total_rows):
+                if i < len(table.rows):
+                    rows_to_remove.append((i, 999, table.rows[i]))
+            
+            effluent_rows_with_placeholders = rows_to_remove
+        
+        # Sort by parameter number (or row index) to ensure correct order
+        effluent_rows_with_placeholders.sort(key=lambda x: x[1] if x[1] != 999 else x[0])
+        
+        # Identify rows to remove based on parameter count
+        rows_to_remove = []
+        for row_idx, param_num, row_obj in effluent_rows_with_placeholders:
+            if param_num == 999:  # Heuristic approach
+                rows_to_remove.append((row_idx, param_num, row_obj))
+            elif param_num > param_count:  # Placeholder approach
+                rows_to_remove.append((row_idx, param_num, row_obj))
+        
+        # Sort by row index in reverse order to avoid index shifting when removing
+        rows_to_remove.sort(key=lambda x: x[0], reverse=True)
+        
+        # Remove the rows from the table
+        removed_count = 0
+        for row_idx, param_num, row_obj in rows_to_remove:
+            try:
+                # Remove the row from table
+                table._tbl.remove(row_obj._tr)
+                removed_count += 1
+            except Exception as e:
+                if param_num == 999:
+                    print(f"    ✗ Error removing row {row_idx}: {str(e)}")
+                else:
+                    print(f"    ✗ Error removing PARAM_{param_num} row: {str(e)}")
+        
+        return removed_count > 0
+        
+    except Exception as e:
+        print(f"Error removing empty effluent table rows: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def find_and_process_effluent_table(doc, effluent_data):
+    """
+    Find effluent warranty table and process it (remove unused rows)
+    
+    Parameters:
+    - doc: Word document object
+    - effluent_data: effluent data dictionary with _PARAM_COUNT
+    
+    Returns:
+    - bool: True if table found and processed
+    """
+    try:
+        param_count = effluent_data.get('_PARAM_COUNT', 0)
+        
+        # Find the table containing effluent warranty parameters
+        effluent_table = None
+        table_index = -1
+        
+        for i, table in enumerate(doc.tables):
+            print(f"🔎 Checking table {i+1}/{len(doc.tables)}...")
+            
+            # Check if this table contains EFFLUENT placeholders
+            table_has_effluent = False
+            effluent_placeholder_count = 0
+            param_placeholders = set()
+            
+            # Check all cells in all rows for EFFLUENT placeholders
+            for row_idx, row in enumerate(table.rows):
+                for cell_idx, cell in enumerate(row.cells):
+                    cell_text = ""
+                    for para in cell.paragraphs:
+                        cell_text += para.text + " "
+                    
+                    # Look for any EFFLUENT placeholder (not just PARAM_)
+                    if "{{EFFLUENT." in cell_text or "EFFLUENT." in cell_text:
+                        table_has_effluent = True
+                        print(f"   Found EFFLUENT placeholder in row {row_idx}, cell {cell_idx}: {cell_text.strip()}")
+                        
+                        # Count PARAM_ placeholders specifically
+                        import re
+                        param_matches = re.findall(r'EFFLUENT\.PARAM_(\d+)_', cell_text)
+                        for match in param_matches:
+                            param_placeholders.add(int(match))
+                            effluent_placeholder_count += 1
+            
+            if table_has_effluent:
+                effluent_table = table
+                table_index = i
+                print(f"📋 Found effluent table at index {i}")
+                print(f"   - Total EFFLUENT placeholders: {effluent_placeholder_count}")
+                print(f"   - Unique PARAM numbers found: {sorted(param_placeholders)}")
+                break
+            else:
+                print(f"   No EFFLUENT placeholders found in table {i+1}")
+        
+        if effluent_table:
+            print(f"🏗️  Processing effluent table...")
+            print(f"   - Template should have: 22 parameters (PARAM_1 to PARAM_22)")
+            print(f"   - Actual parameters needed: {param_count}")
+            print(f"   - Rows to remove: {22 - param_count}")
+            
+            # Remove unused rows
+            success = remove_empty_effluent_table_rows(effluent_table, param_count)
+            
+            if success:
+                print(f"✅ Successfully processed effluent table")
+            else:
+                print(f"❌ Failed to process effluent table")
+            
+            return success
+        else:
+            print("❌ Effluent table not found in document")
+            print("🔍 Searching for any EFFLUENT text in all tables...")
+            
+            # Additional debugging: search for any EFFLUENT text
+            for i, table in enumerate(doc.tables):
+                has_any_effluent = False
+                for row in table.rows:
+                    for cell in row.cells:
+                        for para in cell.paragraphs:
+                            if "EFFLUENT" in para.text:
+                                has_any_effluent = True
+                                print(f"   Table {i+1} contains EFFLUENT text: {para.text[:100]}...")
+                                break
+                        if has_any_effluent:
+                            break
+                    if has_any_effluent:
+                        break
+            
+            return False
+            
+    except Exception as e:
+        print(f"Error processing effluent table: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def get_proposal_data_for_filename(workbook):
     """
@@ -359,6 +702,52 @@ def get_selected_user_code_from_excel(workbook):
     except Exception:
         return None
 
+def get_selected_effluent_warranty_type(workbook):
+    """
+    Get selected effluent warranty type from the appropriate Excel location
+    where the fd_Effluent Warranty field is saved by save_sheet_data
+    
+    Parameters:
+    - workbook: openpyxl workbook object
+    
+    Returns:
+    - string: selected warranty type or None if not found
+    """
+    try:
+        # First, try to find the value in any DIP sheet where the fd_Effluent Warranty field might be
+        for sheet_name in workbook.sheetnames:
+            if sheet_name.startswith('DIP_'):
+                try:
+                    sheet = workbook[sheet_name]
+                    # Scan the sheet to find fd_Effluent Warranty field
+                    for row in range(1, sheet.max_row + 1):
+                        cell_a = sheet.cell(row=row, column=1).value
+                        if cell_a and str(cell_a).strip() == 'fd_Effluent Warranty':
+                            # Found the field, get the value from column B
+                            warranty_value = sheet.cell(row=row, column=2).value
+                            if warranty_value and str(warranty_value).strip():
+                                return str(warranty_value).strip()
+                            break
+                except Exception as e:
+                    print(f"Error reading sheet {sheet_name}: {str(e)}")
+                    continue
+        
+        # Fallback: check DIP_Project Information.B83 as secondary option
+        if 'DIP_Project Information' in workbook.sheetnames:
+            sheet = workbook['DIP_Project Information']
+            try:
+                warranty_type = sheet['B83'].value
+                if warranty_type and str(warranty_type).strip():
+                    return str(warranty_type).strip()
+            except Exception as e:
+                print(f"Error reading B83: {str(e)}")
+        
+        return None
+        
+    except Exception as e:
+        print(f"Error getting effluent warranty type: {str(e)}")
+        return None
+
 def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_code=None):
     """
     Fill Word template with data from Excel file based on cell references.
@@ -370,6 +759,7 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
     Supports mathematical placeholders $P1$ - $P4$ with fixed values.
     Supports USER_CODE placeholder for contact person data.
     Supports QUOTATION_NO placeholder for automatic quotation number.
+    Supports EFFLUENT placeholder for effluent warranty parameters.
     
     Parameters:
     - excel_path: Path to Excel file containing data
@@ -449,6 +839,23 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
         "NO": quotation_number
     }
     
+    # Get effluent warranty data
+    selected_warranty_type = get_selected_effluent_warranty_type(workbook)
+    effluent_data = {}
+    
+    if selected_warranty_type:
+        print(f"Processing effluent warranty for type: {selected_warranty_type}")
+        effluent_data = get_effluent_warranty_data(workbook, selected_warranty_type)
+    else:
+        print("No effluent warranty type selected, using empty parameters")
+        # Create empty effluent data
+        for i in range(1, 23):
+            effluent_data[f'PARAM_{i}_NAME'] = ""
+            effluent_data[f'PARAM_{i}_VALUE'] = ""
+            effluent_data[f'PARAM_{i}_UNIT'] = ""
+        effluent_data['REMARKS'] = ""
+        effluent_data['_PARAM_COUNT'] = 0
+    
     # Read Word template
     try:
         doc = Document(template_path)
@@ -458,11 +865,13 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
     
     # Class to handle placeholder replacement
     class Replacer:
-        def __init__(self):
+        def __init__(self, effluent_data):
             self.replacement_count = 0
             self.math_replacement_count = 0
             self.user_code_replacement_count = 0
             self.quotation_no_replacement_count = 0
+            self.effluent_replacement_count = 0
+            self.effluent_data = effluent_data
             
         def get_cell_value(self, sheet_name, cell_ref):
             # Check if this is USER_CODE placeholder
@@ -475,6 +884,12 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
             if sheet_name == "QUOTATION_NO" and cell_ref in quotation_data:
                 value = quotation_data[cell_ref]
                 self.quotation_no_replacement_count += 1
+                return value
+            
+            # Check if this is EFFLUENT placeholder
+            if sheet_name == "EFFLUENT" and cell_ref in effluent_data:
+                value = effluent_data[cell_ref]
+                self.effluent_replacement_count += 1
                 return value
             
             # Check if this is special date placeholder
@@ -531,7 +946,7 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
         
         def replace_in_paragraph_runs(self, paragraph, is_footer=False):
             """Replace placeholders in paragraphs while maintaining formatting"""
-            # Pattern to detect Excel placeholders, e.g.: {{Sheet1.A1}}, {{DATE.NOW}}, {{USER_CODE.NAME}}, or {{QUOTATION_NO.NO}}
+            # Pattern to detect Excel placeholders, e.g.: {{Sheet1.A1}}, {{DATE.NOW}}, {{USER_CODE.NAME}}, {{QUOTATION_NO.NO}}, or {{EFFLUENT.PARAM_1_NAME}}
             pattern = r'\{\{([^}]+)\.([A-Z0-9_]+)\}\}'
             
             # Before processing Excel placeholders, check if there are mathematical placeholders
@@ -562,11 +977,11 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
                     matches = list(re.finditer(pattern, full_placeholder))
                     for match in matches:
                         # Store information about this placeholder
-                        placeholder_text = match.group(0)  # {{Sheet1.A1}}, {{USER_CODE.NAME}}, {{QUOTATION_NO.NO}}, etc
-                        sheet_name = match.group(1)        # Sheet1, USER_CODE, DATE, QUOTATION_NO
-                        cell_ref = match.group(2)          # A1, NAME, NOW, NO
+                        placeholder_text = match.group(0)  # {{Sheet1.A1}}, {{USER_CODE.NAME}}, {{QUOTATION_NO.NO}}, {{EFFLUENT.PARAM_1_NAME}}, etc
+                        sheet_name = match.group(1)        # Sheet1, USER_CODE, DATE, QUOTATION_NO, EFFLUENT
+                        cell_ref = match.group(2)          # A1, NAME, NOW, NO, PARAM_1_NAME
                         
-                        # Get value from Excel, USER_CODE, QUOTATION_NO, or date placeholder
+                        # Get value from Excel, USER_CODE, QUOTATION_NO, EFFLUENT, or date placeholder
                         value = self.get_cell_value(sheet_name, cell_ref)
                         if value is not None:
                             value = str(value)
@@ -712,19 +1127,108 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
                 self.replace_in_tables(footer.tables, is_footer=True)
         
         def process_document(self, doc):
-            """Process entire document"""
+            """Enhanced process_document method"""
+            print("🔄 Starting document processing...")
+            
+            # IMPORTANT: Process effluent table BEFORE text replacement
+            # This ensures we can still find the placeholder patterns
+            if self.effluent_data and '_PARAM_COUNT' in self.effluent_data:
+                param_count = self.effluent_data.get('_PARAM_COUNT', 0)
+                print(f"🧹 Pre-processing effluent table row removal (keeping {param_count} parameters)...")
+                
+                # Find and mark effluent table before text replacement
+                effluent_table = self.find_effluent_table_before_replacement(doc)
+                if effluent_table:
+                    print("✅ Effluent table found and marked for processing")
+                    # Store reference for later processing
+                    self.marked_effluent_table = effluent_table
+                else:
+                    print("❌ Effluent table not found before replacement")
+                    self.marked_effluent_table = None
+            
+            # Process all text replacements
+            print("📝 Processing text replacements...")
+            
             # Process main paragraphs
             for para in doc.paragraphs:
                 self.replace_in_paragraph_runs(para)
             
-            # Process tables
+            # Process tables (including effluent table text replacement)
+            print("📊 Processing tables...")
             self.replace_in_tables(doc.tables)
             
             # Process headers and footers
+            print("📄 Processing headers and footers...")
             self.replace_in_section_headers_footers(doc)
+            
+            print(f"✅ Text replacement completed:")
+            print(f"   - Regular replacements: {self.replacement_count}")
+            print(f"   - Math replacements: {self.math_replacement_count}")
+            print(f"   - User code replacements: {self.user_code_replacement_count}")
+            print(f"   - Quotation replacements: {self.quotation_no_replacement_count}")
+            print(f"   - Effluent replacements: {self.effluent_replacement_count}")
+            
+            # After text replacements, remove unused rows from the marked effluent table
+            if hasattr(self, 'marked_effluent_table') and self.marked_effluent_table:
+                param_count = self.effluent_data.get('_PARAM_COUNT', 0)
+                print(f"🧹 Processing effluent table row removal (keeping {param_count} parameters)...")
+                success = remove_empty_effluent_table_rows(self.marked_effluent_table, param_count)
+                if success:
+                    print("✅ Effluent table processing completed successfully")
+                else:
+                    print("❌ Effluent table processing failed")
+            else:
+                print("ℹ️  No effluent table marked for processing")
+        
+        def find_effluent_table_before_replacement(self, doc):
+            """
+            Find effluent table before text replacement occurs
+            """
+            try:
+                print(f"🔍 Pre-scanning for effluent table...")
+                print(f"📄 Document has {len(doc.tables)} tables total")
+                
+                for i, table in enumerate(doc.tables):
+                    print(f"🔎 Pre-checking table {i+1}/{len(doc.tables)}...")
+                    
+                    # Check if this table contains EFFLUENT placeholders
+                    table_has_effluent = False
+                    param_placeholders = set()
+                    
+                    # Check all cells in all rows for EFFLUENT placeholders
+                    for row_idx, row in enumerate(table.rows):
+                        for cell_idx, cell in enumerate(row.cells):
+                            cell_text = ""
+                            for para in cell.paragraphs:
+                                cell_text += para.text + " "
+                            
+                            # Look for EFFLUENT placeholders (should still have {{ }} format)
+                            if "{{EFFLUENT." in cell_text:
+                                table_has_effluent = True
+                                print(f"   Found EFFLUENT placeholder in row {row_idx}, cell {cell_idx}")
+                                
+                                # Count PARAM_ placeholders specifically
+                                import re
+                                param_matches = re.findall(r'\{\{EFFLUENT\.PARAM_(\d+)_', cell_text)
+                                for match in param_matches:
+                                    param_placeholders.add(int(match))
+                    
+                    if table_has_effluent:
+                        print(f"📋 Found effluent table at index {i}")
+                        print(f"   - Unique PARAM numbers found: {sorted(param_placeholders)}")
+                        return table
+                    else:
+                        print(f"   No EFFLUENT placeholders found in table {i+1}")
+                
+                print("❌ No effluent table found during pre-scan")
+                return None
+                
+            except Exception as e:
+                print(f"Error in pre-scan: {str(e)}")
+                return None
     
-    # Use Replacer class to process document
-    replacer = Replacer()
+    # Use enhanced Replacer class to process document
+    replacer = Replacer(effluent_data)
     replacer.process_document(doc)
     
     # Save result to new file
