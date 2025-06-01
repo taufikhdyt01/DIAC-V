@@ -846,11 +846,41 @@ def excel_to_word_by_cell(excel_path, template_path, output_path, selected_user_
                         elif cell_value.startswith("tdi_"):
                             cell_value = cell_value[4:]  # Remove first 4 characters (tdi_)
                         
+                        # Convert specific day formats
+                        cell_value = self.convert_days_format(cell_value)
+                        
                     return cell_value
                 except Exception:
                     return f"ERROR: Invalid cell reference {cell_ref}"
             else:
                 return f"ERROR: Sheet {sheet_name} not found"
+        
+        def convert_days_format(self, text):
+            """
+            Convert day formats from "X Days" to "word (X) days"
+            
+            Parameters:
+            - text: input text string
+            
+            Returns:
+            - string: converted text
+            """
+            if not isinstance(text, str):
+                return text
+            
+            # Dictionary mapping for days conversion
+            days_mapping = {
+                "14 days": "fourteen (14) days", 
+                "30 days": "thirty (30) days",
+                "45 days": "forty-five (45) days"
+            }
+            
+            # Replace exact matches
+            converted_text = text
+            for original, replacement in days_mapping.items():
+                converted_text = converted_text.replace(original, replacement)
+            
+            return converted_text
         
         def set_wingdings_font(self, run):
             run.font.name = "Wingdings"
