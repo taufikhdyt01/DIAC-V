@@ -384,6 +384,40 @@ EFFLUENT_WARRANTY_OPTIONS = [
     "PP RI No. 22 Tahun 2021 (Baku Mutu Air Sungai Kelas 4 dan Sejenisnya)"
 ]
 
+PUMP_BRAND_TYPE_MAPPING = {
+    "GRUNDFOS": [
+        "Vertical Multistage Centrifugal Pump",
+        "End Suction Centrifugal Pump"
+    ],
+    "EBARA": [
+        "Vertical Multistage Centrifugal Pump", 
+        "End Suction Centrifugal Pump"
+    ],
+    "CNP": [
+        "Vertical Multistage Centrifugal Pump",
+        "Horizontal Multistage Centrifugal Pump",
+        "Submersible Pump"
+    ],
+    "LEO": [
+        "Vertical Multistage Centrifugal Pump",
+        "End Suction Centrifugal Pump", 
+        "Submersible Pump"
+    ]
+}
+
+PUMP_BRAND_TYPE_MODEL_MAPPING = {
+    ("GRUNDFOS", "Vertical Multistage Centrifugal Pump"): ["CR", "CRN"],
+    ("GRUNDFOS", "End Suction Centrifugal Pump"): ["NKG"],
+    ("EBARA", "Vertical Multistage Centrifugal Pump"): ["3S"],
+    ("EBARA", "End Suction Centrifugal Pump"): ["FSSC"],
+    ("CNP", "Vertical Multistage Centrifugal Pump"): ["CDMF"],
+    ("CNP", "Horizontal Multistage Centrifugal Pump"): ["CHL"],
+    ("CNP", "Submersible Pump"): ["WQ"],
+    ("LEO", "Vertical Multistage Centrifugal Pump"): ["LVRS"],
+    ("LEO", "End Suction Centrifugal Pump"): ["LEP"],
+    ("LEO", "Submersible Pump"): ["SWE", "XSP"]
+}
+
 def get_effluent_warranty_parameters_for_tooltip(warranty_type):
     """
     Get effluent warranty parameters in simple format for tooltip
@@ -1229,25 +1263,79 @@ class BDUGroupView(QMainWindow):
         # Simpan nilai saat ini agar bisa digunakan nanti
         current_value = getattr(child_dropdown, "_last_value", None)
         
+        # Cek jenis dropdown berdasarkan property
+        dropdown_type = child_dropdown.property("pump_dropdown_type")
+        
         # Isi dengan nilai-nilai yang sesuai berdasarkan pilihan pada dropdown utama
         if parent_value in INDUSTRY_SUBTYPE_MAPPING:
-            # Ini adalah dropdown industry
+            # Ini adalah dropdown industry -> sub industry
             child_dropdown.addItem("-- Select Value --")
             child_dropdown.addItems(INDUSTRY_SUBTYPE_MAPPING[parent_value])
             child_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
             child_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
         elif parent_value in INDONESIA_CITIES:
-            # Ini adalah dropdown province
+            # Ini adalah dropdown province -> city
             child_dropdown.addItem("-- Select Value --")
             child_dropdown.addItems(INDONESIA_CITIES[parent_value])
             child_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
             child_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+        elif dropdown_type == "pump_type" and parent_value in PUMP_BRAND_TYPE_MAPPING:
+            # Ini adalah dropdown pump brand -> pump type
+            child_dropdown.addItem("-- Select Value --")
+            child_dropdown.addItems(PUMP_BRAND_TYPE_MAPPING[parent_value])
+            child_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+            child_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+            child_dropdown.setEnabled(True)
+        elif dropdown_type == "pump_type" and parent_value not in PUMP_BRAND_TYPE_MAPPING:
+            # Brand yang tidak memiliki turunan - disable type dropdown
+            child_dropdown.addItem("-- Not Required for this Brand --")
+            child_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+            child_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+            child_dropdown.setEnabled(False)
         else:
             # Default jika tidak ada mapping
             child_dropdown.addItem("-- Select Value --")
             child_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
             child_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
-            
+                    
+    def update_pump_model_dropdown(self, pump_brand, pump_type, model_dropdown):
+        """Update pump model dropdown berdasarkan brand dan type yang dipilih"""
+        model_dropdown.clear()
+        
+        # Cek apakah brand memiliki turunan
+        if pump_brand not in PUMP_BRAND_TYPE_MAPPING:
+            # Brand tidak memiliki turunan - disable model dropdown
+            model_dropdown.addItem("-- Not Required for this Brand --")
+            model_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+            model_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+            model_dropdown.setEnabled(False)
+            return
+        
+        # Skip jika nilai masih placeholder
+        if (pump_brand == "-- Select Value --" or pump_type == "-- Select Value --" or
+            pump_type == "-- Not Required for this Brand --" or
+            not pump_brand or not pump_type):
+            model_dropdown.addItem("-- Select Pump Brand and Type First --")
+            model_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+            model_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+            model_dropdown.setEnabled(True)
+            return
+        
+        model_key = (pump_brand, pump_type)
+        
+        if model_key in PUMP_BRAND_TYPE_MODEL_MAPPING:
+            model_dropdown.addItem("-- Select Value --")
+            model_dropdown.addItems(PUMP_BRAND_TYPE_MODEL_MAPPING[model_key])
+            model_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+            model_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+            model_dropdown.setEnabled(True)
+        else:
+            # Jika tidak ada mapping spesifik untuk brand+type ini
+            model_dropdown.addItem("-- No Models Available --")
+            model_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+            model_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+            model_dropdown.setEnabled(False)
+    
     def get_absolute_path(self, relative_path):
         """Konversi path relatif menjadi absolut relatif terhadap root project"""
         if os.path.isabs(relative_path):
@@ -1634,14 +1722,14 @@ class BDUGroupView(QMainWindow):
                 # Ambil data yang diperlukan dari DIP_Technical Information
                 sheet_dip = wb_bdu["DIP_Project Information"]
                 values_to_transfer = {
-                    'C37': sheet_dip['B49'].value,  # B9 -> C37
-                    'C38': sheet_dip['B50'].value, # B10 -> C38
-                    'C39': sheet_dip['B51'].value, # B11 -> C39
-                    'C40': sheet_dip['B52'].value, # B12 -> C40
-                    'C41': sheet_dip['B53'].value, # B13 -> C41
-                    'C42': sheet_dip['B55'].value, # B16 -> C42
-                    'C43': sheet_dip['B56'].value, # B17 -> C43
-                    'C46': sheet_dip['B59'].value  # B21 -> C46
+                    'C37': sheet_dip['B69'].value,  # B9 -> C37
+                    'C38': sheet_dip['B70'].value, # B10 -> C38
+                    'C39': sheet_dip['B71'].value, # B11 -> C39
+                    'C40': sheet_dip['B72'].value, # B12 -> C40
+                    'C41': sheet_dip['B73'].value, # B13 -> C41
+                    'C42': sheet_dip['B75'].value, # B16 -> C42
+                    'C43': sheet_dip['B76'].value, # B17 -> C43
+                    'C46': sheet_dip['B79'].value  # B21 -> C46
                 }
                 
                 wb_bdu.close()
@@ -2551,6 +2639,14 @@ class BDUGroupView(QMainWindow):
         # Untuk melacak pasangan field dropdown industry-subindustry
         industry_field_key = None
         sub_industry_field_key = None
+        
+        # Variabel untuk melacak pasangan field dropdown pump (brand-type-model)
+        pump_brand_dropdown = None
+        pump_type_dropdown = None  
+        pump_model_dropdown = None
+        pump_brand_field_key = None
+        pump_type_field_key = None
+        pump_model_field_key = None
         
         # Create a section for table if we find table formatting
         table_section = None
@@ -3775,6 +3871,21 @@ class BDUGroupView(QMainWindow):
                     input_field.setProperty("placeholder_type", "city")
                     input_field.setProperty("city_number", "2")
                     options = ["-- Select Province First --"]
+                elif "Pump Brand" in field_name or field_name == "Pump Brand Selection":
+                    options = ["GRUNDFOS", "KSB", "XYLEM", "ITT GOULDS", "EBARA", "WILO", "FLOWREX", "CNP", "LEO"]
+                    pump_brand_dropdown = input_field
+                    pump_brand_field_key = field_key
+                    input_field.setProperty("pump_dropdown_type", "pump_brand")
+                elif "Pump Type" in field_name:
+                    pump_type_dropdown = input_field
+                    pump_type_field_key = field_key
+                    input_field.setProperty("pump_dropdown_type", "pump_type")
+                    options = ["-- Select Pump Brand First --"]
+                elif "Pump Model" in field_name:
+                    pump_model_dropdown = input_field  
+                    pump_model_field_key = field_key
+                    input_field.setProperty("pump_dropdown_type", "pump_model")
+                    options = ["-- Select Pump Brand and Type First --"]
                 else:
                     # Try multiple cell addresses in case the calculation is off
                     possible_addresses = [
@@ -4578,6 +4689,88 @@ class BDUGroupView(QMainWindow):
                 if city2_value and province2_value in INDONESIA_CITIES and city2_value in INDONESIA_CITIES[province2_value]:
                     city2_dropdown.setCurrentText(city2_value)
                     
+        # Hubungkan pump dropdowns (triple dependency: brand -> type -> model)
+        if pump_brand_dropdown and pump_type_dropdown:
+            # Simpan referensi untuk triple dependency
+            self.linked_dropdowns[pump_brand_field_key] = pump_type_field_key
+            
+            # Hubungkan brand -> type
+            pump_brand_dropdown.currentTextChanged.connect(
+                lambda text, child=pump_type_dropdown: self.update_dependent_dropdown(text, child))
+
+        if pump_brand_dropdown and pump_type_dropdown and pump_model_dropdown:
+            # Fungsi khusus untuk menangani triple dependency
+            def update_pump_model():
+                brand = pump_brand_dropdown.currentText()
+                pump_type = pump_type_dropdown.currentText()
+                
+                # Cek apakah brand memiliki turunan
+                if brand not in PUMP_BRAND_TYPE_MAPPING:
+                    # Brand tidak memiliki turunan - disable model dropdown
+                    pump_model_dropdown.clear()
+                    pump_model_dropdown.addItem("-- Not Required for this Brand --")
+                    pump_model_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+                    pump_model_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+                    pump_model_dropdown.setEnabled(False)
+                elif (brand and brand != "-- Select Value --" and 
+                    pump_type and pump_type != "-- Select Value --" and
+                    pump_type != "-- Not Required for this Brand --"):
+                    self.update_pump_model_dropdown(brand, pump_type, pump_model_dropdown)
+                else:
+                    pump_model_dropdown.clear()
+                    pump_model_dropdown.addItem("-- Select Pump Brand and Type First --")
+                    pump_model_dropdown.setItemData(0, QtGui.QColor("#999999"), Qt.ForegroundRole)
+                    pump_model_dropdown.setItemData(0, QtGui.QFont("Segoe UI", 10, QtGui.QFont.StyleItalic), Qt.FontRole)
+                    pump_model_dropdown.setEnabled(True)
+            
+            # Hubungkan kedua parent dropdown ke function update model
+            pump_brand_dropdown.currentTextChanged.connect(lambda: update_pump_model())
+            pump_type_dropdown.currentTextChanged.connect(lambda: update_pump_model())
+            
+        # Trigger update awal untuk pump brand -> type
+        if pump_brand_dropdown and pump_type_dropdown:
+            brand_value = pump_brand_dropdown.currentText()
+            if brand_value and brand_value != "-- Select Value --":
+                self.update_dependent_dropdown(brand_value, pump_type_dropdown)
+                
+                # Cari nilai pump type yang tersimpan di Excel
+                pump_type_value = None
+                for row_idx, row in df.iterrows():
+                    if pd.isna(row.iloc[0]):
+                        continue
+                        
+                    first_col = str(row.iloc[0]).strip() if not pd.isna(row.iloc[0]) else ""
+                    if "Pump Type" in first_col and first_col.startswith('fd_'):
+                        if len(row) > 1 and not pd.isna(row.iloc[1]):
+                            pump_type_value = str(row.iloc[1]).strip()
+                        break
+                
+                # Set nilai pump type jika ditemukan
+                if (pump_type_value and pump_type_value in 
+                    [pump_type_dropdown.itemText(i) for i in range(pump_type_dropdown.count())]):
+                    pump_type_dropdown.setCurrentText(pump_type_value)
+                    
+                    # Trigger update untuk pump model
+                    if pump_model_dropdown:
+                        self.update_pump_model_dropdown(brand_value, pump_type_value, pump_model_dropdown)
+                        
+                        # Cari nilai pump model yang tersimpan di Excel
+                        pump_model_value = None
+                        for row_idx, row in df.iterrows():
+                            if pd.isna(row.iloc[0]):
+                                continue
+                                
+                            first_col = str(row.iloc[0]).strip() if not pd.isna(row.iloc[0]) else ""
+                            if "Pump Model" in first_col and first_col.startswith('fd_'):
+                                if len(row) > 1 and not pd.isna(row.iloc[1]):
+                                    pump_model_value = str(row.iloc[1]).strip()
+                                break
+                        
+                        # Set nilai pump model jika ditemukan
+                        if (pump_model_value and pump_model_value in 
+                            [pump_model_dropdown.itemText(i) for i in range(pump_model_dropdown.count())]):
+                            pump_model_dropdown.setCurrentText(pump_model_value)
+        
         # Process any excel images that may exist in this sheet
         if section_layout:
             self.process_excel_images(sheet_name, section_layout)
