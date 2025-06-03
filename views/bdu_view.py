@@ -19,6 +19,13 @@ import subprocess
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import APP_NAME, SECONDARY_COLOR, PRIMARY_COLOR, BG_COLOR, DEPARTMENTS
 
+try:
+    from modules.formula_helper import SimpleFormulaEvaluator, FORMULA_CELLS, evaluate_formulas_background
+    HAS_FORMULA_HELPER = True
+except ImportError:
+    HAS_FORMULA_HELPER = False
+    print("Formula helper not available")
+    
 INDUSTRY_SUBTYPE_MAPPING = {
     "Business A - Palm Oil": [
         "Palm Oil - CPO", 
@@ -796,6 +803,8 @@ class BDUGroupView(QMainWindow):
         self.data_fields = {}
         self.linked_dropdowns = {}
         self.user_codes = []
+        self.formula_evaluator = None
+        self.formula_widgets = {}
         
         # Excel path
         self.excel_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "SET_BDU.xlsx")
@@ -1247,161 +1256,28 @@ class BDUGroupView(QMainWindow):
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return os.path.join(project_root, relative_path)
     
-    def force_excel_calculation(self, excel_path, progress_callback=None):
-        """Force Excel to recalculate all formulas before reading data with progress updates"""
-        try:
-            import xlwings as xw
-            import time
-            
-            if progress_callback:
-                progress_callback(10, "Starting Excel application...")
-            
-            # Buka Excel dengan xlwings (tidak visible)
-            app = xw.App(visible=False)
-            app.display_alerts = False
-            
-            if progress_callback:
-                progress_callback(30, "Opening workbook...")
-            
-            # Buka workbook
-            wb = xw.Book(excel_path)
-            
-            if progress_callback:
-                progress_callback(50, "Forcing formula calculation...")
-            
-            # Paksa kalkulasi semua formula
-            wb.api.Application.CalculateFullRebuild()
-            wb.api.Application.Calculate()
-            
-            if progress_callback:
-                progress_callback(70, "Waiting for calculation to complete...")
-            
-            # Tunggu sebentar untuk memastikan kalkulasi selesai
-            time.sleep(2)
-            
-            if progress_callback:
-                progress_callback(90, "Saving workbook...")
-            
-            # Simpan workbook
-            wb.save()
-            
-            if progress_callback:
-                progress_callback(100, "Calculation completed!")
-            
-            # Tutup
-            wb.close()
-            app.quit()
-            
-            return True
-            
-        except ImportError:
-            # Jika xlwings tidak tersedia, gunakan metode alternatif dengan VBScript
-            return self.force_calculation_vbs(excel_path, progress_callback)
-        except Exception as e:
-            print(f"Error forcing Excel calculation: {str(e)}")
-            if progress_callback:
-                progress_callback(100, f"Error: {str(e)}")
-            return False
-
-    def force_calculation_vbs(self, excel_path, progress_callback=None):
-        """Alternative method using VBScript to force calculation with progress"""
-        try:
-            import tempfile
-            import subprocess
-            import sys
-            
-            if progress_callback:
-                progress_callback(20, "Creating VBScript for calculation...")
-            
-            # Buat VBS script untuk kalkulasi
-            vbs_file = tempfile.NamedTemporaryFile(delete=False, suffix='.vbs')
-            vbs_path = vbs_file.name
-            
-            vbs_script = f'''
-            Set objExcel = CreateObject("Excel.Application")
-            objExcel.DisplayAlerts = False
-            objExcel.Visible = False
-            
-            ' Buka workbook
-            Set objWorkbook = objExcel.Workbooks.Open("{excel_path}")
-            
-            ' Paksa kalkulasi
-            objExcel.CalculateFullRebuild
-            objWorkbook.Application.Calculate
-            
-            ' Tunggu sebentar
-            WScript.Sleep 2000
-            
-            ' Simpan dan tutup
-            objWorkbook.Save
-            objWorkbook.Close
-            objExcel.Quit
-            
-            Set objWorkbook = Nothing
-            Set objExcel = Nothing
-            '''
-            
-            vbs_file.write(vbs_script.encode('utf-8'))
-            vbs_file.close()
-            
-            if progress_callback:
-                progress_callback(50, "Running Excel calculation script...")
-            
-            # Jalankan VBS script
-            if sys.platform == 'win32':
-                subprocess.call(['cscript.exe', '//nologo', vbs_path])
-            
-            if progress_callback:
-                progress_callback(90, "Cleaning up temporary files...")
-            
-            # Hapus file VBS
-            try:
-                import os
-                os.unlink(vbs_path)
-            except:
-                pass
-            
-            if progress_callback:
-                progress_callback(100, "Calculation completed via VBScript!")
-            
-            return True
-            
-        except Exception as e:
-            print(f"Error with VBS calculation: {str(e)}")
-            if progress_callback:
-                progress_callback(100, f"Error: {str(e)}")
-            return False
-
-    # Modifikasi method refresh_with_calculation
     def refresh_with_calculation(self):
-        """Refresh data with forced Excel calculation using loading screen"""
+        """Refresh data and process formulas in background"""
         
         def refresh_process(progress_callback=None):
             try:
                 if progress_callback:
-                    progress_callback(10, "Initializing calculation process...")
+                    progress_callback(20, "Refreshing Excel data...")
                 
-                # Force calculation
-                success = self.force_excel_calculation(self.excel_path, progress_callback)
+                # Reload Excel data
+                self.load_excel_data()
                 
-                if success:
-                    if progress_callback:
-                        progress_callback(80, "Reloading Excel data...")
-                    
-                    # Then load data normally
-                    self.load_excel_data()
-                    
-                    if progress_callback:
-                        progress_callback(100, "Data refreshed successfully!")
-                    
-                    return "Data refreshed with updated calculations"
-                else:
-                    if progress_callback:
-                        progress_callback(100, "Calculation warning - loading data anyway...")
-                    
-                    # Load data anyway but show warning
-                    self.load_excel_data()
-                    return "Could not force Excel calculation. Some formula values may be outdated."
+                if progress_callback:
+                    progress_callback(60, "Processing formulas...")
+                
+                # Process formulas in background
+                if hasattr(self, 'formula_evaluator') and self.formula_evaluator and HAS_FORMULA_HELPER:
+                    evaluate_formulas_background(self.formula_evaluator)
+                
+                if progress_callback:
+                    progress_callback(100, "Refresh completed!")
+                
+                return "Data refreshed successfully with background formula processing"
                     
             except Exception as e:
                 if progress_callback:
@@ -1412,7 +1288,7 @@ class BDUGroupView(QMainWindow):
         loading_screen = LoadingScreen(
             parent=self,
             title="Refreshing Data",
-            message="Updating calculations and reloading data..."
+            message="Reloading data and processing formulas..."
         )
         loading_screen.show()
         loading_screen.start_loading(refresh_process)
@@ -1421,21 +1297,14 @@ class BDUGroupView(QMainWindow):
         def on_refresh_complete(success, message):
             if success:
                 self.statusBar().showMessage("Data refreshed successfully", 3000)
-                if "warning" in message.lower():
-                    QMessageBox.warning(
-                        self, 
-                        "Calculation Warning", 
-                        "Could not force Excel calculation. Some formula values may be outdated. "
-                        "Try opening the file in Excel and pressing Ctrl+S, then refresh again."
-                    )
             else:
                 QMessageBox.critical(self, "Error", f"Error during refresh: {message}")
                 self.statusBar().clearMessage()
         
-        loading_screen.worker.task_completed.connect(on_refresh_complete)
+        loading_screen.worker.task_completed.connect(on_refresh_complete)    
     
     def load_excel_data(self):
-        """Load data from SET_BDU.xlsx with loading screen for large files"""
+        """Load data from SET_BDU.xlsx"""
         
         def load_data_process(progress_callback=None):
             try:
@@ -1447,20 +1316,25 @@ class BDUGroupView(QMainWindow):
                 
                 if progress_callback:
                     progress_callback(10, "Loading user codes...")
-                
+
                 # Load user codes first
                 self.load_user_codes_from_excel()
-                
+
                 if progress_callback:
-                    progress_callback(15, "Forcing Excel calculations...")
+                    progress_callback(15, "Preparing data loading...")
                 
-                # Force calculation before reading
-                calculation_success = self.force_excel_calculation(self.excel_path, 
-                    lambda pct, msg: progress_callback(15 + (pct * 0.2), f"Calculating: {msg}") if progress_callback else None)
-                
-                if not calculation_success:
-                    print("Warning: Could not force Excel calculation. Some formulas may show outdated values.")
-                
+                # Initialize formula evaluator
+                if HAS_FORMULA_HELPER:
+                    self.formula_evaluator = SimpleFormulaEvaluator(self.excel_path)
+                    if self.formula_evaluator.load_workbook():
+                        # TAMBAHKAN INI - Process formulas di background
+                        if progress_callback:
+                            progress_callback(20, "Processing formulas in background...")
+                        evaluate_formulas_background(self.formula_evaluator)
+                    else:
+                        print("Warning: Could not initialize formula evaluator")
+                        self.formula_evaluator = None
+                 
                 if progress_callback:
                     progress_callback(35, "Reading Excel file structure...")
                 
@@ -5710,13 +5584,7 @@ class BDUGroupView(QMainWindow):
                 # Save the workbook
                 try:
                     wb.save(self.excel_path)
-                    
-                    if progress_callback:
-                        progress_callback(95, "Updating calculations...")
-                    
-                    # Force calculation after save
-                    self.force_excel_calculation(self.excel_path)
-                    
+          
                     if progress_callback:
                         progress_callback(98, "Writing change log...")
                     
@@ -5970,3 +5838,16 @@ class BDUGroupView(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to export data: {str(e)}")
             print(f"Error exporting data: {str(e)}")
+            
+    def closeEvent(self, event):
+        """Cleanup on close"""
+        try:
+            # Cleanup formula evaluator
+            if hasattr(self, 'formula_evaluator') and self.formula_evaluator:
+                self.formula_evaluator.close()
+                self.formula_evaluator = None
+        except Exception as e:
+            print(f"Error during cleanup: {str(e)}")
+        
+        # Call parent close event
+        super().closeEvent(event)
