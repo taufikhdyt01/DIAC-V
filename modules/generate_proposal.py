@@ -435,11 +435,11 @@ def get_proposal_data_for_filename(workbook):
             except Exception:
                 pass
         
-        # 2. Capacity from DIP_Project_Information.B60
+        # 2. Capacity from DIP_Project_Information.B82
         if 'DIP_Project Information' in workbook.sheetnames:
             sheet = workbook['DIP_Project Information']
             try:
-                capacity = sheet['B60'].value
+                capacity = sheet['B82'].value
                 if capacity:
                     data['capacity'] = str(capacity).strip()
             except Exception:
