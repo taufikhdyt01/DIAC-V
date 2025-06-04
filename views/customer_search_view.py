@@ -618,11 +618,6 @@ class CustomerSearchView(QMainWindow):
         valid_folder_name = clean_folder_name(customer_name)
         folder_path = os.path.join(self.customers_base_path, valid_folder_name)
         
-        # Create folder if it doesn't exist
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path)
-            print(f"Created customer folder: {folder_path}")
-        
         return folder_path
     
     def get_customer_bdu_file_path(self, customer_name):
@@ -746,7 +741,6 @@ class CustomerSearchView(QMainWindow):
                 traceback.print_exc()
                 # Continue anyway - the file was copied
             
-            print(f"Created customer BDU file: {customer_file_path}")
             return customer_file_path
             
         except Exception as e:

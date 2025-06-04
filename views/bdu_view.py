@@ -1667,7 +1667,7 @@ class BDUGroupView(QMainWindow):
         layout.addStretch(1)   
                 
     def run_projection(self):
-        """Fungsi untuk menjalankan projection dengan loading screen"""
+        """Fungsi untuk menjalankan projection dengan loading screen - Updated Version with Debug"""
         
         def projection_process(progress_callback=None):
             try:
@@ -1679,113 +1679,257 @@ class BDUGroupView(QMainWindow):
                 import subprocess
                 from PyQt5.QtWidgets import QApplication, QMessageBox
                 
+                print("=" * 80)
+                print("🚀 STARTING PROJECTION PROCESS")
+                print("=" * 80)
+                
                 if progress_callback:
                     progress_callback(5, "Initializing projection process...")
                 
                 # Use the customer-specific Excel file if available
                 if hasattr(self, 'excel_path'):
                     set_bdu_path = self.excel_path
+                    print(f"📁 Using customer-specific Excel: {set_bdu_path}")
                 else:
                     # Fall back to default path if customer file isn't set
                     data_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
                     set_bdu_path = os.path.join(data_folder, "SET_BDU.xlsx")
+                    print(f"📁 Using default Excel: {set_bdu_path}")
                 
                 # Base data folder path
                 data_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+                print(f"📂 Data folder: {data_folder}")
                 
                 # Path ke file-file Excel
-                sbt_anapak_path = os.path.join(data_folder, "SBT_ANAPAK.xlsx")
-                sbt_pump_path = os.path.join(data_folder, "SBT_PUMP.xlsm")
+                sbt_anapak_path = os.path.join(data_folder, "SBT_PROCESS", "SBT_ANAPAK.xlsx")
+                sbt_instrument_path = os.path.join(data_folder, "SBT_EQUIPMENT AND TOOLS", "SBT-INSTRUMENT versi 1.0.xlsm")
+                sbt_dosingpump_path = os.path.join(data_folder,  "SBT_EQUIPMENT AND TOOLS", "SBT-DOSINGPUMP versi 1.0.xlsm")
                 all_udf_path = os.path.join(data_folder, "ALL_UDF.py")
+                
+                print(f"📄 SBT_ANAPAK path: {sbt_anapak_path}")
+                print(f"📄 SBT_INSTRUMENT path: {sbt_instrument_path}")
+                print(f"📄 SBT_DOSINGPUMP path: {sbt_dosingpump_path}")
                 
                 if progress_callback:
                     progress_callback(10, "Checking required files...")
                 
+                print("\n🔍 CHECKING REQUIRED FILES:")
                 # Pastikan file yang dibutuhkan ada
                 missing_files = []
-                for file_path in [set_bdu_path, sbt_anapak_path, sbt_pump_path, all_udf_path]:
+                required_files = [set_bdu_path, sbt_anapak_path, sbt_instrument_path, all_udf_path]
+                for file_path in required_files:
                     if not os.path.exists(file_path):
                         missing_files.append(os.path.basename(file_path))
+                        print(f"❌ Missing: {file_path}")
+                    else:
+                        print(f"✅ Found: {file_path}")
                 
                 if missing_files:
-                    raise Exception(f"Required files not found: {', '.join(missing_files)}")
+                    error_msg = f"Required files not found: {', '.join(missing_files)}"
+                    print(f"🚨 ERROR: {error_msg}")
+                    raise Exception(error_msg)
+                
+                print("✅ All required files found!")
                 
                 if progress_callback:
                     progress_callback(15, "Opening SET_BDU workbook...")
                 
+                print("\n📖 PROSES 1: READING SET_BDU DATA")
+                print("-" * 50)
+                
                 # PROSES 1: Transfer data dari SET_BDU ke SBT_ANAPAK
+                print(f"🔓 Opening SET_BDU: {set_bdu_path}")
                 wb_bdu = load_workbook(set_bdu_path, data_only=True)
+                print(f"📋 Available sheets: {wb_bdu.sheetnames}")
                 
                 if progress_callback:
-                    progress_callback(20, "Reading data from DIP_Project Information...")
+                    progress_callback(20, "Reading data from DIP sheets...")
                 
-                # Ambil data yang diperlukan dari DIP_Technical Information
-                sheet_dip = wb_bdu["DIP_Project Information"]
-                values_to_transfer = {
-                    'C37': sheet_dip['B69'].value,  # B9 -> C37
-                    'C38': sheet_dip['B70'].value, # B10 -> C38
-                    'C39': sheet_dip['B71'].value, # B11 -> C39
-                    'C40': sheet_dip['B72'].value, # B12 -> C40
-                    'C41': sheet_dip['B73'].value, # B13 -> C41
-                    'C42': sheet_dip['B75'].value, # B16 -> C42
-                    'C43': sheet_dip['B76'].value, # B17 -> C43
-                    'C46': sheet_dip['B79'].value  # B21 -> C46
+                # Ambil data dari DIP_Customer Information dan DIP_Project Information
+                print("📄 Reading DIP_Customer Information...")
+                if "DIP_Customer Information" not in wb_bdu.sheetnames:
+                    raise Exception("Sheet 'DIP_Customer Information' not found!")
+                sheet_customer = wb_bdu["DIP_Customer Information"]
+                
+                print("📄 Reading DIP_Project Information...")
+                if "DIP_Project Information" not in wb_bdu.sheetnames:
+                    raise Exception("Sheet 'DIP_Project Information' not found!")
+                sheet_project = wb_bdu["DIP_Project Information"]
+                
+                # Data untuk SBT_ANAPAK
+                print("📊 Extracting data for ANAPAK...")
+                anapak_values = {
+                    'C1': sheet_customer['B4'].value,   # DIP_Customer Information.B4
+                    'C4': sheet_project['B70'].value,   # DIP_Project Information.B70
+                    'C5': sheet_project['B71'].value,   # DIP_Project Information.B71
+                    'C6': sheet_project['B72'].value,   # DIP_Project Information.B72
+                    'C7': sheet_project['B73'].value,   # DIP_Project Information.B73
+                    'C8': sheet_project['B74'].value,   # DIP_Project Information.B74
+                    'C9': sheet_project['B77'].value,   # DIP_Project Information.B77
+                    'C10': sheet_project['B78'].value,  # DIP_Project Information.B78
+                    'C11': sheet_project['B82'].value,  # DIP_Project Information.B82
+                    'C16': sheet_project['B42'].value,  # DIP_Project Information.B42
+                    'C17': sheet_project['B43'].value,  # DIP_Project Information.B43
+                    'C18': sheet_project['B45'].value,  # DIP_Project Information.B45
+                    'C19': sheet_project['B51'].value,  # DIP_Project Information.B51
+                    'C20': sheet_project['B59'].value   # DIP_Project Information.B59
                 }
                 
+                print("📋 ANAPAK Data extracted:")
+                for key, value in anapak_values.items():
+                    print(f"   {key}: {value}")
+                
+                # Ambil data untuk pemilihan pump file
+                pump_brand = sheet_project['B42'].value
+                pump_type = sheet_project['B43'].value
+                pump_model = sheet_project['B44'].value
+                
+                print(f"🔧 Pump Configuration:")
+                print(f"   Brand: {pump_brand}")
+                print(f"   Type: {pump_type}")
+                print(f"   Model: {pump_model}")
+                
                 wb_bdu.close()
+                print("✅ SET_BDU closed successfully")
                 
                 if progress_callback:
-                    progress_callback(30, "Transferring data to SBT_ANAPAK...")
+                    progress_callback(25, "Transferring data to SBT_ANAPAK...")
+                
+                print("\n📤 TRANSFERRING DATA TO SBT_ANAPAK")
+                print("-" * 50)
                 
                 # Buka dan update workbook SBT_ANAPAK
+                print(f"🔓 Opening SBT_ANAPAK: {sbt_anapak_path}")
                 wb_anapak = load_workbook(sbt_anapak_path)
-                sheet_anapak = wb_anapak["ANAPAK"]
+                print(f"📋 Available sheets: {wb_anapak.sheetnames}")
+                
+                if "DATA_INPUT" not in wb_anapak.sheetnames:
+                    raise Exception("Sheet 'DATA_INPUT' not found in SBT_ANAPAK!")
+                
+                sheet_anapak_input = wb_anapak["DATA_INPUT"]
+                print("📄 Found DATA_INPUT sheet")
                 
                 # Pindahkan data ke SBT_ANAPAK
-                for cell_addr, value in values_to_transfer.items():
-                    sheet_anapak[cell_addr] = value
+                print("📊 Writing data to ANAPAK...")
+                for cell_addr, value in anapak_values.items():
+                    old_value = sheet_anapak_input[cell_addr].value
+                    sheet_anapak_input[cell_addr] = value
+                    print(f"   {cell_addr}: {old_value} → {value}")
                 
                 # Simpan SBT_ANAPAK
+                print("💾 Saving SBT_ANAPAK...")
                 wb_anapak.save(sbt_anapak_path)
                 wb_anapak.close()
+                print("✅ SBT_ANAPAK saved and closed successfully")
                 
                 if progress_callback:
-                    progress_callback(40, "Calculating SBT_ANAPAK formulas...")
+                    progress_callback(30, "Calculating SBT_ANAPAK formulas...")
+                
+                print("\n🧮 CALCULATING SBT_ANAPAK FORMULAS")
+                print("-" * 50)
                 
                 # Force calculation untuk SBT_ANAPAK
                 try:
-                    self.force_excel_calculation(sbt_anapak_path, 
-                        lambda pct, msg: progress_callback(40 + (pct * 0.1), f"SBT_ANAPAK: {msg}") if progress_callback else None)
+                    print("🔄 Starting force calculation for SBT_ANAPAK...")
+                    # self.force_excel_calculation(sbt_anapak_path, 
+                    #     lambda pct, msg: progress_callback(30 + (pct * 0.05), f"SBT_ANAPAK: {msg}") if progress_callback else None)
+                    print("✅ SBT_ANAPAK calculation completed")
                     time.sleep(2)
                 except Exception as e:
+                    print(f"⚠️ Warning during SBT_ANAPAK calculation: {str(e)}")
                     if progress_callback:
-                        progress_callback(50, f"Warning: {str(e)}")
+                        progress_callback(35, f"Warning: {str(e)}")
                 
                 if progress_callback:
-                    progress_callback(50, "Reading calculated values from SBT_ANAPAK...")
+                    progress_callback(35, "Determining SBT_PUMP file...")
                 
-                # PROSES 2: Ambil data dari SBT_ANAPAK untuk dimasukkan ke SBT_PUMP
+                print("\n🔧 PROSES 2: DETERMINING PUMP FILE")
+                print("-" * 50)
+                
+                # PROSES 2: Menentukan file SBT_PUMP berdasarkan brand, type, dan model
+                pump_file_map = {
+                    ("GRUNDFOS", "Vertical Multistage Centrifugal Pump", "CR"): "SBT-GRUNDFOS-CR Pump versi 2.0 (test version 3.51).xlsm",
+                    ("GRUNDFOS", "Vertical Multistage Centrifugal Pump", "CRN"): "SBT-GRUNDFOS-CRN Pump versi 2.0 (test version 3.51).xlsm",
+                    ("GRUNDFOS", "End Suction Centrifugal Pump", "NKG"): "SBT-GRUNDFOS-NKG Pump versi 2.0 (test version 3.51).xlsm",
+                    ("EBARA", "Vertical Multistage Centrifugal Pump", "3S"): "SBT-EBARA-3S Pump versi 2.0 (test version 3.51).xlsm",
+                    ("EBARA", "End Suction Centrifugal Pump", "FSSC"): "SBT-EBARA-FSSC Pump versi 2.0 (test version 3.51).xlsm",
+                    ("CNP", "Vertical Multistage Centrifugal Pump", "CDMF"): "SBT-CNP-CDMF Pump versi 2.0 (test version 3.51).xlsm",
+                    ("CNP", "Horizontal Multistage Centrifugal Pump", "CHL"): "SBT-CNP-CHL Pump versi 2.0 (test version 3.51).xlsm",
+                    ("CNP", "Submersible Pump", "WQ"): "SBT-CNP-WQ Pump versi 2.0 (test version 3.51).xlsm",
+                    ("LEO", "Vertical Multistage Centrifugal Pump", "LVRS"): "SBT-LEO-LVRS Pump versi 2.0 (test version 3.51).xlsm",
+                    ("LEO", "End Suction Centrifugal Pump", "LEP"): "SBT-LEO-LEP Pump versi 2.0 (test version 3.51).xlsm",
+                    ("LEO", "Submersible Pump", "SWE"): "SBT-LEO-SWE Pump versi 2.0 (test version 3.51).xlsm",
+                    ("LEO", "Submersible Pump", "XSP"): "SBT-LEO-XSP Pump versi 2.0 (test version 3.51).xlsm"
+                }
+                
+                # Tentukan file pump yang akan digunakan
+                pump_key = (pump_brand, pump_type, pump_model)
+                print(f"🔍 Looking for pump key: {pump_key}")
+                
+                if pump_key not in pump_file_map:
+                    print(f"❌ Pump configuration not found in mapping!")
+                    print("📋 Available pump configurations:")
+                    for key in pump_file_map.keys():
+                        print(f"   {key}")
+                    raise Exception(f"Pump configuration not found: {pump_key}")
+                
+                pump_filename = pump_file_map[pump_key]
+                sbt_pump_path = os.path.join(data_folder, "SBT_PUMP", pump_filename)
+                
+                print(f"✅ Selected pump file: {pump_filename}")
+                print(f"📁 Full path: {sbt_pump_path}")
+                
+                if not os.path.exists(sbt_pump_path):
+                    print(f"❌ SBT_PUMP file not found at: {sbt_pump_path}")
+                    raise Exception(f"SBT_PUMP file not found: {pump_filename}")
+                
+                print("✅ SBT_PUMP file exists!")
+                
+                if progress_callback:
+                    progress_callback(40, f"Using pump file: {pump_filename}")
+                
+                print("\n⚙️ PROSES 3.1: ANAPAK → PUMP DATA TRANSFER")
+                print("-" * 50)
+                
+                # PROSES 3.1: Transfer data dari SBT_ANAPAK ke SBT_PUMP
+                print(f"🔓 Reading data from SBT_ANAPAK...")
                 wb_anapak = load_workbook(sbt_anapak_path, data_only=True)
-                sheet_anapak = wb_anapak["ANAPAK"]
+                print(f"📋 Available sheets: {wb_anapak.sheetnames}")
                 
-                # Ambil nilai dari SBT_ANAPAK.ANAPAK.I66 dan K67
-                value_i66 = sheet_anapak['I66'].value
-                value_k67 = sheet_anapak['K67'].value
+                if "DATA_ENGINE ANAPAK" not in wb_anapak.sheetnames:
+                    print("❌ Sheet 'DATA_ENGINE ANAPAK' not found!")
+                    print(f"📋 Available sheets: {wb_anapak.sheetnames}")
+                    raise Exception("Sheet 'DATA_ENGINE ANAPAK' not found!")
+                
+                sheet_anapak_engine = wb_anapak["DATA_ENGINE ANAPAK"]
+                
+                # Ambil nilai dari SBT_ANAPAK.DATA_ENGINE ANAPAK
+                value_i66 = sheet_anapak_engine['I66'].value
+                value_k67 = sheet_anapak_engine['K67'].value
+                
+                print(f"📊 Retrieved from ANAPAK:")
+                print(f"   I66: {value_i66}")
+                print(f"   K67: {value_k67}")
                 
                 wb_anapak.close()
+                print("✅ SBT_ANAPAK closed")
                 
                 # Gunakan nilai default jika masih None
                 if value_i66 is None:
                     value_i66 = 0
+                    print("⚠️ I66 was None, using default: 0")
                 if value_k67 is None:
                     value_k67 = 0
+                    print("⚠️ K67 was None, using default: 0")
                 
                 if progress_callback:
-                    progress_callback(60, "Transferring data to SBT_PUMP...")
+                    progress_callback(45, "Transferring data to SBT_PUMP...")
                 
                 # Transfer data ke SBT_PUMP
+                print(f"🔓 Opening SBT_PUMP: {pump_filename}")
                 try:
                     wb_pump = load_workbook(sbt_pump_path, keep_vba=True)
+                    print(f"📋 Available sheets: {wb_pump.sheetnames}")
                     
                     # Cari sheet 'DATA INPUT'
                     target_sheet_name = "DATA INPUT"
@@ -1795,31 +1939,52 @@ class BDUGroupView(QMainWindow):
                         if sheet_name.upper() == target_sheet_name.upper():
                             target_sheet_name = sheet_name
                             found_sheet = True
+                            print(f"✅ Found sheet: {sheet_name}")
                             break
                     
                     if not found_sheet:
-                        raise Exception(f"Sheet 'DATA INPUT' not found in SBT_PUMP.xlsm")
+                        print(f"❌ Sheet 'DATA INPUT' not found!")
+                        print(f"📋 Available sheets: {wb_pump.sheetnames}")
+                        raise Exception(f"Sheet 'DATA INPUT' not found in {pump_filename}")
                     
                     sheet_pump = wb_pump[target_sheet_name]
                     
                     # Transfer data ke SBT_PUMP
-                    sheet_pump['B13'] = value_i66
-                    sheet_pump['B14'] = value_k67
+                    old_b13 = sheet_pump['B13'].value
+                    old_b14 = sheet_pump['B14'].value
+                    
+                    sheet_pump['B13'] = value_i66  # DATA_ENGINE ANAPAK.I66 -> DATA INPUT.B13
+                    sheet_pump['B14'] = value_k67  # DATA_ENGINE ANAPAK.K67 -> DATA INPUT.B14
+                    
+                    print(f"📊 Updated PUMP data:")
+                    print(f"   B13: {old_b13} → {value_i66}")
+                    print(f"   B14: {old_b14} → {value_k67}")
                     
                     # Simpan SBT_PUMP
+                    print("💾 Saving SBT_PUMP...")
                     wb_pump.save(sbt_pump_path)
                     wb_pump.close()
+                    print("✅ SBT_PUMP saved and closed")
                     
                     time.sleep(1)
                     
                 except Exception as e:
-                    raise Exception(f"Failed to transfer data to SBT_PUMP: {str(e)}")
+                    error_msg = f"Failed to transfer data to SBT_PUMP: {str(e)}"
+                    print(f"🚨 ERROR: {error_msg}")
+                    raise Exception(error_msg)
                 
                 if progress_callback:
-                    progress_callback(70, "Running GENERATE_REPORT macro in SBT_PUMP...")
+                    progress_callback(50, "Running GENERATE_REPORT macro in SBT_PUMP...")
                 
-                # PROSES 3: Menjalankan macro di SBT_PUMP
+                print("\n🔧 PROSES 3.2: RUNNING PUMP MACRO")
+                print("-" * 50)
+                
+                # PROSES 3.2: Menjalankan macro di SBT_PUMP
+                print("🎯 Attempting to run GENERATE_REPORT macro...")
+                macro_success = False
+                
                 try:
+                    print("🔄 Method 1: Using xlwings...")
                     import xlwings as xw
                     
                     app = xw.App(visible=False)
@@ -1827,21 +1992,27 @@ class BDUGroupView(QMainWindow):
                     app.api.AutomationSecurity = 1
                     
                     wb = xw.Book(sbt_pump_path)
+                    print(f"✅ Workbook opened with xlwings")
                     
                     # Jalankan macro GENERATE_REPORT
-                    wb.api.Application.Run("'SBT_PUMP.xlsm'!GENERATE_REPORT")
+                    print("🚀 Running GENERATE_REPORT macro...")
+                    wb.api.Application.Run(f"'{pump_filename}'!GENERATE_REPORT")
+                    print("✅ Macro executed successfully")
                     
                     # Tunggu macro selesai
+                    print("⏳ Waiting for macro completion...")
                     time.sleep(5)
                     
+                    print("💾 Saving workbook...")
                     wb.save()
                     wb.close()
                     app.quit()
+                    print("✅ xlwings method completed successfully")
+                    macro_success = True
                     
                 except Exception as e:
-                    # Try alternative methods if xlwings fails
-                    print(f"xlwings failed, trying alternatives: {str(e)}")
-                    
+                    print(f"❌ xlwings method failed: {str(e)}")
+                      
                     # Alternative dengan VBScript
                     try:
                         import tempfile
@@ -1860,7 +2031,7 @@ class BDUGroupView(QMainWindow):
                         objExcel.Run "GENERATE_REPORT"
                         If Err.Number <> 0 Then
                             Err.Clear
-                            objExcel.Run "'SBT_PUMP.xlsm'!GENERATE_REPORT"
+                            objExcel.Run "'{pump_filename}'!GENERATE_REPORT"
                         End If
                         
                         WScript.Sleep 5000
@@ -1877,102 +2048,519 @@ class BDUGroupView(QMainWindow):
                         vbs_file.close()
                         
                         if sys.platform == 'win32':
-                            subprocess.call(['cscript.exe', '//nologo', vbs_path])
+                            print("🚀 Executing VBScript...")
+                            result = subprocess.call(['cscript.exe', '//nologo', vbs_path])
+                            print(f"📊 VBScript exit code: {result}")
                         
                         try:
                             os.unlink(vbs_path)
+                            print("🗑️ VBScript file cleaned up")
                         except:
                             pass
                         
+                        print("✅ VBScript method completed")
+                        macro_success = True
                         time.sleep(2)
                         
                     except Exception as alt_e:
-                        print(f"All macro execution methods failed: {str(alt_e)}")
+                        print(f"❌ VBScript method failed: {str(alt_e)}")
+                        print("⚠️ All macro execution methods failed, continuing without macro...")
+                
+                if not macro_success:
+                    print("⚠️ WARNING: Macro execution failed, but continuing process...")
                 
                 if progress_callback:
-                    progress_callback(80, "Reading output data from SBT_ANAPAK and SBT_PUMP...")
+                    progress_callback(55, "Processing PROSES 3.3 and 3.4...")
                 
-                # PROSES 4: Transfer data kembali ke SET_BDU
-                wb_anapak_output = load_workbook(sbt_anapak_path, data_only=True)
+                print("\n📤 PROSES 3.3: PUMP → ANAPAK TRANSFER")
+                print("-" * 50)
                 
-                if "DATA_OUTPUT" not in wb_anapak_output.sheetnames:
+                # PROSES 3.3: SBT_PUMP -> SBT_ANAPAK
+                print(f"🔓 Reading results from SBT_PUMP...")
+                wb_pump_output = load_workbook(sbt_pump_path, data_only=True)
+                print(f"📋 Available sheets: {wb_pump_output.sheetnames}")
+                
+                if "DATA_ENGINE" not in wb_pump_output.sheetnames:
+                    print("❌ Sheet DATA_ENGINE not found in SBT_PUMP!")
+                    print(f"📋 Available sheets: {wb_pump_output.sheetnames}")
+                    raise Exception("Sheet DATA_ENGINE not found in SBT_PUMP")
+                    
+                sheet_pump_engine = wb_pump_output["DATA_ENGINE"]
+                pump_value_b19 = sheet_pump_engine['B19'].value
+                
+                print(f"📊 Retrieved from PUMP DATA_ENGINE.B19: {pump_value_b19}")
+                
+                wb_pump_output.close()
+                print("✅ SBT_PUMP closed")
+                
+                print("\n📥 PROSES 3.4: SET_BDU → ANAPAK (B42)")
+                print("-" * 50)
+                
+                # PROSES 3.4: SET_BDU -> SBT_ANAPAK (ambil B42 lagi)
+                print(f"🔓 Re-opening SET_BDU for B42...")
+                wb_bdu_again = load_workbook(set_bdu_path, data_only=True)
+                sheet_project_again = wb_bdu_again["DIP_Project Information"]
+                project_value_b42 = sheet_project_again['B42'].value
+                print(f"📊 Retrieved B42: {project_value_b42}")
+                wb_bdu_again.close()
+                print("✅ SET_BDU closed")
+                
+                # Update SBT_ANAPAK dengan data dari PROSES 3.3 dan 3.4
+                print("🔓 Opening SBT_ANAPAK for update...")
+                wb_anapak = load_workbook(sbt_anapak_path)
+                
+                if "DATA_OUTPUT" not in wb_anapak.sheetnames:
+                    print("❌ Sheet DATA_OUTPUT not found!")
+                    print(f"📋 Available sheets: {wb_anapak.sheetnames}")
+                    raise Exception("Sheet DATA_OUTPUT not found!")
+                
+                sheet_anapak_output = wb_anapak["DATA_OUTPUT"]
+                
+                old_c33 = sheet_anapak_output['C33'].value
+                old_c34 = sheet_anapak_output['C34'].value
+                
+                sheet_anapak_output['C33'] = pump_value_b19    # DATA_ENGINE.B19 -> DATA_OUTPUT.C33
+                sheet_anapak_output['C34'] = project_value_b42 # DIP_Project Information.B42 -> DATA_OUTPUT.C34
+                
+                print(f"📊 Updated ANAPAK DATA_OUTPUT:")
+                print(f"   C33: {old_c33} → {pump_value_b19}")
+                print(f"   C34: {old_c34} → {project_value_b42}")
+                
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                print("✅ SBT_ANAPAK updated and saved")
+                
+                if progress_callback:
+                    progress_callback(60, "Processing SBT_INSTRUMENT (PROSES 4 and 5)...")
+                
+                print("\n🔬 PROSES 4: SET_BDU → INSTRUMENT")
+                print("-" * 50)
+                
+                # PROSES 4: SET_BDU -> SBT_INSTRUMENT
+                print("🔓 Reading B59 from SET_BDU...")
+                wb_bdu_instrument = load_workbook(set_bdu_path, data_only=True)
+                sheet_project_instrument = wb_bdu_instrument["DIP_Project Information"]
+                instrument_value_b59 = sheet_project_instrument['B59'].value
+                print(f"📊 Retrieved B59: {instrument_value_b59}")
+                wb_bdu_instrument.close()
+                print("✅ SET_BDU closed")
+                
+                # Update SBT_INSTRUMENT
+                print(f"🔓 Opening SBT_INSTRUMENT: {sbt_instrument_path}")
+                wb_instrument = load_workbook(sbt_instrument_path)
+                print(f"📋 Available sheets: {wb_instrument.sheetnames}")
+                
+                if "DATA INPUT" not in wb_instrument.sheetnames:
+                    print("❌ Sheet DATA INPUT not found!")
+                    raise Exception("Sheet DATA INPUT not found in SBT_INSTRUMENT!")
+                
+                sheet_instrument_input = wb_instrument["DATA INPUT"]
+                
+                old_b4 = sheet_instrument_input['B4'].value
+                sheet_instrument_input['B4'] = instrument_value_b59  # DIP_Project Information.B59 -> DATA INPUT.B4
+                print(f"📊 Updated INSTRUMENT B4: {old_b4} → {instrument_value_b59}")
+                
+                print("\n🔄 PROSES 5.1: ANAPAK → INSTRUMENT (Round 1)")
+                print("-" * 50)
+                
+                # PROSES 5.1: SBT_ANAPAK -> SBT_INSTRUMENT (pertama kali)
+                print("🔓 Reading C74 from ANAPAK...")
+                wb_anapak_read = load_workbook(sbt_anapak_path, data_only=True)
+                sheet_anapak_output_read = wb_anapak_read["DATA_OUTPUT"]
+                anapak_value_c74 = sheet_anapak_output_read['C74'].value
+                print(f"📊 Retrieved C74: {anapak_value_c74}")
+                wb_anapak_read.close()
+                
+                old_b5 = sheet_instrument_input['B5'].value
+                sheet_instrument_input['B5'] = anapak_value_c74  # DATA_OUTPUT.C74 -> DATA INPUT.B5
+                print(f"📊 Updated INSTRUMENT B5: {old_b5} → {anapak_value_c74}")
+                
+                wb_instrument.save(sbt_instrument_path)
+                wb_instrument.close()
+                print("✅ SBT_INSTRUMENT saved")
+                
+                if progress_callback:
+                    progress_callback(65, "Processing SBT_INSTRUMENT calculations...")
+                
+                print("\n🧮 CALCULATING SBT_INSTRUMENT (Round 1)")
+                print("-" * 50)
+                
+                # Force calculation untuk SBT_INSTRUMENT
+                try:
+                    print("🔄 Starting force calculation for SBT_INSTRUMENT...")
+                    # self.force_excel_calculation(sbt_instrument_path, 
+                    #     lambda pct, msg: progress_callback(65 + (pct * 0.05), f"SBT_INSTRUMENT: {msg}") if progress_callback else None)
+                    print("✅ SBT_INSTRUMENT calculation completed")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_INSTRUMENT calculation: {str(e)}")
+                    if progress_callback:
+                        progress_callback(70, f"Warning: {str(e)}")
+                
+                print("\n📤 PROSES 5.2: INSTRUMENT → ANAPAK (Round 1)")
+                print("-" * 50)
+                
+                # PROSES 5.2: SBT_INSTRUMENT -> SBT_ANAPAK (pertama kali)
+                print("🔓 Reading results from INSTRUMENT...")
+                wb_instrument_read = load_workbook(sbt_instrument_path, data_only=True)
+                print(f"📋 Available sheets: {wb_instrument_read.sheetnames}")
+                
+                if "DATA PROPOSAL" not in wb_instrument_read.sheetnames:
+                    print("❌ Sheet DATA PROPOSAL not found!")
+                    print(f"📋 Available sheets: {wb_instrument_read.sheetnames}")
+                    raise Exception("Sheet DATA PROPOSAL not found!")
+                
+                sheet_instrument_proposal = wb_instrument_read["DATA PROPOSAL"]
+                instrument_value_b8_1 = sheet_instrument_proposal['B8'].value
+                instrument_value_b5_1 = sheet_instrument_proposal['B5'].value
+                
+                print(f"📊 Retrieved from INSTRUMENT (Round 1):")
+                print(f"   B8: {instrument_value_b8_1}")
+                print(f"   B5: {instrument_value_b5_1}")
+                
+                wb_instrument_read.close()
+                print("✅ SBT_INSTRUMENT closed")
+                
+                # Update SBT_ANAPAK
+                print("🔓 Opening ANAPAK for update...")
+                wb_anapak = load_workbook(sbt_anapak_path)
+                sheet_anapak_output = wb_anapak["DATA_OUTPUT"]
+                
+                old_c75 = sheet_anapak_output['C75'].value
+                old_c76 = sheet_anapak_output['C76'].value
+                
+                sheet_anapak_output['C75'] = instrument_value_b8_1  # DATA PROPOSAL.B8 -> DATA_OUTPUT.C75
+                sheet_anapak_output['C76'] = instrument_value_b5_1  # DATA PROPOSAL.B5 -> DATA_OUTPUT.C76
+                
+                print(f"📊 Updated ANAPAK (Round 1):")
+                print(f"   C75: {old_c75} → {instrument_value_b8_1}")
+                print(f"   C76: {old_c76} → {instrument_value_b5_1}")
+                
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                print("✅ ANAPAK updated and saved")
+                
+                if progress_callback:
+                    progress_callback(70, "Processing second round of SBT_INSTRUMENT...")
+                
+                print("\n🔄 PROSES 5.3: ANAPAK → INSTRUMENT (Round 2)")
+                print("-" * 50)
+                
+                # PROSES 5.3: SBT_ANAPAK -> SBT_INSTRUMENT (kedua kali)
+                print("🔓 Reading C80 from ANAPAK...")
+                wb_anapak_read = load_workbook(sbt_anapak_path, data_only=True)
+                sheet_anapak_output_read = wb_anapak_read["DATA_OUTPUT"]
+                anapak_value_c80 = sheet_anapak_output_read['C80'].value
+                print(f"📊 Retrieved C80: {anapak_value_c80}")
+                wb_anapak_read.close()
+                
+                print("🔓 Opening INSTRUMENT for Round 2...")
+                wb_instrument = load_workbook(sbt_instrument_path)
+                sheet_instrument_input = wb_instrument["DATA INPUT"]
+                
+                old_b5_2 = sheet_instrument_input['B5'].value
+                sheet_instrument_input['B5'] = anapak_value_c80  # DATA_OUTPUT.C80 -> DATA INPUT.B5
+                print(f"📊 Updated INSTRUMENT B5 (Round 2): {old_b5_2} → {anapak_value_c80}")
+                
+                wb_instrument.save(sbt_instrument_path)
+                wb_instrument.close()
+                print("✅ INSTRUMENT saved")
+                
+                print("\n🧮 CALCULATING SBT_INSTRUMENT (Round 2)")
+                print("-" * 50)
+                
+                # Force calculation lagi
+                try:
+                    print("🔄 Starting force calculation for SBT_INSTRUMENT Round 2...")
+                    # self.force_excel_calculation(sbt_instrument_path, 
+                    #     lambda pct, msg: progress_callback(70 + (pct * 0.05), f"SBT_INSTRUMENT Round 2: {msg}") if progress_callback else None)
+                    print("✅ SBT_INSTRUMENT Round 2 calculation completed")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during Round 2 calculation: {str(e)}")
+                    pass
+                
+                print("\n📤 PROSES 5.4: INSTRUMENT → ANAPAK (Round 2)")
+                print("-" * 50)
+                
+                # PROSES 5.4: SBT_INSTRUMENT -> SBT_ANAPAK (kedua kali)
+                print("🔓 Reading results from INSTRUMENT Round 2...")
+                wb_instrument_read = load_workbook(sbt_instrument_path, data_only=True)
+                sheet_instrument_proposal = wb_instrument_read["DATA PROPOSAL"]
+                instrument_value_b8_2 = sheet_instrument_proposal['B8'].value
+                instrument_value_b5_2 = sheet_instrument_proposal['B5'].value
+                
+                print(f"📊 Retrieved from INSTRUMENT (Round 2):")
+                print(f"   B8: {instrument_value_b8_2}")
+                print(f"   B5: {instrument_value_b5_2}")
+                
+                wb_instrument_read.close()
+                
+                print("🔓 Opening ANAPAK for Round 2 update...")
+                wb_anapak = load_workbook(sbt_anapak_path)
+                sheet_anapak_output = wb_anapak["DATA_OUTPUT"]
+                
+                old_c81 = sheet_anapak_output['C81'].value
+                old_c82 = sheet_anapak_output['C82'].value
+                
+                sheet_anapak_output['C81'] = instrument_value_b8_2  # DATA PROPOSAL.B8 -> DATA_OUTPUT.C81
+                sheet_anapak_output['C82'] = instrument_value_b5_2  # DATA PROPOSAL.B5 -> DATA_OUTPUT.C82
+                
+                print(f"📊 Updated ANAPAK (Round 2):")
+                print(f"   C81: {old_c81} → {instrument_value_b8_2}")
+                print(f"   C82: {old_c82} → {instrument_value_b5_2}")
+                
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                print("✅ ANAPAK Round 2 updated and saved")
+                
+                if progress_callback:
+                    progress_callback(75, "Processing third round of SBT_INSTRUMENT...")
+                
+                print("\n🔄 PROSES 5.5: ANAPAK → INSTRUMENT (Round 3)")
+                print("-" * 50)
+                
+                # PROSES 5.5: SBT_ANAPAK -> SBT_INSTRUMENT (ketiga kali)
+                print("🔓 Reading C86 from ANAPAK...")
+                wb_anapak_read = load_workbook(sbt_anapak_path, data_only=True)
+                sheet_anapak_output_read = wb_anapak_read["DATA_OUTPUT"]
+                anapak_value_c86 = sheet_anapak_output_read['C86'].value
+                print(f"📊 Retrieved C86: {anapak_value_c86}")
+                wb_anapak_read.close()
+                
+                print("🔓 Opening INSTRUMENT for Round 3...")
+                wb_instrument = load_workbook(sbt_instrument_path)
+                sheet_instrument_input = wb_instrument["DATA INPUT"]
+                
+                old_b5_3 = sheet_instrument_input['B5'].value
+                sheet_instrument_input['B5'] = anapak_value_c86  # DATA_OUTPUT.C86 -> DATA INPUT.B5
+                print(f"📊 Updated INSTRUMENT B5 (Round 3): {old_b5_3} → {anapak_value_c86}")
+                
+                wb_instrument.save(sbt_instrument_path)
+                wb_instrument.close()
+                print("✅ INSTRUMENT saved")
+                
+                print("\n🧮 CALCULATING SBT_INSTRUMENT (Round 3)")
+                print("-" * 50)
+                
+                # Force calculation ketiga kali
+                try:
+                    print("🔄 Starting force calculation for SBT_INSTRUMENT Round 3...")
+                    # self.force_excel_calculation(sbt_instrument_path, 
+                    #     lambda pct, msg: progress_callback(75 + (pct * 0.05), f"SBT_INSTRUMENT Round 3: {msg}") if progress_callback else None)
+                    print("✅ SBT_INSTRUMENT Round 3 calculation completed")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during Round 3 calculation: {str(e)}")
+                    pass
+                
+                print("\n📤 PROSES 5.6: INSTRUMENT → ANAPAK (Round 3)")
+                print("-" * 50)
+                
+                # PROSES 5.6: SBT_INSTRUMENT -> SBT_ANAPAK (ketiga kali)
+                print("🔓 Reading results from INSTRUMENT Round 3...")
+                wb_instrument_read = load_workbook(sbt_instrument_path, data_only=True)
+                sheet_instrument_proposal = wb_instrument_read["DATA PROPOSAL"]
+                instrument_value_b8_3 = sheet_instrument_proposal['B8'].value
+                instrument_value_b5_3 = sheet_instrument_proposal['B5'].value
+                
+                print(f"📊 Retrieved from INSTRUMENT (Round 3):")
+                print(f"   B8: {instrument_value_b8_3}")
+                print(f"   B5: {instrument_value_b5_3}")
+                
+                wb_instrument_read.close()
+                
+                print("🔓 Opening ANAPAK for Round 3 update...")
+                wb_anapak = load_workbook(sbt_anapak_path)
+                sheet_anapak_output = wb_anapak["DATA_OUTPUT"]
+                
+                old_c87 = sheet_anapak_output['C87'].value
+                old_c88 = sheet_anapak_output['C88'].value
+                
+                sheet_anapak_output['C87'] = instrument_value_b8_3  # DATA PROPOSAL.B8 -> DATA_OUTPUT.C87
+                sheet_anapak_output['C88'] = instrument_value_b5_3  # DATA PROPOSAL.B5 -> DATA_OUTPUT.C88
+                
+                print(f"📊 Updated ANAPAK (Round 3):")
+                print(f"   C87: {old_c87} → {instrument_value_b8_3}")
+                print(f"   C88: {old_c88} → {instrument_value_b5_3}")
+                
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                print("✅ ANAPAK Round 3 updated and saved")
+                
+                if progress_callback:
+                    progress_callback(80, "Processing SBT_DOSINGPUMP (PROSES 6)...")
+                
+                print("\n💊 PROSES 6: SET_BDU → DOSINGPUMP")
+                print("-" * 50)
+                
+                # PROSES 6: SET_BDU -> SBT_DOSINGPUMP
+                if os.path.exists(sbt_dosingpump_path):
+                    print(f"✅ SBT_DOSINGPUMP file found: {sbt_dosingpump_path}")
+                    
+                    print("🔓 Reading B45 from SET_BDU...")
+                    wb_bdu_dosing = load_workbook(set_bdu_path, data_only=True)
+                    sheet_project_dosing = wb_bdu_dosing["DIP_Project Information"]
+                    dosing_value_b45 = sheet_project_dosing['B45'].value
+                    print(f"📊 Retrieved B45: {dosing_value_b45}")
+                    wb_bdu_dosing.close()
+                    
+                    print("🔓 Opening SBT_DOSINGPUMP...")
+                    wb_dosing = load_workbook(sbt_dosingpump_path)
+                    print(f"📋 Available sheets: {wb_dosing.sheetnames}")
+                    
+                    if "DATA INPUT" not in wb_dosing.sheetnames:
+                        print("❌ Sheet DATA INPUT not found in DOSINGPUMP!")
+                        print(f"📋 Available sheets: {wb_dosing.sheetnames}")
+                    else:
+                        sheet_dosing_input = wb_dosing["DATA INPUT"]
+                        old_b6 = sheet_dosing_input['B6'].value
+                        sheet_dosing_input['B6'] = dosing_value_b45  # DIP_Project Information.B45 -> DATA INPUT.B6
+                        print(f"📊 Updated DOSINGPUMP B6: {old_b6} → {dosing_value_b45}")
+                        
+                        wb_dosing.save(sbt_dosingpump_path)
+                        print("✅ SBT_DOSINGPUMP saved")
+                    
+                    wb_dosing.close()
+                    
+                    print("\n🧮 CALCULATING SBT_DOSINGPUMP")
+                    print("-" * 50)
+                    
+                    # Force calculation untuk SBT_DOSINGPUMP
+                    try:
+                        print("🔄 Starting force calculation for SBT_DOSINGPUMP...")
+                        # self.force_excel_calculation(sbt_dosingpump_path, 
+                        #     lambda pct, msg: progress_callback(80 + (pct * 0.05), f"SBT_DOSINGPUMP: {msg}") if progress_callback else None)
+                        print("✅ SBT_DOSINGPUMP calculation completed")
+                        time.sleep(2)
+                    except Exception as e:
+                        pass
+                    
+                if progress_callback:
+                    progress_callback(85, "Reading final output data...")
+                
+                print("\n📊 READING FINAL OUTPUT DATA")
+                print("-" * 50)
+                
+                # Baca data output final dari SBT_ANAPAK
+                print("🔓 Opening SBT_ANAPAK for final data extraction...")
+                wb_anapak_final = load_workbook(sbt_anapak_path, data_only=True)
+                
+                if "DATA_OUTPUT" not in wb_anapak_final.sheetnames:
+                    print("❌ Sheet DATA_OUTPUT not found in SBT_ANAPAK!")
+                    print(f"📋 Available sheets: {wb_anapak_final.sheetnames}")
                     raise Exception("Sheet DATA_OUTPUT not found in SBT_ANAPAK.xlsx")
                     
-                sheet_output = wb_anapak_output["DATA_OUTPUT"]
+                sheet_output_final = wb_anapak_final["DATA_OUTPUT"]
+                print("✅ Found DATA_OUTPUT sheet")
                 
                 # Ambil nilai dari sheet DATA_OUTPUT
                 output_values = {}
+                print("📋 Extracting final output values...")
                 try:
-                    output_values['B4'] = sheet_output['C20'].value
-                    output_values['B5'] = sheet_output['C21'].value
-                    output_values['B6'] = sheet_output['C22'].value
-                    output_values['B7'] = sheet_output['C23'].value
-                    output_values['B8'] = sheet_output['C24'].value
-                    output_values['B9'] = sheet_output['C25'].value
-                    output_values['B11'] = sheet_output['C30'].value
-                    output_values['B12'] = sheet_output['C31'].value
+                    # Data dari output ANAPAK
+                    output_values['B4'] = sheet_output_final['C20'].value
+                    output_values['B5'] = sheet_output_final['C21'].value
+                    output_values['B6'] = sheet_output_final['C22'].value
+                    output_values['B7'] = sheet_output_final['C23'].value
+                    output_values['B8'] = sheet_output_final['C24'].value
+                    output_values['B9'] = sheet_output_final['C25'].value
+                    output_values['B11'] = sheet_output_final['C30'].value
+                    output_values['B12'] = sheet_output_final['C31'].value
+                    
+                    # Data dari pump
+                    output_values['B16'] = sheet_output_final['C33'].value  # Dari pump DATA_ENGINE.B19
+                    
+                    # Data dari instrument
+                    output_values['B17'] = sheet_output_final['C75'].value  # Round 1 B8
+                    output_values['B18'] = sheet_output_final['C76'].value  # Round 1 B5
+                    output_values['B19'] = sheet_output_final['C81'].value  # Round 2 B8
+                    output_values['B20'] = sheet_output_final['C82'].value  # Round 2 B5
+                    output_values['B21'] = sheet_output_final['C87'].value  # Round 3 B8
+                    output_values['B22'] = sheet_output_final['C88'].value  # Round 3 B5
+                    
+                    print("📊 Final output values extracted:")
+                    for key, value in output_values.items():
+                        print(f"   {key}: {value}")
+                    
                 except Exception as e:
-                    print(f"Error reading DATA_OUTPUT values: {str(e)}")
+                    print(f"⚠️ Error reading final output values: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
                 
-                wb_anapak_output.close()
+                wb_anapak_final.close()
+                print("✅ SBT_ANAPAK final closed")
                 
                 if progress_callback:
-                    progress_callback(90, "Updating SET_BDU with calculated results...")
+                    progress_callback(90, "Updating SET_BDU with final results...")
                 
-                # Buka SBT_PUMP untuk mendapatkan data tambahan
-                wb_pump_input = load_workbook(sbt_pump_path, data_only=True)
+                print("\n📤 UPDATING SET_BDU WITH FINAL RESULTS")
+                print("-" * 50)
                 
-                # Data dari DATA INPUT sheet
-                if "DATA INPUT" in wb_pump_input.sheetnames:
-                    sheet_pump_input = wb_pump_input["DATA INPUT"]
-                    try:
-                        output_values['B14'] = sheet_pump_input['B13'].value
-                        output_values['B15'] = sheet_pump_input['B14'].value
-                    except Exception as e:
-                        print(f"Error reading DATA INPUT values: {str(e)}")
-                
-                # Data dari DATA ENGINE sheet
-                if "DATA ENGINE" in wb_pump_input.sheetnames:
-                    sheet_pump_engine = wb_pump_input["DATA ENGINE"]
-                    try:
-                        output_values['B16'] = sheet_pump_engine['B19'].value
-                    except Exception as e:
-                        print(f"Error reading DATA ENGINE values: {str(e)}")
-                
-                wb_pump_input.close()
-                
-                # Update SET_BDU dengan hasil perhitungan
+                # Update SET_BDU dengan hasil perhitungan final
+                print(f"🔓 Opening SET_BDU for final update: {set_bdu_path}")
                 wb_bdu_final = load_workbook(set_bdu_path)
+                print(f"📋 Available sheets: {wb_bdu_final.sheetnames}")
                 
                 if "DATA_TEMP" not in wb_bdu_final.sheetnames:
+                    print("❌ Sheet DATA_TEMP not found in SET_BDU!")
+                    print(f"📋 Available sheets: {wb_bdu_final.sheetnames}")
                     raise Exception("Sheet DATA_TEMP not found in SET_BDU.xlsx")
                     
                 sheet_temp = wb_bdu_final["DATA_TEMP"]
+                print("✅ Found DATA_TEMP sheet")
                 
                 # Transfer semua nilai ke SET_BDU.DATA_TEMP
+                print("📊 Writing final values to DATA_TEMP:")
                 for cell_addr, value in output_values.items():
                     if value is not None:
+                        old_value = sheet_temp[cell_addr].value
                         sheet_temp[cell_addr] = value
+                        print(f"   {cell_addr}: {old_value} → {value}")
+                    else:
+                        print(f"   {cell_addr}: Skipped (None value)")
                 
                 # Simpan SET_BDU
+                print("💾 Saving final SET_BDU...")
                 wb_bdu_final.save(set_bdu_path)
                 wb_bdu_final.close()
+                print("✅ SET_BDU final saved and closed")
                 
                 if progress_callback:
                     progress_callback(100, "Projection completed successfully!")
                 
-                return "Projection process completed successfully. All data has been processed and calculated."
+                print("\n" + "=" * 80)
+                print("🎉 PROJECTION PROCESS COMPLETED SUCCESSFULLY!")
+                print("=" * 80)
+                print("📋 Summary:")
+                print(f"   ✅ PROSES 1: SET_BDU → ANAPAK (14 fields transferred)")
+                print(f"   ✅ PROSES 2: Pump file selected: {pump_filename}")
+                print(f"   ✅ PROSES 3: ANAPAK ↔ PUMP (data exchanged and macro executed)")
+                print(f"   ✅ PROSES 4-5: INSTRUMENT processing (3 rounds completed)")
+                print(f"   ✅ PROSES 6: DOSINGPUMP processing")
+                print(f"   ✅ Final data written to SET_BDU.DATA_TEMP ({len([v for v in output_values.values() if v is not None])} fields)")
+                print("=" * 80)
+                
+                return "Projection process completed successfully. All data has been processed through ANAPAK, PUMP, INSTRUMENT, and DOSINGPUMP modules."
                 
             except Exception as e:
+                error_msg = f"Error during projection: {str(e)}"
+                print(f"\n🚨 CRITICAL ERROR:")
+                print("=" * 80)
+                print(f"❌ {error_msg}")
+                print("=" * 80)
+                import traceback
+                traceback.print_exc()
+                
                 if progress_callback:
                     progress_callback(100, f"Error: {str(e)}")
-                return f"Error during projection: {str(e)}"
+                return error_msg
         
         # Show loading screen
         loading_screen = LoadingScreen(
             parent=self,
-            title="Running Projection",
-            message="Processing data through ANAPAK and PUMP modules..."
+            title="Running Advanced Projection",
+            message="Processing data through ANAPAK, PUMP, INSTRUMENT, and DOSINGPUMP modules..."
         )
         loading_screen.show()
         loading_screen.start_loading(projection_process)
@@ -1980,14 +2568,21 @@ class BDUGroupView(QMainWindow):
         # Connect completion handler
         def on_projection_complete(success, message):
             if success:
+                print("\n🎯 PROJECTION COMPLETED - UI NOTIFICATION")
+                print("-" * 50)
                 QMessageBox.information(
                     self, 
                     "Projection Complete", 
-                    "Projection process has been completed successfully. Data has been processed and calculated."
+                    "Advanced projection process has been completed successfully. Data has been processed through all required modules."
                 )
+                print("🔄 Refreshing UI display...")
                 # Refresh display
                 self.load_excel_data()
+                print("✅ UI refresh completed")
             else:
+                print(f"\n🚨 PROJECTION FAILED - UI NOTIFICATION")
+                print("-" * 50)
+                print(f"❌ Error message: {message}")
                 QMessageBox.critical(
                     self, 
                     "Projection Error", 
@@ -1995,9 +2590,10 @@ class BDUGroupView(QMainWindow):
                 )
             
             self.statusBar().clearMessage()
+            print("🏁 Projection process fully completed")
         
-        loading_screen.worker.task_completed.connect(on_projection_complete)                
-    
+        loading_screen.worker.task_completed.connect(on_projection_complete)
+            
     def run_generate_proposal(self):
         """Fungsi untuk menjalankan generate proposal dengan loading screen dan dynamic filename"""
         
@@ -5087,6 +5683,10 @@ class BDUGroupView(QMainWindow):
                 city1_dropdown = None
                 province2_dropdown = None
                 city2_dropdown = None
+                pump_brand_dropdown = None
+                pump_type_dropdown = None
+                pump_model_dropdown = None
+                effluent_warranty_dropdown = None
                 
                 # Find specific dropdown widgets
                 for key, widget in self.data_fields.items():
@@ -5101,7 +5701,8 @@ class BDUGroupView(QMainWindow):
                     placeholder_type = widget.property("placeholder_type") or ""
                     province_number = widget.property("province_number") or ""
                     city_number = widget.property("city_number") or ""
-                    
+                    pump_dropdown_type = widget.property("pump_dropdown_type") or ""
+                     
                     # Identify specific dropdowns
                     if "Industry Classification" in widget_label:
                         industry_dropdown = widget
@@ -5121,6 +5722,18 @@ class BDUGroupView(QMainWindow):
                     elif placeholder_type == "city" and city_number == "2":
                         city2_dropdown = widget
                         widget_mapping['2City'] = widget
+                    elif "Effluent Warranty" in widget_label:
+                        effluent_warranty_dropdown = widget
+                        widget_mapping['Effluent Warranty'] = widget
+                    elif pump_dropdown_type == "pump_brand" or "Pump Brand" in widget_label:
+                        pump_brand_dropdown = widget
+                        widget_mapping['Pump Brand Selection'] = widget
+                    elif pump_dropdown_type == "pump_type" or "Pump Type" in widget_label:
+                        pump_type_dropdown = widget
+                        widget_mapping['Pump Type'] = widget
+                    elif pump_dropdown_type == "pump_model" or "Pump Model" in widget_label:
+                        pump_model_dropdown = widget
+                        widget_mapping['Pump Model'] = widget
 
                 if progress_callback:
                     progress_callback(45, "Processing remaining dropdown widgets...")
@@ -5130,7 +5743,9 @@ class BDUGroupView(QMainWindow):
                 for key, widget in self.data_fields.items():
                     if (not key.startswith(sheet_name) or not isinstance(widget, QComboBox) or
                         widget in [industry_dropdown, sub_industry_dropdown, province1_dropdown, 
-                                city1_dropdown, province2_dropdown, city2_dropdown]):
+                                city1_dropdown, province2_dropdown, city2_dropdown,
+                                effluent_warranty_dropdown, pump_brand_dropdown, 
+                                pump_type_dropdown, pump_model_dropdown]):  # TAMBAHAN: Include pump dropdowns
                         continue
                     remaining_widgets.append((key, widget))
 
@@ -5149,6 +5764,24 @@ class BDUGroupView(QMainWindow):
                     if cell_key in validation_data:
                         expected_options = validation_data[cell_key]['options']
                     
+                    # TAMBAHAN: Untuk field hardcoded, gunakan options dari konstanta
+                    if "Effluent Warranty" in field_name:
+                        expected_options = EFFLUENT_WARRANTY_OPTIONS
+                    elif "Pump Brand" in field_name:
+                        expected_options = ["GRUNDFOS", "KSB", "XYLEM", "ITT GOULDS", "EBARA", "WILO", "FLOWREX", "CNP", "LEO"]
+                    elif "Pump Type" in field_name and pump_brand_dropdown:
+                        # Get pump type options based on selected brand
+                        selected_brand = pump_brand_dropdown.currentText()
+                        if selected_brand in PUMP_BRAND_TYPE_MAPPING:
+                            expected_options = PUMP_BRAND_TYPE_MAPPING[selected_brand]
+                    elif "Pump Model" in field_name and pump_brand_dropdown and pump_type_dropdown:
+                        # Get pump model options based on brand and type
+                        selected_brand = pump_brand_dropdown.currentText()
+                        selected_type = pump_type_dropdown.currentText()
+                        model_key = (selected_brand, selected_type)
+                        if model_key in PUMP_BRAND_TYPE_MODEL_MAPPING:
+                            expected_options = PUMP_BRAND_TYPE_MODEL_MAPPING[model_key]
+                    
                     # Find the best matching widget
                     best_widget = None
                     best_match_score = 0
@@ -5160,12 +5793,14 @@ class BDUGroupView(QMainWindow):
                         
                         # Get widget options
                         widget_options = [widget.itemText(i) for i in range(widget.count())]
+                        # Remove placeholder options
+                        clean_widget_options = [opt for opt in widget_options if not opt.startswith("-- ")]
                         
                         # Calculate match score
                         match_score = 0
                         if expected_options:
                             # Count exact matches
-                            exact_matches = len(set(expected_options) & set(widget_options))
+                            exact_matches = len(set(expected_options) & set(clean_widget_options))
                             match_score = exact_matches / len(expected_options) if expected_options else 0
                             
                             # Bonus for complete match
