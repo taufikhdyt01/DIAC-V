@@ -207,8 +207,8 @@ class SimpleFormulaEvaluator:
 # Configuration untuk cell-cell yang mengandung formula
 FORMULA_CELLS = {
     # Format: "sheet_name.cell_ref": "display_name"
-    "DIP_Project Information.B85": "Cost and Freight Information",
-    "DIP_Project Information.B86": "Payment Terms Information",
+    "DIP_Data Input.B68": "Cost and Freight Information",
+    "DIP_Data Input.B73": "Payment Terms Information",
     # Tambahkan cell formula lainnya di sini jika diperlukan
 }
 
