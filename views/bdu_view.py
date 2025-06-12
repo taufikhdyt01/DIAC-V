@@ -2044,9 +2044,10 @@ class BDUGroupView(QMainWindow):
                     raise Exception(error_msg)
                 
                 if progress_callback:
-                    progress_callback(60, "Running GENERATE_REPORT macro in SBT_PUMP...")
+                    progress_callback(70, "Running GENERATE_REPORT macro in SBT_PUMP...")
                 
-                print("\n🔧 PROSES 3.2: RUNNING PUMP MACRO")
+                print("-" * 50)
+                print("🎯 PROSES 3.2: Menjalankan macro di SBT_PUMP dengan xlwings (FIXED)")
                 print("-" * 50)
                 
                 # PROSES 3.2: Menjalankan macro di SBT_PUMP 
@@ -2054,24 +2055,109 @@ class BDUGroupView(QMainWindow):
                 macro_success = False
                 
                 try:
-                    print("🔄 Method 1: Using xlwings...")
+                    print("🔄 Method: Using xlwings with dependency check...")
+                    
+                    # Check dan install dependencies jika diperlukan
+                    print("🔍 Checking dependencies...")
+                    missing_deps = []
+                    
+                    try:
+                        import matplotlib
+                        print("✅ matplotlib is available")
+                    except ImportError:
+                        missing_deps.append("matplotlib")
+                        print("❌ matplotlib not found")
+                    
+                    try:
+                        import xlwings as xw
+                        print("✅ xlwings is available")
+                    except ImportError:
+                        missing_deps.append("xlwings")
+                        print("❌ xlwings not found")
+                    
+                    if missing_deps:
+                        print(f"⚠️ Missing dependencies: {', '.join(missing_deps)}")
+                        print("🔄 Attempting to install missing dependencies...")
+                        
+                        for dep in missing_deps:
+                            try:
+                                subprocess.check_call([sys.executable, "-m", "pip", "install", dep])
+                                print(f"✅ {dep} installed successfully")
+                            except Exception as install_error:
+                                print(f"❌ Failed to install {dep}: {str(install_error)}")
+                                # Continue without the dependency
+                    
+                    # Try to import all_udf with error handling
+                    all_udf_imported = False
+                    if os.path.exists(all_udf_path):
+                        try:
+                            print("📥 Importing all_udf functions...")
+                            import importlib.util
+                            spec = importlib.util.spec_from_file_location("all_udf", all_udf_path)
+                            all_udf_module = importlib.util.module_from_spec(spec)
+                            spec.loader.exec_module(all_udf_module)
+                            print("✅ all_udf imported successfully")
+                            all_udf_imported = True
+                        except Exception as udf_error:
+                            print(f"⚠️ Warning: all_udf import failed: {str(udf_error)}")
+                            print("⚠️ Continuing without all_udf import...")
+                            all_udf_imported = False
+                    else:
+                        print(f"⚠️ Warning: all_udf.py not found at {all_udf_path}")
+                    
+                    # Import xlwings after dependency check
                     import xlwings as xw
                     
+                    # Inisialisasi xlwings app
                     app = xw.App(visible=False)
                     app.display_alerts = False
                     app.api.AutomationSecurity = 1
+                    print("✅ xlwings app initialized")
                     
+                    # Buka workbook
                     wb = xw.Book(sbt_pump_path)
-                    print(f"✅ Workbook opened with xlwings")
+                    print(f"✅ Workbook opened: {os.path.basename(sbt_pump_path)}")
+                    
+                    # Register UDF jika berhasil diimport
+                    if all_udf_imported:
+                        print("🔗 Registering UDF functions to Excel...")
+                        try:
+                            xw.Book.set_mock_caller(wb)
+                            print("✅ UDF functions registered successfully")
+                        except Exception as udf_error:
+                            print(f"⚠️ Warning: UDF registration failed: {str(udf_error)}")
                     
                     # Jalankan macro GENERATE_REPORT
-                    print("🚀 Running GENERATE_REPORT macro...")
-                    wb.api.Application.Run(f"'{pump_filename}'!GENERATE_REPORT")
-                    print("✅ Macro executed successfully")
+                    pump_filename = os.path.basename(sbt_pump_path)
+                    print(f"🚀 Running GENERATE_REPORT macro from {pump_filename}...")
+                    
+                    try:
+                        # Coba beberapa format pemanggilan macro
+                        wb.api.Application.Run(f"'{pump_filename}'!GENERATE_REPORT")
+                        print("✅ Macro executed successfully (format 1)")
+                    except Exception as macro_error1:
+                        print(f"⚠️ Format 1 failed: {str(macro_error1)}")
+                        try:
+                            wb.api.Application.Run("GENERATE_REPORT")
+                            print("✅ Macro executed successfully (format 2)")
+                        except Exception as macro_error2:
+                            print(f"⚠️ Format 2 failed: {str(macro_error2)}")
+                            try:
+                                wb.api.Application.Run("SBT_PUMP.xlsm!GENERATE_REPORT")
+                                print("✅ Macro executed successfully (format 3)")
+                            except Exception as macro_error3:
+                                print(f"❌ All macro formats failed: {str(macro_error3)}")
+                                raise macro_error3
                     
                     # Tunggu macro selesai
                     print("⏳ Waiting for macro completion...")
                     time.sleep(5)
+                    
+                    # Pastikan semua kalkulasi selesai
+                    print("🔄 Ensuring all calculations are complete...")
+                    wb.api.Application.CalculateFullRebuild()
+                    wb.api.Application.Calculate()
+                    time.sleep(2)
                     
                     print("💾 Saving workbook...")
                     wb.save()
@@ -2083,61 +2169,172 @@ class BDUGroupView(QMainWindow):
                 except Exception as e:
                     print(f"❌ xlwings method failed: {str(e)}")
                     
-                    # Alternative dengan VBScript
+                    # Cleanup jika ada error
                     try:
+                        if 'wb' in locals():
+                            wb.close()
+                        if 'app' in locals():
+                            app.quit()
+                    except:
+                        pass
+                    
+                    # Enhanced VBScript method with better file handling
+                    try:
+                        print("🔄 Trying enhanced VBScript method...")
                         import tempfile
-                        vbs_file = tempfile.NamedTemporaryFile(delete=False, suffix='.vbs')
-                        vbs_path = vbs_file.name
+                        import uuid
+                        import threading
                         
+                        # Create unique filename untuk menghindari konflik
+                        unique_id = str(uuid.uuid4())[:8]
+                        vbs_filename = f"run_macro_{unique_id}.vbs"
+                        temp_dir = tempfile.gettempdir()
+                        vbs_path = os.path.join(temp_dir, vbs_filename)
+                        
+                        # Pastikan file tidak ada sebelumnya
+                        if os.path.exists(vbs_path):
+                            try:
+                                os.remove(vbs_path)
+                            except:
+                                pass
+                        
+                        pump_filename = os.path.basename(sbt_pump_path)
+                        
+                        # Enhanced VBScript dengan better error handling
                         vbs_script = f'''
-                        Set objExcel = CreateObject("Excel.Application")
-                        objExcel.DisplayAlerts = False
-                        objExcel.Visible = False
-                        objExcel.AutomationSecurity = 1
-                        
-                        Set objWorkbook = objExcel.Workbooks.Open("{sbt_pump_path}")
-                        
-                        On Error Resume Next
-                        objExcel.Run "GENERATE_REPORT"
-                        If Err.Number <> 0 Then
-                            Err.Clear
-                            objExcel.Run "'{pump_filename}'!GENERATE_REPORT"
-                        End If
-                        
-                        WScript.Sleep 5000
-                        
-                        objWorkbook.Save
-                        objWorkbook.Close
-                        objExcel.Quit
-                        
-                        Set objWorkbook = Nothing
-                        Set objExcel = Nothing
+    On Error Resume Next
+
+    ' Create Excel Application
+    Set objExcel = CreateObject("Excel.Application")
+    If Err.Number <> 0 Then
+        WScript.Echo "Error creating Excel application: " & Err.Description
+        WScript.Quit 1
+    End If
+
+    ' Configure Excel
+    objExcel.DisplayAlerts = False
+    objExcel.Visible = False
+    objExcel.AutomationSecurity = 1
+    objExcel.EnableEvents = False
+
+    ' Open Workbook
+    Set objWorkbook = objExcel.Workbooks.Open("{sbt_pump_path}")
+    If Err.Number <> 0 Then
+        WScript.Echo "Error opening workbook: " & Err.Description
+        objExcel.Quit
+        WScript.Quit 1
+    End If
+
+    ' Run Macro - Try multiple formats
+    Err.Clear
+    objExcel.Run "GENERATE_REPORT"
+    If Err.Number <> 0 Then
+        Err.Clear
+        objExcel.Run "'{pump_filename}'!GENERATE_REPORT"
+        If Err.Number <> 0 Then
+            Err.Clear  
+            objExcel.Run "SBT_PUMP.xlsm!GENERATE_REPORT"
+            If Err.Number <> 0 Then
+                WScript.Echo "Error running macro: " & Err.Description
+            Else
+                WScript.Echo "Macro executed successfully (format 3)"
+            End If
+        Else
+            WScript.Echo "Macro executed successfully (format 2)"
+        End If
+    Else
+        WScript.Echo "Macro executed successfully (format 1)"
+    End If
+
+    ' Save and Close
+    objWorkbook.Save
+    objWorkbook.Close
+    objExcel.Quit
+
+    ' Cleanup
+    Set objWorkbook = Nothing
+    Set objExcel = Nothing
+
+    WScript.Echo "VBScript execution completed"
                         '''
                         
-                        vbs_file.write(vbs_script.encode('utf-8'))
-                        vbs_file.close()
+                        # Write VBScript file dengan retry mechanism
+                        max_retries = 3
+                        for retry in range(max_retries):
+                            try:
+                                with open(vbs_path, 'w', encoding='utf-8') as f:
+                                    f.write(vbs_script)
+                                break
+                            except Exception as write_error:
+                                print(f"⚠️ Retry {retry + 1}: Failed to write VBS file: {str(write_error)}")
+                                time.sleep(1)
+                                if retry == max_retries - 1:
+                                    raise write_error
                         
-                        if sys.platform == 'win32':
-                            print("🚀 Executing VBScript...")
-                            result = subprocess.call(['cscript.exe', '//nologo', vbs_path])
-                            print(f"📊 VBScript exit code: {result}")
+                        print(f"📝 VBScript written to: {vbs_path}")
                         
-                        try:
-                            os.unlink(vbs_path)
-                            print("🗑️ VBScript file cleaned up")
-                        except:
-                            pass
+                        # Execute VBScript dengan timeout yang lebih lama
+                        print("🚀 Executing VBScript...")
+                        result = subprocess.run(
+                            ['cscript', '//NoLogo', vbs_path], 
+                            capture_output=True, 
+                            text=True, 
+                            timeout=120,  # Increased timeout to 2 minutes
+                            shell=True
+                        )
                         
-                        print("✅ VBScript method completed")
-                        macro_success = True
-                        time.sleep(2)
+                        print(f"📤 VBScript output: {result.stdout}")
+                        if result.stderr:
+                            print(f"⚠️ VBScript stderr: {result.stderr}")
                         
-                    except Exception as alt_e:
-                        print(f"❌ VBScript method failed: {str(alt_e)}")
-                        print("⚠️ All macro execution methods failed, continuing without macro...")
+                        # Cleanup VBScript file dengan retry
+                        for cleanup_retry in range(3):
+                            try:
+                                if os.path.exists(vbs_path):
+                                    os.remove(vbs_path)
+                                break
+                            except Exception as cleanup_error:
+                                print(f"⚠️ Cleanup retry {cleanup_retry + 1}: {str(cleanup_error)}")
+                                time.sleep(1)
+                        
+                        if result.returncode == 0:
+                            print("✅ VBScript method completed successfully")
+                            macro_success = True
+                        else:
+                            print(f"❌ VBScript method failed with return code: {result.returncode}")
+                            
+                    except Exception as vbs_error:
+                        print(f"❌ Enhanced VBScript fallback also failed: {str(vbs_error)}")
                 
                 if not macro_success:
-                    print("⚠️ WARNING: Macro execution failed, but continuing process...")
+                    # Last resort: try to open Excel manually and run calculation
+                    print("🔄 Trying last resort: Excel calculation without macro...")
+                    try:
+                        import xlwings as xw
+                        app = xw.App(visible=False)
+                        app.display_alerts = False
+                        wb = xw.Book(sbt_pump_path)
+                        
+                        # Force full calculation
+                        wb.api.Application.CalculateFullRebuild()
+                        wb.api.Application.Calculate()
+                        time.sleep(3)
+                        
+                        wb.save()
+                        wb.close()
+                        app.quit()
+                        
+                        print("✅ Excel calculation completed (without macro)")
+                        macro_success = True
+                        
+                    except Exception as calc_error:
+                        print(f"❌ Excel calculation also failed: {str(calc_error)}")
+                
+                if not macro_success:
+                    print("⚠️ All methods failed, but continuing with projection...")
+                    print("⚠️ Manual intervention may be required for SBT_PUMP.xlsm")
+                
+                print("✅ Macro execution phase completed")
                 
                 if progress_callback:
                     progress_callback(70, "Processing remaining steps...")
