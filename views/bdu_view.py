@@ -2458,7 +2458,446 @@ class BDUGroupView(QMainWindow):
                 print("✅ ANAPAK updated for Process 5.6 (Final)")
                 
                 if progress_callback:
-                    progress_callback(90, "Performing final calculations and cleanup...")
+                    progress_callback(90, "Starting Process 6: SET_BDU → SBT_DOSINGPUMP...")
+                
+                print("\n💊 PROSES 6: SET_BDU → SBT_DOSINGPUMP")
+                print("-" * 50)
+            
+                # PROSES 6: SET_BDU -> SBT_DOSINGPUMP
+                print(f"🔓 Opening SBT_DOSINGPUMP: {sbt_dosingpump_path}")
+                wb_dosingpump = load_workbook(sbt_dosingpump_path, keep_vba=True)
+                print(f"📋 Available sheets: {wb_dosingpump.sheetnames}")
+                
+                # Cari sheet 'DATA INPUT'
+                dosingpump_input_sheet_name = "DATA INPUT"
+                found_dosingpump_sheet = False
+                
+                for sheet_name in wb_dosingpump.sheetnames:
+                    if sheet_name.upper() == dosingpump_input_sheet_name.upper():
+                        dosingpump_input_sheet_name = sheet_name
+                        found_dosingpump_sheet = True
+                        print(f"✅ Found DOSINGPUMP sheet: {sheet_name}")
+                        break
+                
+                if not found_dosingpump_sheet:
+                    print(f"❌ Sheet 'DATA INPUT' not found in SBT_DOSINGPUMP!")
+                    print(f"📋 Available sheets: {wb_dosingpump.sheetnames}")
+                    raise Exception("Sheet 'DATA INPUT' not found in SBT_DOSINGPUMP")
+                
+                sheet_dosingpump_input = wb_dosingpump[dosingpump_input_sheet_name]
+                
+                # Transfer data: DIP_Project Information.B45 -> DATA INPUT.B6
+                # Re-read B45 value dari SET_BDU
+                wb_bdu_read = load_workbook(set_bdu_path, data_only=True)
+                sheet_project_read = wb_bdu_read["DIP_Project Information"]
+                project_b45_value = sheet_project_read['B45'].value
+                wb_bdu_read.close()
+                
+                old_dosingpump_b6 = sheet_dosingpump_input['B6'].value
+                sheet_dosingpump_input['B6'] = project_b45_value
+                
+                print(f"📊 Updated DOSINGPUMP DATA_INPUT:")
+                print(f"   B6: {old_dosingpump_b6} → {project_b45_value}")
+                
+                # Simpan SBT_DOSINGPUMP
+                print("💾 Saving SBT_DOSINGPUMP...")
+                wb_dosingpump.save(sbt_dosingpump_path)
+                wb_dosingpump.close()
+                print("✅ SBT_DOSINGPUMP saved and closed")
+                
+                if progress_callback:
+                    progress_callback(90, "Starting Process 7: Complex ANAPAK ↔ DOSINGPUMP iterations...")
+                
+                print("\n💊 PROSES 7: COMPLEX ANAPAK ↔ DOSINGPUMP ITERATIONS")
+                print("=" * 60)
+                
+                # PROSES 7.1: SBT_ANAPAK -> SBT_DOSINGPUMP
+                print("\n📤 PROSES 7.1: ANAPAK → DOSINGPUMP (Q10 → B4)")
+                print("-" * 50)
+                
+                # Force calculation pada ANAPAK sebelum membaca Q10
+                print("🧮 Force calculating SBT_ANAPAK before reading Q10...")
+                try:
+                    self.force_excel_calculation(sbt_anapak_path,
+                        lambda pct, msg: progress_callback(90 + (pct * 0.02), f"ANAPAK Pre-Q10 Calc: {msg}") if progress_callback else None)
+                    print("✅ SBT_ANAPAK calculation completed before Q10 read")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_ANAPAK calculation: {str(e)}")
+                
+                # Read from ANAPAK CHEMICAL DOSAGE CALC_ANAPAK.Q10
+                wb_anapak_read = load_workbook(sbt_anapak_path, data_only=True)
+                
+                # Cari sheet 'CHEMICAL DOSAGE CALC_ANAPAK'
+                chemical_dosage_sheet_name = "CHEMICAL DOSAGE CALC_ANAPAK"
+                found_chemical_sheet = False
+                
+                for sheet_name in wb_anapak_read.sheetnames:
+                    if "CHEMICAL DOSAGE CALC" in sheet_name.upper() and "ANAPAK" in sheet_name.upper():
+                        chemical_dosage_sheet_name = sheet_name
+                        found_chemical_sheet = True
+                        print(f"✅ Found CHEMICAL DOSAGE sheet: {sheet_name}")
+                        break
+                
+                if not found_chemical_sheet:
+                    print(f"❌ Sheet 'CHEMICAL DOSAGE CALC_ANAPAK' not found!")
+                    print(f"📋 Available sheets: {wb_anapak_read.sheetnames}")
+                    raise Exception("Sheet 'CHEMICAL DOSAGE CALC_ANAPAK' not found in SBT_ANAPAK")
+                
+                sheet_chemical_dosage = wb_anapak_read[chemical_dosage_sheet_name]
+                anapak_q10_value = sheet_chemical_dosage['Q10'].value
+                
+                print(f"📊 Retrieved from ANAPAK CHEMICAL_DOSAGE.Q10: {anapak_q10_value}")
+                wb_anapak_read.close()
+                
+                # Write to DOSINGPUMP DATA INPUT.B4
+                wb_dosingpump = load_workbook(sbt_dosingpump_path, keep_vba=True)
+                sheet_dosingpump_input = wb_dosingpump[dosingpump_input_sheet_name]
+                
+                old_dosingpump_b4 = sheet_dosingpump_input['B4'].value
+                sheet_dosingpump_input['B4'] = anapak_q10_value
+                
+                print(f"📊 Updated DOSINGPUMP DATA_INPUT.B4: {old_dosingpump_b4} → {anapak_q10_value}")
+                
+                wb_dosingpump.save(sbt_dosingpump_path)
+                wb_dosingpump.close()
+                print("✅ DOSINGPUMP updated for Process 7.1")
+                
+                if progress_callback:
+                    progress_callback(92, "Process 7.2: DOSINGPUMP calculation and complex data return...")
+                
+                # PROSES 7.2: SBT_DOSINGPUMP -> SBT_ANAPAK (Force Calculating + Multiple Data Transfer)
+                print("\n📥 PROSES 7.2: DOSINGPUMP → ANAPAK (Force Calc + Multiple Data Transfer)")
+                print("-" * 50)
+                
+                # Force calculation pada DOSINGPUMP
+                print("🧮 Force calculating SBT_DOSINGPUMP...")
+                try:
+                    self.force_excel_calculation(sbt_dosingpump_path,
+                        lambda pct, msg: progress_callback(92 + (pct * 0.01), f"DOSINGPUMP Calc: {msg}") if progress_callback else None)
+                    print("✅ SBT_DOSINGPUMP calculation completed")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_DOSINGPUMP calculation: {str(e)}")
+                
+                # Read calculated values from DOSINGPUMP DATA PROPOSAL
+                wb_dosingpump_read = load_workbook(sbt_dosingpump_path, data_only=True)
+                
+                # Cari sheet 'DATA PROPOSAL'
+                dosingpump_proposal_sheet_name = "DATA PROPOSAL"
+                found_dosingpump_proposal = False
+                
+                for sheet_name in wb_dosingpump_read.sheetnames:
+                    if sheet_name.upper() == dosingpump_proposal_sheet_name.upper():
+                        dosingpump_proposal_sheet_name = sheet_name
+                        found_dosingpump_proposal = True
+                        print(f"✅ Found DOSINGPUMP PROPOSAL sheet: {sheet_name}")
+                        break
+                
+                if not found_dosingpump_proposal:
+                    print(f"❌ Sheet 'DATA PROPOSAL' not found in SBT_DOSINGPUMP!")
+                    print(f"📋 Available sheets: {wb_dosingpump_read.sheetnames}")
+                    raise Exception("Sheet 'DATA PROPOSAL' not found in SBT_DOSINGPUMP")
+                
+                sheet_dosingpump_proposal = wb_dosingpump_read[dosingpump_proposal_sheet_name]
+                
+                # Read multiple values from DATA PROPOSAL
+                dosingpump_b5_value = sheet_dosingpump_proposal['B5'].value
+                dosingpump_b6_value = sheet_dosingpump_proposal['B6'].value
+                dosingpump_b7_value = sheet_dosingpump_proposal['B7'].value
+                dosingpump_b8_value = sheet_dosingpump_proposal['B8'].value
+                dosingpump_b9_value = sheet_dosingpump_proposal['B9'].value
+                dosingpump_b10_value = sheet_dosingpump_proposal['B10'].value
+                
+                print(f"📊 Retrieved from DOSINGPUMP DATA_PROPOSAL:")
+                print(f"   B5: {dosingpump_b5_value}")
+                print(f"   B6: {dosingpump_b6_value}")
+                print(f"   B7: {dosingpump_b7_value}")
+                print(f"   B8: {dosingpump_b8_value}")
+                print(f"   B9: {dosingpump_b9_value}")
+                print(f"   B10: {dosingpump_b10_value}")
+                
+                wb_dosingpump_read.close()
+                
+                # Write to ANAPAK CHEMICAL DOSAGE CALC and DATA_OUTPUT
+                wb_anapak = load_workbook(sbt_anapak_path)
+                sheet_chemical_dosage_write = wb_anapak[chemical_dosage_sheet_name]
+                sheet_anapak_output = wb_anapak["DATA_OUTPUT"]
+                
+                # Update CHEMICAL DOSAGE CALC_ANAPAK (Process 7.2)
+                old_s10 = sheet_chemical_dosage_write['S10'].value
+                old_t10 = sheet_chemical_dosage_write['T10'].value
+                old_u10 = sheet_chemical_dosage_write['U10'].value
+                old_v10 = sheet_chemical_dosage_write['V10'].value
+                old_w10 = sheet_chemical_dosage_write['W10'].value
+                
+                sheet_chemical_dosage_write['S10'] = dosingpump_b5_value   # B5 -> S10
+                sheet_chemical_dosage_write['T10'] = dosingpump_b7_value   # B7 -> T10
+                sheet_chemical_dosage_write['U10'] = dosingpump_b9_value   # B9 -> U10
+                sheet_chemical_dosage_write['V10'] = dosingpump_b8_value   # B8 -> V10
+                sheet_chemical_dosage_write['W10'] = dosingpump_b10_value  # B10 -> W10
+                
+                print(f"📊 Updated ANAPAK CHEMICAL_DOSAGE (Process 7.2):")
+                print(f"   S10: {old_s10} → {dosingpump_b5_value}")
+                print(f"   T10: {old_t10} → {dosingpump_b7_value}")
+                print(f"   U10: {old_u10} → {dosingpump_b9_value}")
+                print(f"   V10: {old_v10} → {dosingpump_b8_value}")
+                print(f"   W10: {old_w10} → {dosingpump_b10_value}")
+                
+                # Update DATA_OUTPUT (Process 7.2)
+                old_c38 = sheet_anapak_output['C38'].value
+                old_c39 = sheet_anapak_output['C39'].value
+                old_c41 = sheet_anapak_output['C41'].value
+                
+                sheet_anapak_output['C38'] = dosingpump_b8_value   # B8 -> C38
+                sheet_anapak_output['C39'] = dosingpump_b10_value  # B10 -> C39
+                sheet_anapak_output['C41'] = dosingpump_b6_value   # B6 -> C41
+                
+                print(f"📊 Updated ANAPAK DATA_OUTPUT (Process 7.2):")
+                print(f"   C38: {old_c38} → {dosingpump_b8_value}")
+                print(f"   C39: {old_c39} → {dosingpump_b10_value}")
+                print(f"   C41: {old_c41} → {dosingpump_b6_value}")
+                
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                print("✅ ANAPAK updated for Process 7.2")
+                
+                if progress_callback:
+                    progress_callback(94, "Process 7.3-7.4: Second DOSINGPUMP iteration...")
+                
+                # PROSES 7.3: SBT_ANAPAK -> SBT_DOSINGPUMP (Q11 -> B4)
+                print("\n📤 PROSES 7.3: ANAPAK → DOSINGPUMP (Q11 → B4)")
+                print("-" * 50)
+                
+                # Force calculation pada ANAPAK sebelum membaca Q11
+                print("🧮 Force calculating SBT_ANAPAK before reading Q11...")
+                try:
+                    self.force_excel_calculation(sbt_anapak_path,
+                        lambda pct, msg: progress_callback(94 + (pct * 0.01), f"ANAPAK Pre-Q11 Calc: {msg}") if progress_callback else None)
+                    print("✅ SBT_ANAPAK calculation completed before Q11 read")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_ANAPAK calculation: {str(e)}")
+                
+                # Read from ANAPAK CHEMICAL DOSAGE CALC_ANAPAK.Q11
+                wb_anapak_read = load_workbook(sbt_anapak_path, data_only=True)
+                sheet_chemical_dosage_read = wb_anapak_read[chemical_dosage_sheet_name]
+                anapak_q11_value = sheet_chemical_dosage_read['Q11'].value
+                
+                print(f"📊 Retrieved from ANAPAK CHEMICAL_DOSAGE.Q11: {anapak_q11_value}")
+                wb_anapak_read.close()
+                
+                # Write to DOSINGPUMP DATA INPUT.B4
+                wb_dosingpump = load_workbook(sbt_dosingpump_path, keep_vba=True)
+                sheet_dosingpump_input = wb_dosingpump[dosingpump_input_sheet_name]
+                
+                old_dosingpump_b4_2 = sheet_dosingpump_input['B4'].value
+                sheet_dosingpump_input['B4'] = anapak_q11_value
+                
+                print(f"📊 Updated DOSINGPUMP DATA_INPUT.B4: {old_dosingpump_b4_2} → {anapak_q11_value}")
+                
+                wb_dosingpump.save(sbt_dosingpump_path)
+                wb_dosingpump.close()
+                print("✅ DOSINGPUMP updated for Process 7.3")
+                
+                # PROSES 7.4: SBT_DOSINGPUMP -> SBT_ANAPAK (Force Calculating + Multiple Data Transfer)
+                print("\n📥 PROSES 7.4: DOSINGPUMP → ANAPAK (Force Calc + Multiple Data Transfer)")
+                print("-" * 50)
+                
+                # Force calculation pada DOSINGPUMP
+                print("🧮 Force calculating SBT_DOSINGPUMP (round 2)...")
+                try:
+                    self.force_excel_calculation(sbt_dosingpump_path,
+                        lambda pct, msg: progress_callback(95 + (pct * 0.01), f"DOSINGPUMP Calc 2: {msg}") if progress_callback else None)
+                    print("✅ SBT_DOSINGPUMP calculation completed (round 2)")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_DOSINGPUMP calculation (round 2): {str(e)}")
+                
+                # Read calculated values from DOSINGPUMP DATA PROPOSAL (round 2)
+                wb_dosingpump_read = load_workbook(sbt_dosingpump_path, data_only=True)
+                sheet_dosingpump_proposal = wb_dosingpump_read[dosingpump_proposal_sheet_name]
+                
+                # Read multiple values from DATA PROPOSAL (round 2)
+                dosingpump_b5_value_2 = sheet_dosingpump_proposal['B5'].value
+                dosingpump_b6_value_2 = sheet_dosingpump_proposal['B6'].value
+                dosingpump_b7_value_2 = sheet_dosingpump_proposal['B7'].value
+                dosingpump_b8_value_2 = sheet_dosingpump_proposal['B8'].value
+                dosingpump_b9_value_2 = sheet_dosingpump_proposal['B9'].value
+                dosingpump_b10_value_2 = sheet_dosingpump_proposal['B10'].value
+                
+                print(f"📊 Retrieved from DOSINGPUMP DATA_PROPOSAL (round 2):")
+                print(f"   B5: {dosingpump_b5_value_2}")
+                print(f"   B6: {dosingpump_b6_value_2}")
+                print(f"   B7: {dosingpump_b7_value_2}")
+                print(f"   B8: {dosingpump_b8_value_2}")
+                print(f"   B9: {dosingpump_b9_value_2}")
+                print(f"   B10: {dosingpump_b10_value_2}")
+                
+                wb_dosingpump_read.close()
+                
+                # Write to ANAPAK CHEMICAL DOSAGE CALC and DATA_OUTPUT (round 2)
+                wb_anapak = load_workbook(sbt_anapak_path)
+                sheet_chemical_dosage_write = wb_anapak[chemical_dosage_sheet_name]
+                sheet_anapak_output = wb_anapak["DATA_OUTPUT"]
+                
+                # Update CHEMICAL DOSAGE CALC_ANAPAK (Process 7.4)
+                old_s11 = sheet_chemical_dosage_write['S11'].value
+                old_t11 = sheet_chemical_dosage_write['T11'].value
+                old_u11 = sheet_chemical_dosage_write['U11'].value
+                old_v11 = sheet_chemical_dosage_write['V11'].value
+                old_w11 = sheet_chemical_dosage_write['W11'].value
+                
+                sheet_chemical_dosage_write['S11'] = dosingpump_b5_value_2   # B5 -> S11
+                sheet_chemical_dosage_write['T11'] = dosingpump_b7_value_2   # B7 -> T11
+                sheet_chemical_dosage_write['U11'] = dosingpump_b9_value_2   # B9 -> U11
+                sheet_chemical_dosage_write['V11'] = dosingpump_b8_value_2   # B8 -> V11
+                sheet_chemical_dosage_write['W11'] = dosingpump_b10_value_2  # B10 -> W11
+                
+                print(f"📊 Updated ANAPAK CHEMICAL_DOSAGE (Process 7.4):")
+                print(f"   S11: {old_s11} → {dosingpump_b5_value_2}")
+                print(f"   T11: {old_t11} → {dosingpump_b7_value_2}")
+                print(f"   U11: {old_u11} → {dosingpump_b9_value_2}")
+                print(f"   V11: {old_v11} → {dosingpump_b8_value_2}")
+                print(f"   W11: {old_w11} → {dosingpump_b10_value_2}")
+                
+                # Update DATA_OUTPUT (Process 7.4)
+                old_c43 = sheet_anapak_output['C43'].value
+                old_c44 = sheet_anapak_output['C44'].value
+                old_c46 = sheet_anapak_output['C46'].value
+                
+                sheet_anapak_output['C43'] = dosingpump_b8_value_2   # B8 -> C43
+                sheet_anapak_output['C44'] = dosingpump_b10_value_2  # B10 -> C44
+                sheet_anapak_output['C46'] = dosingpump_b6_value_2   # B6 -> C46
+                
+                print(f"📊 Updated ANAPAK DATA_OUTPUT (Process 7.4):")
+                print(f"   C43: {old_c43} → {dosingpump_b8_value_2}")
+                print(f"   C44: {old_c44} → {dosingpump_b10_value_2}")
+                print(f"   C46: {old_c46} → {dosingpump_b6_value_2}")
+                
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                print("✅ ANAPAK updated for Process 7.4")
+                
+                if progress_callback:
+                    progress_callback(96, "Process 7.5-7.6: Final DOSINGPUMP iteration...")
+                
+                # PROSES 7.5: SBT_ANAPAK -> SBT_DOSINGPUMP (Q13 -> B4)
+                print("\n📤 PROSES 7.5: ANAPAK → DOSINGPUMP (Q13 → B4)")
+                print("-" * 50)
+                
+                # Force calculation pada ANAPAK sebelum membaca Q13
+                print("🧮 Force calculating SBT_ANAPAK before reading Q13...")
+                try:
+                    self.force_excel_calculation(sbt_anapak_path,
+                        lambda pct, msg: progress_callback(96 + (pct * 0.01), f"ANAPAK Pre-Q13 Calc: {msg}") if progress_callback else None)
+                    print("✅ SBT_ANAPAK calculation completed before Q13 read")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_ANAPAK calculation: {str(e)}")
+                
+                # Read from ANAPAK CHEMICAL DOSAGE CALC_ANAPAK.Q13
+                wb_anapak_read = load_workbook(sbt_anapak_path, data_only=True)
+                sheet_chemical_dosage_read = wb_anapak_read[chemical_dosage_sheet_name]
+                anapak_q13_value = sheet_chemical_dosage_read['Q13'].value
+                
+                print(f"📊 Retrieved from ANAPAK CHEMICAL_DOSAGE.Q13: {anapak_q13_value}")
+                wb_anapak_read.close()
+                
+                # Write to DOSINGPUMP DATA INPUT.B4
+                wb_dosingpump = load_workbook(sbt_dosingpump_path, keep_vba=True)
+                sheet_dosingpump_input = wb_dosingpump[dosingpump_input_sheet_name]
+                
+                old_dosingpump_b4_3 = sheet_dosingpump_input['B4'].value
+                sheet_dosingpump_input['B4'] = anapak_q13_value
+                
+                print(f"📊 Updated DOSINGPUMP DATA_INPUT.B4: {old_dosingpump_b4_3} → {anapak_q13_value}")
+                
+                wb_dosingpump.save(sbt_dosingpump_path)
+                wb_dosingpump.close()
+                print("✅ DOSINGPUMP updated for Process 7.5")
+                
+                # PROSES 7.6: SBT_DOSINGPUMP -> SBT_ANAPAK (Final Force Calculating + Multiple Data Transfer)
+                print("\n📥 PROSES 7.6: DOSINGPUMP → ANAPAK (Final Force Calc + Multiple Data Transfer)")
+                print("-" * 50)
+                
+                # Force calculation pada DOSINGPUMP (final)
+                print("🧮 Force calculating SBT_DOSINGPUMP (final round)...")
+                try:
+                    self.force_excel_calculation(sbt_dosingpump_path,
+                        lambda pct, msg: progress_callback(97 + (pct * 0.01), f"DOSINGPUMP Final Calc: {msg}") if progress_callback else None)
+                    print("✅ SBT_DOSINGPUMP calculation completed (final round)")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_DOSINGPUMP calculation (final round): {str(e)}")
+                
+                # Read calculated values from DOSINGPUMP DATA PROPOSAL (final)
+                wb_dosingpump_read = load_workbook(sbt_dosingpump_path, data_only=True)
+                sheet_dosingpump_proposal = wb_dosingpump_read[dosingpump_proposal_sheet_name]
+                
+                # Read multiple values from DATA PROPOSAL (final)
+                dosingpump_b5_value_final = sheet_dosingpump_proposal['B5'].value
+                dosingpump_b6_value_final = sheet_dosingpump_proposal['B6'].value
+                dosingpump_b7_value_final = sheet_dosingpump_proposal['B7'].value
+                dosingpump_b8_value_final = sheet_dosingpump_proposal['B8'].value
+                dosingpump_b9_value_final = sheet_dosingpump_proposal['B9'].value
+                dosingpump_b10_value_final = sheet_dosingpump_proposal['B10'].value
+                
+                print(f"📊 Retrieved from DOSINGPUMP DATA_PROPOSAL (final):")
+                print(f"   B5: {dosingpump_b5_value_final}")
+                print(f"   B6: {dosingpump_b6_value_final}")
+                print(f"   B7: {dosingpump_b7_value_final}")
+                print(f"   B8: {dosingpump_b8_value_final}")
+                print(f"   B9: {dosingpump_b9_value_final}")
+                print(f"   B10: {dosingpump_b10_value_final}")
+                
+                wb_dosingpump_read.close()
+                
+                # Write to ANAPAK CHEMICAL DOSAGE CALC and DATA_OUTPUT (final)
+                wb_anapak = load_workbook(sbt_anapak_path)
+                sheet_chemical_dosage_write = wb_anapak[chemical_dosage_sheet_name]
+                sheet_anapak_output = wb_anapak["DATA_OUTPUT"]
+                
+                # Update CHEMICAL DOSAGE CALC_ANAPAK (Process 7.6)
+                old_s13 = sheet_chemical_dosage_write['S13'].value
+                old_t13 = sheet_chemical_dosage_write['T13'].value
+                old_u13 = sheet_chemical_dosage_write['U13'].value
+                old_v13 = sheet_chemical_dosage_write['V13'].value
+                old_w13 = sheet_chemical_dosage_write['W13'].value
+                
+                sheet_chemical_dosage_write['S13'] = dosingpump_b5_value_final   # B5 -> S13
+                sheet_chemical_dosage_write['T13'] = dosingpump_b7_value_final   # B7 -> T13
+                sheet_chemical_dosage_write['U13'] = dosingpump_b9_value_final   # B9 -> U13
+                sheet_chemical_dosage_write['V13'] = dosingpump_b8_value_final   # B8 -> V13
+                sheet_chemical_dosage_write['W13'] = dosingpump_b10_value_final  # B10 -> W13
+                
+                print(f"📊 Updated ANAPAK CHEMICAL_DOSAGE (Process 7.6 - Final):")
+                print(f"   S13: {old_s13} → {dosingpump_b5_value_final}")
+                print(f"   T13: {old_t13} → {dosingpump_b7_value_final}")
+                print(f"   U13: {old_u13} → {dosingpump_b9_value_final}")
+                print(f"   V13: {old_v13} → {dosingpump_b8_value_final}")
+                print(f"   W13: {old_w13} → {dosingpump_b10_value_final}")
+                
+                # Update DATA_OUTPUT (Process 7.6)
+                old_c48 = sheet_anapak_output['C48'].value
+                old_c49 = sheet_anapak_output['C49'].value
+                old_c51 = sheet_anapak_output['C51'].value
+                
+                sheet_anapak_output['C48'] = dosingpump_b8_value_final   # B8 -> C48
+                sheet_anapak_output['C49'] = dosingpump_b10_value_final  # B10 -> C49
+                sheet_anapak_output['C51'] = dosingpump_b6_value_final   # B6 -> C51
+                
+                print(f"📊 Updated ANAPAK DATA_OUTPUT (Process 7.6 - Final):")
+                print(f"   C48: {old_c48} → {dosingpump_b8_value_final}")
+                print(f"   C49: {old_c49} → {dosingpump_b10_value_final}")
+                print(f"   C51: {old_c51} → {dosingpump_b6_value_final}")
+                
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                print("✅ ANAPAK updated for Process 7.6 (Final)")
+                
+                if progress_callback:
+                    progress_callback(98, "Performing final calculations and cleanup...")
                 
                 print("\n🏁 FINAL CALCULATIONS AND CLEANUP")
                 print("-" * 50)
@@ -2467,16 +2906,16 @@ class BDUGroupView(QMainWindow):
                 print("🧮 Final force calculation on SBT_ANAPAK...")
                 try:
                     self.force_excel_calculation(sbt_anapak_path,
-                        lambda pct, msg: progress_callback(90 + (pct * 0.05), f"Final ANAPAK Calc: {msg}") if progress_callback else None)
+                        lambda pct, msg: progress_callback(98 + (pct * 0.015), f"Final ANAPAK Calc: {msg}") if progress_callback else None)
                     print("✅ Final SBT_ANAPAK calculation completed")
                     time.sleep(3)
                 except Exception as e:
                     print(f"⚠️ Warning during final SBT_ANAPAK calculation: {str(e)}")
                 
                 if progress_callback:
-                    progress_callback(95, "Validating all data transfers...")
+                    progress_callback(99, "Validating all data transfers...")
                 
-                print("\n📋 VALIDATION SUMMARY")
+                print("\n📋 COMPREHENSIVE VALIDATION SUMMARY")
                 print("-" * 50)
                 
                 # Validation summary - read final values to confirm everything worked
@@ -2484,29 +2923,62 @@ class BDUGroupView(QMainWindow):
                 sheet_anapak_output_final = wb_anapak_final["DATA_OUTPUT"]
                 
                 final_values = {
+                    # Process 3 results
                     'C33': sheet_anapak_output_final['C33'].value,  # From Process 3.3
                     'C34': sheet_anapak_output_final['C34'].value,  # From Process 3.4
+                    # Process 5 results
                     'C75': sheet_anapak_output_final['C75'].value,  # From Process 5.2
                     'C76': sheet_anapak_output_final['C76'].value,  # From Process 5.2
                     'C81': sheet_anapak_output_final['C81'].value,  # From Process 5.4
                     'C82': sheet_anapak_output_final['C82'].value,  # From Process 5.4
                     'C87': sheet_anapak_output_final['C87'].value,  # From Process 5.6
                     'C88': sheet_anapak_output_final['C88'].value,  # From Process 5.6
+                    # Process 7 results (DOSINGPUMP)
+                    'C38': sheet_anapak_output_final['C38'].value,  # From Process 7.2
+                    'C39': sheet_anapak_output_final['C39'].value,  # From Process 7.2
+                    'C41': sheet_anapak_output_final['C41'].value,  # From Process 7.2
+                    'C43': sheet_anapak_output_final['C43'].value,  # From Process 7.4
+                    'C44': sheet_anapak_output_final['C44'].value,  # From Process 7.4
+                    'C46': sheet_anapak_output_final['C46'].value,  # From Process 7.4
+                    'C48': sheet_anapak_output_final['C48'].value,  # From Process 7.6
+                    'C49': sheet_anapak_output_final['C49'].value,  # From Process 7.6
+                    'C51': sheet_anapak_output_final['C51'].value,  # From Process 7.6
                 }
                 
                 print("📊 Final ANAPAK DATA_OUTPUT values:")
-                for cell, value in final_values.items():
-                    print(f"   {cell}: {value}")
+                print("   📈 Process 3 (PUMP) results:")
+                print(f"     C33: {final_values['C33']}")
+                print(f"     C34: {final_values['C34']}")
+                print("   🔧 Process 5 (INSTRUMENT) results:")
+                print(f"     C75: {final_values['C75']}")
+                print(f"     C76: {final_values['C76']}")
+                print(f"     C81: {final_values['C81']}")
+                print(f"     C82: {final_values['C82']}")
+                print(f"     C87: {final_values['C87']}")
+                print(f"     C88: {final_values['C88']}")
+                print("   💊 Process 7 (DOSINGPUMP) results:")
+                print(f"     C38: {final_values['C38']}")
+                print(f"     C39: {final_values['C39']}")
+                print(f"     C41: {final_values['C41']}")
+                print(f"     C43: {final_values['C43']}")
+                print(f"     C44: {final_values['C44']}")
+                print(f"     C46: {final_values['C46']}")
+                print(f"     C48: {final_values['C48']}")
+                print(f"     C49: {final_values['C49']}")
+                print(f"     C51: {final_values['C51']}")
                 
                 wb_anapak_final.close()
                 
                 if progress_callback:
-                    progress_callback(100, "Complete projection process finished successfully!")
+                    progress_callback(100, "Complete projection process with all 7 processes finished successfully!")
                 
                 print("\n" + "=" * 80)
-                print("🎉 COMPLETE PROJECTION PROCESS FINISHED SUCCESSFULLY!")
+                print("🎉 COMPLETE PROJECTION PROCESS WITH ALL 7 PROCESSES FINISHED SUCCESSFULLY!")
+                print("=" * 80)
+                print("🏆 ALL MODULES PROCESSED: ANAPAK ↔ PUMP ↔ INSTRUMENT ↔ DOSINGPUMP")
+                print("=" * 80)
                 
-                return "Complete projection process has been executed successfully!"
+                return "Complete projection process with all 7 main processes has been executed successfully!"
                 
             except Exception as e:
                 error_msg = f"Error during complete projection: {str(e)}"
@@ -2558,7 +3030,7 @@ class BDUGroupView(QMainWindow):
             print("🏁 Complete projection process fully finished")
         
         loading_screen.worker.task_completed.connect(on_projection_complete)
-        
+            
     def run_generate_proposal(self):
         """Fungsi untuk menjalankan generate proposal dengan loading screen dan dynamic filename"""
         
