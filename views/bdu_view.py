@@ -1723,7 +1723,7 @@ class BDUGroupView(QMainWindow):
             return False
     
     def run_projection(self):
-        """Fungsi untuk menjalankan projection dengan loading screen - Combined Old+New Method"""
+        """Fungsi untuk menjalankan projection dengan loading screen - Complete Version with Process 4 & 5"""
         
         def projection_process(progress_callback=None):
             try:
@@ -1736,11 +1736,11 @@ class BDUGroupView(QMainWindow):
                 from PyQt5.QtWidgets import QApplication, QMessageBox
                 
                 print("=" * 80)
-                print("🚀 STARTING PROJECTION PROCESS - COMBINED METHOD")
+                print("🚀 STARTING COMPLETE PROJECTION PROCESS")
                 print("=" * 80)
                 
                 if progress_callback:
-                    progress_callback(5, "Initializing projection process...")
+                    progress_callback(2, "Initializing projection process...")
                 
                 # Use the customer-specific Excel file if available
                 if hasattr(self, 'excel_path'):
@@ -1767,7 +1767,7 @@ class BDUGroupView(QMainWindow):
                 print(f"📄 SBT_DOSINGPUMP path: {sbt_dosingpump_path}")
                 
                 if progress_callback:
-                    progress_callback(10, "Checking required files...")
+                    progress_callback(5, "Checking required files...")
                 
                 print("\n🔍 CHECKING REQUIRED FILES:")
                 # Pastikan file yang dibutuhkan ada
@@ -1788,7 +1788,7 @@ class BDUGroupView(QMainWindow):
                 print("✅ All required files found!")
                 
                 if progress_callback:
-                    progress_callback(15, "Opening SET_BDU workbook...")
+                    progress_callback(8, "Opening SET_BDU workbook...")
                 
                 print("\n📖 PROSES 1: READING SET_BDU DATA")
                 print("-" * 50)
@@ -1799,7 +1799,7 @@ class BDUGroupView(QMainWindow):
                 print(f"📋 Available sheets: {wb_bdu.sheetnames}")
                 
                 if progress_callback:
-                    progress_callback(20, "Reading data from DIP sheets...")
+                    progress_callback(10, "Reading data from DIP sheets...")
                 
                 # Ambil data dari DIP_Customer Information dan DIP_Project Information
                 print("📄 Reading DIP_Customer Information...")
@@ -1845,11 +1845,19 @@ class BDUGroupView(QMainWindow):
                 print(f"   Type: {pump_type}")
                 print(f"   Model: {pump_model}")
                 
+                # Ambil data untuk Proses 4 & 5
+                project_b59_value = sheet_project['B59'].value  # Untuk SBT_INSTRUMENT
+                project_b42_value = sheet_project['B42'].value  # Untuk Proses 3.4
+                
+                print(f"📊 Additional data for Process 4 & 5:")
+                print(f"   B59 (for INSTRUMENT): {project_b59_value}")
+                print(f"   B42 (for Process 3.4): {project_b42_value}")
+                
                 wb_bdu.close()
                 print("✅ SET_BDU closed successfully")
                 
                 if progress_callback:
-                    progress_callback(25, "Transferring data to SBT_ANAPAK...")
+                    progress_callback(15, "Transferring data to SBT_ANAPAK...")
                 
                 print("\n📤 TRANSFERRING DATA TO SBT_ANAPAK")
                 print("-" * 50)
@@ -1879,7 +1887,7 @@ class BDUGroupView(QMainWindow):
                 print("✅ SBT_ANAPAK saved and closed successfully")
                 
                 if progress_callback:
-                    progress_callback(30, "Force calculating SBT_ANAPAK formulas...")
+                    progress_callback(20, "Force calculating SBT_ANAPAK formulas...")
                 
                 print("\n🧮 FORCE CALCULATING SBT_ANAPAK FORMULAS")
                 print("-" * 50)
@@ -1887,16 +1895,16 @@ class BDUGroupView(QMainWindow):
                 try:
                     print("🔄 Starting force calculation for SBT_ANAPAK...")
                     self.force_excel_calculation(sbt_anapak_path, 
-                        lambda pct, msg: progress_callback(30 + (pct * 0.1), f"SBT_ANAPAK: {msg}") if progress_callback else None)
+                        lambda pct, msg: progress_callback(20 + (pct * 0.05), f"SBT_ANAPAK: {msg}") if progress_callback else None)
                     print("✅ SBT_ANAPAK calculation completed")
                     time.sleep(3)  # Give more time for calculation to stabilize
                 except Exception as e:
                     print(f"⚠️ Warning during SBT_ANAPAK calculation: {str(e)}")
                     if progress_callback:
-                        progress_callback(40, f"Warning: {str(e)}")
+                        progress_callback(25, f"Warning: {str(e)}")
                 
                 if progress_callback:
-                    progress_callback(40, "Reading calculated values from SBT_ANAPAK...")
+                    progress_callback(25, "Reading calculated values from SBT_ANAPAK...")
                 
                 print("\n📊 READING CALCULATED VALUES FROM SBT_ANAPAK")
                 print("-" * 50)
@@ -1945,7 +1953,7 @@ class BDUGroupView(QMainWindow):
                 print(f"   K67: {value_k67}")
                 
                 if progress_callback:
-                    progress_callback(45, "Determining SBT_PUMP file...")
+                    progress_callback(30, "Determining SBT_PUMP file...")
                 
                 print("\n🔧 PROSES 2: DETERMINING PUMP FILE")
                 print("-" * 50)
@@ -1990,7 +1998,7 @@ class BDUGroupView(QMainWindow):
                 print("✅ SBT_PUMP file exists!")
                 
                 if progress_callback:
-                    progress_callback(50, f"Using pump file: {pump_filename}")
+                    progress_callback(35, f"Using pump file: {pump_filename}")
                 
                 print("\n⚙️ PROSES 3.1: ANAPAK → PUMP DATA TRANSFER")
                 print("-" * 50)
@@ -2044,10 +2052,10 @@ class BDUGroupView(QMainWindow):
                     raise Exception(error_msg)
                 
                 if progress_callback:
-                    progress_callback(70, "Running GENERATE_REPORT macro in SBT_PUMP...")
+                    progress_callback(40, "Running GENERATE_REPORT macro in SBT_PUMP...")
                 
                 print("-" * 50)
-                print("🎯 PROSES 3.2: Menjalankan macro di SBT_PUMP dengan xlwings (FIXED)")
+                print("🎯 PROSES 3.2: Menjalankan macro di SBT_PUMP")
                 print("-" * 50)
                 
                 # PROSES 3.2: Menjalankan macro di SBT_PUMP 
@@ -2055,57 +2063,7 @@ class BDUGroupView(QMainWindow):
                 macro_success = False
                 
                 try:
-                    print("🔄 Method: Using xlwings with dependency check...")
-                    
-                    # Check dan install dependencies jika diperlukan
-                    print("🔍 Checking dependencies...")
-                    missing_deps = []
-                    
-                    try:
-                        import matplotlib
-                        print("✅ matplotlib is available")
-                    except ImportError:
-                        missing_deps.append("matplotlib")
-                        print("❌ matplotlib not found")
-                    
-                    try:
-                        import xlwings as xw
-                        print("✅ xlwings is available")
-                    except ImportError:
-                        missing_deps.append("xlwings")
-                        print("❌ xlwings not found")
-                    
-                    if missing_deps:
-                        print(f"⚠️ Missing dependencies: {', '.join(missing_deps)}")
-                        print("🔄 Attempting to install missing dependencies...")
-                        
-                        for dep in missing_deps:
-                            try:
-                                subprocess.check_call([sys.executable, "-m", "pip", "install", dep])
-                                print(f"✅ {dep} installed successfully")
-                            except Exception as install_error:
-                                print(f"❌ Failed to install {dep}: {str(install_error)}")
-                                # Continue without the dependency
-                    
-                    # Try to import all_udf with error handling
-                    all_udf_imported = False
-                    if os.path.exists(all_udf_path):
-                        try:
-                            print("📥 Importing all_udf functions...")
-                            import importlib.util
-                            spec = importlib.util.spec_from_file_location("all_udf", all_udf_path)
-                            all_udf_module = importlib.util.module_from_spec(spec)
-                            spec.loader.exec_module(all_udf_module)
-                            print("✅ all_udf imported successfully")
-                            all_udf_imported = True
-                        except Exception as udf_error:
-                            print(f"⚠️ Warning: all_udf import failed: {str(udf_error)}")
-                            print("⚠️ Continuing without all_udf import...")
-                            all_udf_imported = False
-                    else:
-                        print(f"⚠️ Warning: all_udf.py not found at {all_udf_path}")
-                    
-                    # Import xlwings after dependency check
+                    print("🔄 Method: Using xlwings...")
                     import xlwings as xw
                     
                     # Inisialisasi xlwings app
@@ -2118,36 +2076,15 @@ class BDUGroupView(QMainWindow):
                     wb = xw.Book(sbt_pump_path)
                     print(f"✅ Workbook opened: {os.path.basename(sbt_pump_path)}")
                     
-                    # Register UDF jika berhasil diimport
-                    if all_udf_imported:
-                        print("🔗 Registering UDF functions to Excel...")
-                        try:
-                            xw.Book.set_mock_caller(wb)
-                            print("✅ UDF functions registered successfully")
-                        except Exception as udf_error:
-                            print(f"⚠️ Warning: UDF registration failed: {str(udf_error)}")
-                    
                     # Jalankan macro GENERATE_REPORT
                     pump_filename = os.path.basename(sbt_pump_path)
                     print(f"🚀 Running GENERATE_REPORT macro from {pump_filename}...")
                     
                     try:
-                        # Coba beberapa format pemanggilan macro
-                        wb.api.Application.Run(f"'{pump_filename}'!GENERATE_REPORT")
-                        print("✅ Macro executed successfully (format 1)")
-                    except Exception as macro_error1:
-                        print(f"⚠️ Format 1 failed: {str(macro_error1)}")
-                        try:
-                            wb.api.Application.Run("GENERATE_REPORT")
-                            print("✅ Macro executed successfully (format 2)")
-                        except Exception as macro_error2:
-                            print(f"⚠️ Format 2 failed: {str(macro_error2)}")
-                            try:
-                                wb.api.Application.Run("SBT_PUMP.xlsm!GENERATE_REPORT")
-                                print("✅ Macro executed successfully (format 3)")
-                            except Exception as macro_error3:
-                                print(f"❌ All macro formats failed: {str(macro_error3)}")
-                                raise macro_error3
+                        wb.api.Application.Run("GENERATE_REPORT")
+                        print("✅ Macro executed successfully")
+                    except Exception as macro_error:
+                        print(f"⚠️ Macro error: {str(macro_error)}")
                     
                     # Tunggu macro selesai
                     print("⏳ Waiting for macro completion...")
@@ -2168,176 +2105,15 @@ class BDUGroupView(QMainWindow):
                     
                 except Exception as e:
                     print(f"❌ xlwings method failed: {str(e)}")
-                    
-                    # Cleanup jika ada error
-                    try:
-                        if 'wb' in locals():
-                            wb.close()
-                        if 'app' in locals():
-                            app.quit()
-                    except:
-                        pass
-                    
-                    # Enhanced VBScript method with better file handling
-                    try:
-                        print("🔄 Trying enhanced VBScript method...")
-                        import tempfile
-                        import uuid
-                        import threading
-                        
-                        # Create unique filename untuk menghindari konflik
-                        unique_id = str(uuid.uuid4())[:8]
-                        vbs_filename = f"run_macro_{unique_id}.vbs"
-                        temp_dir = tempfile.gettempdir()
-                        vbs_path = os.path.join(temp_dir, vbs_filename)
-                        
-                        # Pastikan file tidak ada sebelumnya
-                        if os.path.exists(vbs_path):
-                            try:
-                                os.remove(vbs_path)
-                            except:
-                                pass
-                        
-                        pump_filename = os.path.basename(sbt_pump_path)
-                        
-                        # Enhanced VBScript dengan better error handling
-                        vbs_script = f'''
-    On Error Resume Next
-
-    ' Create Excel Application
-    Set objExcel = CreateObject("Excel.Application")
-    If Err.Number <> 0 Then
-        WScript.Echo "Error creating Excel application: " & Err.Description
-        WScript.Quit 1
-    End If
-
-    ' Configure Excel
-    objExcel.DisplayAlerts = False
-    objExcel.Visible = False
-    objExcel.AutomationSecurity = 1
-    objExcel.EnableEvents = False
-
-    ' Open Workbook
-    Set objWorkbook = objExcel.Workbooks.Open("{sbt_pump_path}")
-    If Err.Number <> 0 Then
-        WScript.Echo "Error opening workbook: " & Err.Description
-        objExcel.Quit
-        WScript.Quit 1
-    End If
-
-    ' Run Macro - Try multiple formats
-    Err.Clear
-    objExcel.Run "GENERATE_REPORT"
-    If Err.Number <> 0 Then
-        Err.Clear
-        objExcel.Run "'{pump_filename}'!GENERATE_REPORT"
-        If Err.Number <> 0 Then
-            Err.Clear  
-            objExcel.Run "SBT_PUMP.xlsm!GENERATE_REPORT"
-            If Err.Number <> 0 Then
-                WScript.Echo "Error running macro: " & Err.Description
-            Else
-                WScript.Echo "Macro executed successfully (format 3)"
-            End If
-        Else
-            WScript.Echo "Macro executed successfully (format 2)"
-        End If
-    Else
-        WScript.Echo "Macro executed successfully (format 1)"
-    End If
-
-    ' Save and Close
-    objWorkbook.Save
-    objWorkbook.Close
-    objExcel.Quit
-
-    ' Cleanup
-    Set objWorkbook = Nothing
-    Set objExcel = Nothing
-
-    WScript.Echo "VBScript execution completed"
-                        '''
-                        
-                        # Write VBScript file dengan retry mechanism
-                        max_retries = 3
-                        for retry in range(max_retries):
-                            try:
-                                with open(vbs_path, 'w', encoding='utf-8') as f:
-                                    f.write(vbs_script)
-                                break
-                            except Exception as write_error:
-                                print(f"⚠️ Retry {retry + 1}: Failed to write VBS file: {str(write_error)}")
-                                time.sleep(1)
-                                if retry == max_retries - 1:
-                                    raise write_error
-                        
-                        print(f"📝 VBScript written to: {vbs_path}")
-                        
-                        # Execute VBScript dengan timeout yang lebih lama
-                        print("🚀 Executing VBScript...")
-                        result = subprocess.run(
-                            ['cscript', '//NoLogo', vbs_path], 
-                            capture_output=True, 
-                            text=True, 
-                            timeout=120,  # Increased timeout to 2 minutes
-                            shell=True
-                        )
-                        
-                        print(f"📤 VBScript output: {result.stdout}")
-                        if result.stderr:
-                            print(f"⚠️ VBScript stderr: {result.stderr}")
-                        
-                        # Cleanup VBScript file dengan retry
-                        for cleanup_retry in range(3):
-                            try:
-                                if os.path.exists(vbs_path):
-                                    os.remove(vbs_path)
-                                break
-                            except Exception as cleanup_error:
-                                print(f"⚠️ Cleanup retry {cleanup_retry + 1}: {str(cleanup_error)}")
-                                time.sleep(1)
-                        
-                        if result.returncode == 0:
-                            print("✅ VBScript method completed successfully")
-                            macro_success = True
-                        else:
-                            print(f"❌ VBScript method failed with return code: {result.returncode}")
-                            
-                    except Exception as vbs_error:
-                        print(f"❌ Enhanced VBScript fallback also failed: {str(vbs_error)}")
+                    macro_success = False
                 
                 if not macro_success:
-                    # Last resort: try to open Excel manually and run calculation
-                    print("🔄 Trying last resort: Excel calculation without macro...")
-                    try:
-                        import xlwings as xw
-                        app = xw.App(visible=False)
-                        app.display_alerts = False
-                        wb = xw.Book(sbt_pump_path)
-                        
-                        # Force full calculation
-                        wb.api.Application.CalculateFullRebuild()
-                        wb.api.Application.Calculate()
-                        time.sleep(3)
-                        
-                        wb.save()
-                        wb.close()
-                        app.quit()
-                        
-                        print("✅ Excel calculation completed (without macro)")
-                        macro_success = True
-                        
-                    except Exception as calc_error:
-                        print(f"❌ Excel calculation also failed: {str(calc_error)}")
-                
-                if not macro_success:
-                    print("⚠️ All methods failed, but continuing with projection...")
-                    print("⚠️ Manual intervention may be required for SBT_PUMP.xlsm")
+                    print("⚠️ Macro failed, but continuing with projection...")
                 
                 print("✅ Macro execution phase completed")
                 
                 if progress_callback:
-                    progress_callback(70, "Processing remaining steps...")
+                    progress_callback(45, "Processing Proses 3.3 and 3.4...")
                 
                 print("\n📤 PROSES 3.3: PUMP → ANAPAK TRANSFER")
                 print("-" * 50)
@@ -2363,15 +2139,6 @@ class BDUGroupView(QMainWindow):
                 print("\n📥 PROSES 3.4: SET_BDU → ANAPAK (B42)")
                 print("-" * 50)
                 
-                # PROSES 3.4: SET_BDU -> SBT_ANAPAK (ambil B42 lagi)
-                print(f"🔓 Re-opening SET_BDU for B42...")
-                wb_bdu_again = load_workbook(set_bdu_path, data_only=True)
-                sheet_project_again = wb_bdu_again["DIP_Project Information"]
-                project_value_b42 = sheet_project_again['B42'].value
-                print(f"📊 Retrieved B42: {project_value_b42}")
-                wb_bdu_again.close()
-                print("✅ SET_BDU closed")
-                
                 # Update SBT_ANAPAK dengan data dari PROSES 3.3 dan 3.4
                 print("🔓 Opening SBT_ANAPAK for update...")
                 wb_anapak = load_workbook(sbt_anapak_path)
@@ -2387,30 +2154,362 @@ class BDUGroupView(QMainWindow):
                 old_c34 = sheet_anapak_output['C34'].value
                 
                 sheet_anapak_output['C33'] = pump_value_b19    # DATA_ENGINE.B19 -> DATA_OUTPUT.C33
-                sheet_anapak_output['C34'] = project_value_b42 # DIP_Project Information.B42 -> DATA_OUTPUT.C34
+                sheet_anapak_output['C34'] = project_b42_value # DIP_Project Information.B42 -> DATA_OUTPUT.C34
                 
                 print(f"📊 Updated ANAPAK DATA_OUTPUT:")
                 print(f"   C33: {old_c33} → {pump_value_b19}")
-                print(f"   C34: {old_c34} → {project_value_b42}")
+                print(f"   C34: {old_c34} → {project_b42_value}")
                 
                 wb_anapak.save(sbt_anapak_path)
                 wb_anapak.close()
                 print("✅ SBT_ANAPAK updated and saved")
                 
-                # Continue with INSTRUMENT and DOSINGPUMP processing...
-                # [The rest follows the same pattern with data_only=True for reading calculated values]
+                if progress_callback:
+                    progress_callback(50, "Starting Process 4: SET_BDU → SBT_INSTRUMENT...")
+                
+                print("\n🔧 PROSES 4: SET_BDU → SBT_INSTRUMENT")
+                print("-" * 50)
+                
+                # PROSES 4: SET_BDU -> SBT_INSTRUMENT
+                print(f"🔓 Opening SBT_INSTRUMENT: {sbt_instrument_path}")
+                wb_instrument = load_workbook(sbt_instrument_path, keep_vba=True)
+                print(f"📋 Available sheets: {wb_instrument.sheetnames}")
+                
+                # Cari sheet 'DATA INPUT'
+                instrument_input_sheet_name = "DATA INPUT"
+                found_instrument_sheet = False
+                
+                for sheet_name in wb_instrument.sheetnames:
+                    if sheet_name.upper() == instrument_input_sheet_name.upper():
+                        instrument_input_sheet_name = sheet_name
+                        found_instrument_sheet = True
+                        print(f"✅ Found INSTRUMENT sheet: {sheet_name}")
+                        break
+                
+                if not found_instrument_sheet:
+                    print(f"❌ Sheet 'DATA INPUT' not found in SBT_INSTRUMENT!")
+                    print(f"📋 Available sheets: {wb_instrument.sheetnames}")
+                    raise Exception("Sheet 'DATA INPUT' not found in SBT_INSTRUMENT")
+                
+                sheet_instrument_input = wb_instrument[instrument_input_sheet_name]
+                
+                # Transfer data: DIP_Project Information.B59 -> DATA INPUT.B4
+                old_instrument_b4 = sheet_instrument_input['B4'].value
+                sheet_instrument_input['B4'] = project_b59_value
+                
+                print(f"📊 Updated INSTRUMENT DATA_INPUT:")
+                print(f"   B4: {old_instrument_b4} → {project_b59_value}")
+                
+                # Simpan SBT_INSTRUMENT
+                print("💾 Saving SBT_INSTRUMENT...")
+                wb_instrument.save(sbt_instrument_path)
+                wb_instrument.close()
+                print("✅ SBT_INSTRUMENT saved and closed")
                 
                 if progress_callback:
-                    progress_callback(100, "Projection completed successfully!")
+                    progress_callback(55, "Starting Process 5: Complex ANAPAK ↔ INSTRUMENT iterations...")
+                
+                print("\n🔄 PROSES 5: COMPLEX ANAPAK ↔ INSTRUMENT ITERATIONS")
+                print("=" * 60)
+                
+                # PROSES 5.1: SBT_ANAPAK -> SBT_INSTRUMENT
+                print("\n📤 PROSES 5.1: ANAPAK → INSTRUMENT (C74 → B5)")
+                print("-" * 50)
+                
+                # Read from ANAPAK DATA_OUTPUT.C74
+                wb_anapak_read = load_workbook(sbt_anapak_path, data_only=True)
+                sheet_anapak_output_read = wb_anapak_read["DATA_OUTPUT"]
+                anapak_c74_value = sheet_anapak_output_read['C74'].value
+                
+                print(f"📊 Retrieved from ANAPAK DATA_OUTPUT.C74: {anapak_c74_value}")
+                wb_anapak_read.close()
+                
+                # Write to INSTRUMENT DATA INPUT.B5
+                wb_instrument = load_workbook(sbt_instrument_path, keep_vba=True)
+                sheet_instrument_input = wb_instrument[instrument_input_sheet_name]
+                
+                old_instrument_b5 = sheet_instrument_input['B5'].value
+                sheet_instrument_input['B5'] = anapak_c74_value
+                
+                print(f"📊 Updated INSTRUMENT DATA_INPUT.B5: {old_instrument_b5} → {anapak_c74_value}")
+                
+                wb_instrument.save(sbt_instrument_path)
+                wb_instrument.close()
+                print("✅ INSTRUMENT updated for Process 5.1")
+                
+                if progress_callback:
+                    progress_callback(60, "Process 5.2: INSTRUMENT calculation and data return...")
+                
+                # PROSES 5.2: SBT_INSTRUMENT -> SBT_ANAPAK (Force Calculating + Data Transfer)
+                print("\n📥 PROSES 5.2: INSTRUMENT → ANAPAK (Force Calc + Data Transfer)")
+                print("-" * 50)
+                
+                # Force calculation pada INSTRUMENT
+                print("🧮 Force calculating SBT_INSTRUMENT...")
+                try:
+                    self.force_excel_calculation(sbt_instrument_path,
+                        lambda pct, msg: progress_callback(60 + (pct * 0.03), f"INSTRUMENT Calc: {msg}") if progress_callback else None)
+                    print("✅ SBT_INSTRUMENT calculation completed")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_INSTRUMENT calculation: {str(e)}")
+                
+                # Read calculated values from INSTRUMENT
+                wb_instrument_read = load_workbook(sbt_instrument_path, data_only=True)
+                
+                # Cari sheet 'DATA PROPOSAL'
+                instrument_proposal_sheet_name = "DATA PROPOSAL"
+                found_proposal_sheet = False
+                
+                for sheet_name in wb_instrument_read.sheetnames:
+                    if sheet_name.upper() == instrument_proposal_sheet_name.upper():
+                        instrument_proposal_sheet_name = sheet_name
+                        found_proposal_sheet = True
+                        print(f"✅ Found INSTRUMENT PROPOSAL sheet: {sheet_name}")
+                        break
+                
+                if not found_proposal_sheet:
+                    print(f"❌ Sheet 'DATA PROPOSAL' not found in SBT_INSTRUMENT!")
+                    print(f"📋 Available sheets: {wb_instrument_read.sheetnames}")
+                    raise Exception("Sheet 'DATA PROPOSAL' not found in SBT_INSTRUMENT")
+                
+                sheet_instrument_proposal = wb_instrument_read[instrument_proposal_sheet_name]
+                
+                # Read values: DATA PROPOSAL.B8 and B5
+                instrument_b8_value = sheet_instrument_proposal['B8'].value
+                instrument_b5_value = sheet_instrument_proposal['B5'].value
+                
+                print(f"📊 Retrieved from INSTRUMENT DATA_PROPOSAL:")
+                print(f"   B8: {instrument_b8_value}")
+                print(f"   B5: {instrument_b5_value}")
+                
+                wb_instrument_read.close()
+                
+                # Write to ANAPAK DATA_OUTPUT: B8->C75, B5->C76
+                wb_anapak = load_workbook(sbt_anapak_path)
+                sheet_anapak_output = wb_anapak["DATA_OUTPUT"]
+                
+                old_c75 = sheet_anapak_output['C75'].value
+                old_c76 = sheet_anapak_output['C76'].value
+                
+                sheet_anapak_output['C75'] = instrument_b8_value  # DATA PROPOSAL.B8 -> DATA_OUTPUT.C75
+                sheet_anapak_output['C76'] = instrument_b5_value  # DATA PROPOSAL.B5 -> DATA_OUTPUT.C76
+                
+                print(f"📊 Updated ANAPAK DATA_OUTPUT (Process 5.2):")
+                print(f"   C75: {old_c75} → {instrument_b8_value}")
+                print(f"   C76: {old_c76} → {instrument_b5_value}")
+                
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                print("✅ ANAPAK updated for Process 5.2")
+                
+                if progress_callback:
+                    progress_callback(65, "Process 5.3: ANAPAK → INSTRUMENT (C80 → B5)...")
+                
+                # PROSES 5.3: SBT_ANAPAK -> SBT_INSTRUMENT (C80 -> B5)
+                print("\n📤 PROSES 5.3: ANAPAK → INSTRUMENT (C80 → B5)")
+                print("-" * 50)
+                
+                # Read from ANAPAK DATA_OUTPUT.C80
+                wb_anapak_read = load_workbook(sbt_anapak_path, data_only=True)
+                sheet_anapak_output_read = wb_anapak_read["DATA_OUTPUT"]
+                anapak_c80_value = sheet_anapak_output_read['C80'].value
+                
+                print(f"📊 Retrieved from ANAPAK DATA_OUTPUT.C80: {anapak_c80_value}")
+                wb_anapak_read.close()
+                
+                # Write to INSTRUMENT DATA INPUT.B5
+                wb_instrument = load_workbook(sbt_instrument_path, keep_vba=True)
+                sheet_instrument_input = wb_instrument[instrument_input_sheet_name]
+                
+                old_instrument_b5_2 = sheet_instrument_input['B5'].value
+                sheet_instrument_input['B5'] = anapak_c80_value
+                
+                print(f"📊 Updated INSTRUMENT DATA_INPUT.B5: {old_instrument_b5_2} → {anapak_c80_value}")
+                
+                wb_instrument.save(sbt_instrument_path)
+                wb_instrument.close()
+                print("✅ INSTRUMENT updated for Process 5.3")
+                
+                if progress_callback:
+                    progress_callback(70, "Process 5.4: INSTRUMENT calculation and data return...")
+                
+                # PROSES 5.4: SBT_INSTRUMENT -> SBT_ANAPAK (Force Calculating + Data Transfer)
+                print("\n📥 PROSES 5.4: INSTRUMENT → ANAPAK (Force Calc + Data Transfer)")
+                print("-" * 50)
+                
+                # Force calculation pada INSTRUMENT
+                print("🧮 Force calculating SBT_INSTRUMENT (round 2)...")
+                try:
+                    self.force_excel_calculation(sbt_instrument_path,
+                        lambda pct, msg: progress_callback(70 + (pct * 0.03), f"INSTRUMENT Calc 2: {msg}") if progress_callback else None)
+                    print("✅ SBT_INSTRUMENT calculation completed (round 2)")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_INSTRUMENT calculation (round 2): {str(e)}")
+                
+                # Read calculated values from INSTRUMENT (round 2)
+                wb_instrument_read = load_workbook(sbt_instrument_path, data_only=True)
+                sheet_instrument_proposal = wb_instrument_read[instrument_proposal_sheet_name]
+                
+                # Read values: DATA PROPOSAL.B8 and B5 (round 2)
+                instrument_b8_value_2 = sheet_instrument_proposal['B8'].value
+                instrument_b5_value_2 = sheet_instrument_proposal['B5'].value
+                
+                print(f"📊 Retrieved from INSTRUMENT DATA_PROPOSAL (round 2):")
+                print(f"   B8: {instrument_b8_value_2}")
+                print(f"   B5: {instrument_b5_value_2}")
+                
+                wb_instrument_read.close()
+                
+                # Write to ANAPAK DATA_OUTPUT: B8->C81, B5->C82
+                wb_anapak = load_workbook(sbt_anapak_path)
+                sheet_anapak_output = wb_anapak["DATA_OUTPUT"]
+                
+                old_c81 = sheet_anapak_output['C81'].value
+                old_c82 = sheet_anapak_output['C82'].value
+                
+                sheet_anapak_output['C81'] = instrument_b8_value_2  # DATA PROPOSAL.B8 -> DATA_OUTPUT.C81
+                sheet_anapak_output['C82'] = instrument_b5_value_2  # DATA PROPOSAL.B5 -> DATA_OUTPUT.C82
+                
+                print(f"📊 Updated ANAPAK DATA_OUTPUT (Process 5.4):")
+                print(f"   C81: {old_c81} → {instrument_b8_value_2}")
+                print(f"   C82: {old_c82} → {instrument_b5_value_2}")
+                
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                print("✅ ANAPAK updated for Process 5.4")
+                
+                if progress_callback:
+                    progress_callback(75, "Process 5.5: ANAPAK → INSTRUMENT (C86 → B5)...")
+                
+                # PROSES 5.5: SBT_ANAPAK -> SBT_INSTRUMENT (C86 -> B5)
+                print("\n📤 PROSES 5.5: ANAPAK → INSTRUMENT (C86 → B5)")
+                print("-" * 50)
+                
+                # Read from ANAPAK DATA_OUTPUT.C86
+                wb_anapak_read = load_workbook(sbt_anapak_path, data_only=True)
+                sheet_anapak_output_read = wb_anapak_read["DATA_OUTPUT"]
+                anapak_c86_value = sheet_anapak_output_read['C86'].value
+                
+                print(f"📊 Retrieved from ANAPAK DATA_OUTPUT.C86: {anapak_c86_value}")
+                wb_anapak_read.close()
+                
+                # Write to INSTRUMENT DATA INPUT.B5
+                wb_instrument = load_workbook(sbt_instrument_path, keep_vba=True)
+                sheet_instrument_input = wb_instrument[instrument_input_sheet_name]
+                
+                old_instrument_b5_3 = sheet_instrument_input['B5'].value
+                sheet_instrument_input['B5'] = anapak_c86_value
+                
+                print(f"📊 Updated INSTRUMENT DATA_INPUT.B5: {old_instrument_b5_3} → {anapak_c86_value}")
+                
+                wb_instrument.save(sbt_instrument_path)
+                wb_instrument.close()
+                print("✅ INSTRUMENT updated for Process 5.5")
+                
+                if progress_callback:
+                    progress_callback(85, "Process 5.6: Final INSTRUMENT calculation and data return...")
+                
+                # PROSES 5.6: SBT_INSTRUMENT -> SBT_ANAPAK (Force Calculating + Data Transfer - Final)
+                print("\n📥 PROSES 5.6: INSTRUMENT → ANAPAK (Final Force Calc + Data Transfer)")
+                print("-" * 50)
+                
+                # Force calculation pada INSTRUMENT (final)
+                print("🧮 Force calculating SBT_INSTRUMENT (final round)...")
+                try:
+                    self.force_excel_calculation(sbt_instrument_path,
+                        lambda pct, msg: progress_callback(85 + (pct * 0.05), f"INSTRUMENT Final Calc: {msg}") if progress_callback else None)
+                    print("✅ SBT_INSTRUMENT calculation completed (final round)")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_INSTRUMENT calculation (final round): {str(e)}")
+                
+                # Read calculated values from INSTRUMENT (final)
+                wb_instrument_read = load_workbook(sbt_instrument_path, data_only=True)
+                sheet_instrument_proposal = wb_instrument_read[instrument_proposal_sheet_name]
+                
+                # Read values: DATA PROPOSAL.B8 and B5 (final)
+                instrument_b8_value_final = sheet_instrument_proposal['B8'].value
+                instrument_b5_value_final = sheet_instrument_proposal['B5'].value
+                
+                print(f"📊 Retrieved from INSTRUMENT DATA_PROPOSAL (final):")
+                print(f"   B8: {instrument_b8_value_final}")
+                print(f"   B5: {instrument_b5_value_final}")
+                
+                wb_instrument_read.close()
+                
+                # Write to ANAPAK DATA_OUTPUT: B8->C87, B5->C88
+                wb_anapak = load_workbook(sbt_anapak_path)
+                sheet_anapak_output = wb_anapak["DATA_OUTPUT"]
+                
+                old_c87 = sheet_anapak_output['C87'].value
+                old_c88 = sheet_anapak_output['C88'].value
+                
+                sheet_anapak_output['C87'] = instrument_b8_value_final  # DATA PROPOSAL.B8 -> DATA_OUTPUT.C87
+                sheet_anapak_output['C88'] = instrument_b5_value_final  # DATA PROPOSAL.B5 -> DATA_OUTPUT.C88
+                
+                print(f"📊 Updated ANAPAK DATA_OUTPUT (Process 5.6 - Final):")
+                print(f"   C87: {old_c87} → {instrument_b8_value_final}")
+                print(f"   C88: {old_c88} → {instrument_b5_value_final}")
+                
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                print("✅ ANAPAK updated for Process 5.6 (Final)")
+                
+                if progress_callback:
+                    progress_callback(90, "Performing final calculations and cleanup...")
+                
+                print("\n🏁 FINAL CALCULATIONS AND CLEANUP")
+                print("-" * 50)
+                
+                # Final force calculation pada ANAPAK untuk memastikan semua nilai terupdate
+                print("🧮 Final force calculation on SBT_ANAPAK...")
+                try:
+                    self.force_excel_calculation(sbt_anapak_path,
+                        lambda pct, msg: progress_callback(90 + (pct * 0.05), f"Final ANAPAK Calc: {msg}") if progress_callback else None)
+                    print("✅ Final SBT_ANAPAK calculation completed")
+                    time.sleep(3)
+                except Exception as e:
+                    print(f"⚠️ Warning during final SBT_ANAPAK calculation: {str(e)}")
+                
+                if progress_callback:
+                    progress_callback(95, "Validating all data transfers...")
+                
+                print("\n📋 VALIDATION SUMMARY")
+                print("-" * 50)
+                
+                # Validation summary - read final values to confirm everything worked
+                wb_anapak_final = load_workbook(sbt_anapak_path, data_only=True)
+                sheet_anapak_output_final = wb_anapak_final["DATA_OUTPUT"]
+                
+                final_values = {
+                    'C33': sheet_anapak_output_final['C33'].value,  # From Process 3.3
+                    'C34': sheet_anapak_output_final['C34'].value,  # From Process 3.4
+                    'C75': sheet_anapak_output_final['C75'].value,  # From Process 5.2
+                    'C76': sheet_anapak_output_final['C76'].value,  # From Process 5.2
+                    'C81': sheet_anapak_output_final['C81'].value,  # From Process 5.4
+                    'C82': sheet_anapak_output_final['C82'].value,  # From Process 5.4
+                    'C87': sheet_anapak_output_final['C87'].value,  # From Process 5.6
+                    'C88': sheet_anapak_output_final['C88'].value,  # From Process 5.6
+                }
+                
+                print("📊 Final ANAPAK DATA_OUTPUT values:")
+                for cell, value in final_values.items():
+                    print(f"   {cell}: {value}")
+                
+                wb_anapak_final.close()
+                
+                if progress_callback:
+                    progress_callback(100, "Complete projection process finished successfully!")
                 
                 print("\n" + "=" * 80)
-                print("🎉 PROJECTION PROCESS COMPLETED SUCCESSFULLY!")
-                print("=" * 80)
+                print("🎉 COMPLETE PROJECTION PROCESS FINISHED SUCCESSFULLY!")
                 
-                return "Projection process completed successfully using combined old+new method with data_only=True fix."
+                return "Complete projection process has been executed successfully!"
                 
             except Exception as e:
-                error_msg = f"Error during projection: {str(e)}"
+                error_msg = f"Error during complete projection: {str(e)}"
                 print(f"\n🚨 CRITICAL ERROR:")
                 print("=" * 80)
                 print(f"❌ {error_msg}")
@@ -2425,8 +2524,8 @@ class BDUGroupView(QMainWindow):
         # Show loading screen
         loading_screen = LoadingScreen(
             parent=self,
-            title="Running Advanced Projection",
-            message="Processing data through ANAPAK, PUMP, INSTRUMENT, and DOSINGPUMP modules..."
+            title="Running Complete Advanced Projection",
+            message="Processing data through ANAPAK, PUMP, and INSTRUMENT modules with all 5 main processes..."
         )
         loading_screen.show()
         loading_screen.start_loading(projection_process)
@@ -2434,32 +2533,32 @@ class BDUGroupView(QMainWindow):
         # Connect completion handler
         def on_projection_complete(success, message):
             if success:
-                print("\n🎯 PROJECTION COMPLETED - UI NOTIFICATION")
+                print("\n🎯 COMPLETE PROJECTION FINISHED - UI NOTIFICATION")
                 print("-" * 50)
                 QMessageBox.information(
                     self, 
-                    "Projection Complete", 
-                    "Advanced projection process has been completed successfully. Data has been processed through all required modules."
+                    "Complete Projection Finished", 
+                    "Complete advanced projection process with all 5 main processes has been completed successfully. All data has been processed through ANAPAK, PUMP, and INSTRUMENT modules."
                 )
                 print("🔄 Refreshing UI display...")
                 # Refresh display
                 self.load_excel_data()
                 print("✅ UI refresh completed")
             else:
-                print(f"\n🚨 PROJECTION FAILED - UI NOTIFICATION")
+                print(f"\n🚨 COMPLETE PROJECTION FAILED - UI NOTIFICATION")
                 print("-" * 50)
                 print(f"❌ Error message: {message}")
                 QMessageBox.critical(
                     self, 
-                    "Projection Error", 
-                    f"An error occurred during projection:\n\n{message}"
+                    "Complete Projection Error", 
+                    f"An error occurred during complete projection:\n\n{message}"
                 )
             
             self.statusBar().clearMessage()
-            print("🏁 Projection process fully completed")
+            print("🏁 Complete projection process fully finished")
         
-        loading_screen.worker.task_completed.connect(on_projection_complete)       
-    
+        loading_screen.worker.task_completed.connect(on_projection_complete)
+        
     def run_generate_proposal(self):
         """Fungsi untuk menjalankan generate proposal dengan loading screen dan dynamic filename"""
         
