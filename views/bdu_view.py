@@ -2626,12 +2626,14 @@ class BDUGroupView(QMainWindow):
                 
                 # Update CHEMICAL DOSAGE CALC_ANAPAK (Process 7.2)
                 old_s10 = sheet_chemical_dosage_write['S10'].value
+                old_r10 = sheet_chemical_dosage_write['R10'].value
                 old_t10 = sheet_chemical_dosage_write['T10'].value
                 old_u10 = sheet_chemical_dosage_write['U10'].value
                 old_v10 = sheet_chemical_dosage_write['V10'].value
                 old_w10 = sheet_chemical_dosage_write['W10'].value
                 
                 sheet_chemical_dosage_write['S10'] = dosingpump_b5_value   # B5 -> S10
+                sheet_chemical_dosage_write['R10'] = dosingpump_b6_value   # B6 -> R10
                 sheet_chemical_dosage_write['T10'] = dosingpump_b7_value   # B7 -> T10
                 sheet_chemical_dosage_write['U10'] = dosingpump_b9_value   # B9 -> U10
                 sheet_chemical_dosage_write['V10'] = dosingpump_b8_value   # B8 -> V10
@@ -2639,6 +2641,7 @@ class BDUGroupView(QMainWindow):
                 
                 print(f"📊 Updated ANAPAK CHEMICAL_DOSAGE (Process 7.2):")
                 print(f"   S10: {old_s10} → {dosingpump_b5_value}")
+                print(f"   R10: {old_r10} → {dosingpump_b6_value}")
                 print(f"   T10: {old_t10} → {dosingpump_b7_value}")
                 print(f"   U10: {old_u10} → {dosingpump_b9_value}")
                 print(f"   V10: {old_v10} → {dosingpump_b8_value}")
@@ -2743,12 +2746,14 @@ class BDUGroupView(QMainWindow):
                 
                 # Update CHEMICAL DOSAGE CALC_ANAPAK (Process 7.4)
                 old_s11 = sheet_chemical_dosage_write['S11'].value
+                old_r11 = sheet_chemical_dosage_write['R11'].value
                 old_t11 = sheet_chemical_dosage_write['T11'].value
                 old_u11 = sheet_chemical_dosage_write['U11'].value
                 old_v11 = sheet_chemical_dosage_write['V11'].value
                 old_w11 = sheet_chemical_dosage_write['W11'].value
                 
                 sheet_chemical_dosage_write['S11'] = dosingpump_b5_value_2   # B5 -> S11
+                sheet_chemical_dosage_write['R11'] = dosingpump_b6_value_2   # B6 -> R11
                 sheet_chemical_dosage_write['T11'] = dosingpump_b7_value_2   # B7 -> T11
                 sheet_chemical_dosage_write['U11'] = dosingpump_b9_value_2   # B9 -> U11
                 sheet_chemical_dosage_write['V11'] = dosingpump_b8_value_2   # B8 -> V11
@@ -2756,6 +2761,7 @@ class BDUGroupView(QMainWindow):
                 
                 print(f"📊 Updated ANAPAK CHEMICAL_DOSAGE (Process 7.4):")
                 print(f"   S11: {old_s11} → {dosingpump_b5_value_2}")
+                print(f"   R11: {old_r11} → {dosingpump_b6_value_2}")
                 print(f"   T11: {old_t11} → {dosingpump_b7_value_2}")
                 print(f"   U11: {old_u11} → {dosingpump_b9_value_2}")
                 print(f"   V11: {old_v11} → {dosingpump_b8_value_2}")
@@ -2860,12 +2866,14 @@ class BDUGroupView(QMainWindow):
                 
                 # Update CHEMICAL DOSAGE CALC_ANAPAK (Process 7.6)
                 old_s13 = sheet_chemical_dosage_write['S13'].value
+                old_r13 = sheet_chemical_dosage_write['R13'].value
                 old_t13 = sheet_chemical_dosage_write['T13'].value
                 old_u13 = sheet_chemical_dosage_write['U13'].value
                 old_v13 = sheet_chemical_dosage_write['V13'].value
                 old_w13 = sheet_chemical_dosage_write['W13'].value
                 
                 sheet_chemical_dosage_write['S13'] = dosingpump_b5_value_final   # B5 -> S13
+                sheet_chemical_dosage_write['R13'] = dosingpump_b6_value_final   # B6 -> R13
                 sheet_chemical_dosage_write['T13'] = dosingpump_b7_value_final   # B7 -> T13
                 sheet_chemical_dosage_write['U13'] = dosingpump_b9_value_final   # B9 -> U13
                 sheet_chemical_dosage_write['V13'] = dosingpump_b8_value_final   # B8 -> V13
@@ -2873,6 +2881,7 @@ class BDUGroupView(QMainWindow):
                 
                 print(f"📊 Updated ANAPAK CHEMICAL_DOSAGE (Process 7.6 - Final):")
                 print(f"   S13: {old_s13} → {dosingpump_b5_value_final}")
+                print(f"   R13: {old_r13} → {dosingpump_b6_value_final}")
                 print(f"   T13: {old_t13} → {dosingpump_b7_value_final}")
                 print(f"   U13: {old_u13} → {dosingpump_b9_value_final}")
                 print(f"   V13: {old_v13} → {dosingpump_b8_value_final}")
