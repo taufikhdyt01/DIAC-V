@@ -1760,11 +1760,13 @@ class BDUGroupView(QMainWindow):
                 sbt_anapak_path = os.path.join(data_folder, "SBT_PROCESS", "SBT_ANAPAK.xlsx")
                 sbt_instrument_path = os.path.join(data_folder, "SBT_EQUIPMENT AND TOOLS", "SBT-INSTRUMENT versi 1.0.xlsm")
                 sbt_dosingpump_path = os.path.join(data_folder,  "SBT_EQUIPMENT AND TOOLS", "SBT-DOSINGPUMP versi 1.0.xlsm")
+                sbt_chemicaltank_path = os.path.join(data_folder, "SBT_EQUIPMENT AND TOOLS", "SBT-CHEMICALTANK versi 1.0.xlsm")
                 all_udf_path = os.path.join(data_folder, "ALL_UDF.py")
                 
                 print(f"📄 SBT_ANAPAK path: {sbt_anapak_path}")
                 print(f"📄 SBT_INSTRUMENT path: {sbt_instrument_path}")
                 print(f"📄 SBT_DOSINGPUMP path: {sbt_dosingpump_path}")
+                print(f"📄 SBT_CHEMICALTANK path: {sbt_chemicaltank_path}")
                 
                 if progress_callback:
                     progress_callback(5, "Checking required files...")
@@ -1772,7 +1774,7 @@ class BDUGroupView(QMainWindow):
                 print("\n🔍 CHECKING REQUIRED FILES:")
                 # Pastikan file yang dibutuhkan ada
                 missing_files = []
-                required_files = [set_bdu_path, sbt_anapak_path, sbt_instrument_path, all_udf_path]
+                required_files = [set_bdu_path, sbt_anapak_path, sbt_instrument_path, sbt_dosingpump_path, sbt_chemicaltank_path, all_udf_path]
                 for file_path in required_files:
                     if not os.path.exists(file_path):
                         missing_files.append(os.path.basename(file_path))
@@ -2906,7 +2908,416 @@ class BDUGroupView(QMainWindow):
                 print("✅ ANAPAK updated for Process 7.6 (Final)")
                 
                 if progress_callback:
-                    progress_callback(98, "Performing final calculations and cleanup...")
+                    progress_callback(88, "Starting Process 8: SET_BDU → SBT_CHEMICALTANK...")
+                
+                print("\n🧪 PROSES 8: SET_BDU → SBT_CHEMICALTANK")
+                print("-" * 50)
+                
+                # PROSES 8: SET_BDU -> SBT_CHEMICALTANK
+                print(f"🔓 Opening SBT_CHEMICALTANK: {sbt_chemicaltank_path}")
+                wb_chemicaltank = load_workbook(sbt_chemicaltank_path, keep_vba=True)
+                print(f"📋 Available sheets: {wb_chemicaltank.sheetnames}")
+                
+                # Cari sheet 'DATA INPUT'
+                chemicaltank_input_sheet_name = "DATA INPUT"
+                found_chemicaltank_sheet = False
+                
+                for sheet_name in wb_chemicaltank.sheetnames:
+                    if sheet_name.upper() == chemicaltank_input_sheet_name.upper():
+                        chemicaltank_input_sheet_name = sheet_name
+                        found_chemicaltank_sheet = True
+                        print(f"✅ Found CHEMICALTANK sheet: {sheet_name}")
+                        break
+                
+                if not found_chemicaltank_sheet:
+                    print(f"❌ Sheet 'DATA INPUT' not found in SBT_CHEMICALTANK!")
+                    print(f"📋 Available sheets: {wb_chemicaltank.sheetnames}")
+                    raise Exception("Sheet 'DATA INPUT' not found in SBT_CHEMICALTANK")
+                
+                sheet_chemicaltank_input = wb_chemicaltank[chemicaltank_input_sheet_name]
+                
+                # Transfer data: DIP_Project Information.B51 -> DATA INPUT.B6
+                # Re-read B51 value dari SET_BDU
+                wb_bdu_read = load_workbook(set_bdu_path, data_only=True)
+                sheet_project_read = wb_bdu_read["DIP_Project Information"]
+                project_b51_value = sheet_project_read['B51'].value
+                wb_bdu_read.close()
+                
+                old_chemicaltank_b6 = sheet_chemicaltank_input['B6'].value
+                sheet_chemicaltank_input['B6'] = project_b51_value
+                
+                print(f"📊 Updated CHEMICALTANK DATA_INPUT:")
+                print(f"   B6: {old_chemicaltank_b6} → {project_b51_value}")
+                
+                # Simpan SBT_CHEMICALTANK
+                print("💾 Saving SBT_CHEMICALTANK...")
+                wb_chemicaltank.save(sbt_chemicaltank_path)
+                wb_chemicaltank.close()
+                print("✅ SBT_CHEMICALTANK saved and closed")
+                
+                if progress_callback:
+                    progress_callback(90, "Starting Process 9: Complex ANAPAK ↔ CHEMICALTANK iterations...")
+                
+                print("\n🧪 PROSES 9: COMPLEX ANAPAK ↔ CHEMICALTANK ITERATIONS")
+                print("=" * 60)
+                
+                # PROSES 9.1: SBT_ANAPAK -> SBT_CHEMICALTANK
+                print("\n📤 PROSES 9.1: ANAPAK → CHEMICALTANK (D20 → B4)")
+                print("-" * 50)
+                
+                # Force calculation pada ANAPAK sebelum membaca D20
+                print("🧮 Force calculating SBT_ANAPAK before reading D20...")
+                try:
+                    self.force_excel_calculation(sbt_anapak_path,
+                        lambda pct, msg: progress_callback(90 + (pct * 0.01), f"ANAPAK Pre-D20 Calc: {msg}") if progress_callback else None)
+                    print("✅ SBT_ANAPAK calculation completed before D20 read")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_ANAPAK calculation: {str(e)}")
+                
+                # Read from ANAPAK CHEMICAL DOSAGE CALC_ANAPAK.D20
+                wb_anapak_read = load_workbook(sbt_anapak_path, data_only=True)
+                
+                # Cari sheet 'CHEMICAL DOSAGE CALC_ANAPAK'
+                chemical_dosage_sheet_name = "CHEMICAL DOSAGE CALC_ANAPAK"
+                found_chemical_sheet = False
+                
+                for sheet_name in wb_anapak_read.sheetnames:
+                    if "CHEMICAL DOSAGE CALC" in sheet_name.upper() and "ANAPAK" in sheet_name.upper():
+                        chemical_dosage_sheet_name = sheet_name
+                        found_chemical_sheet = True
+                        print(f"✅ Found CHEMICAL DOSAGE sheet: {sheet_name}")
+                        break
+                
+                if not found_chemical_sheet:
+                    print(f"❌ Sheet 'CHEMICAL DOSAGE CALC_ANAPAK' not found!")
+                    print(f"📋 Available sheets: {wb_anapak_read.sheetnames}")
+                    raise Exception("Sheet 'CHEMICAL DOSAGE CALC_ANAPAK' not found in SBT_ANAPAK")
+                
+                sheet_chemical_dosage = wb_anapak_read[chemical_dosage_sheet_name]
+                anapak_d20_value = sheet_chemical_dosage['D20'].value
+                
+                print(f"📊 Retrieved from ANAPAK CHEMICAL_DOSAGE.D20: {anapak_d20_value}")
+                wb_anapak_read.close()
+                
+                # Write to CHEMICALTANK DATA INPUT.B4
+                wb_chemicaltank = load_workbook(sbt_chemicaltank_path, keep_vba=True)
+                sheet_chemicaltank_input = wb_chemicaltank[chemicaltank_input_sheet_name]
+                
+                old_chemicaltank_b4 = sheet_chemicaltank_input['B4'].value
+                sheet_chemicaltank_input['B4'] = anapak_d20_value
+                
+                print(f"📊 Updated CHEMICALTANK DATA_INPUT.B4: {old_chemicaltank_b4} → {anapak_d20_value}")
+                
+                wb_chemicaltank.save(sbt_chemicaltank_path)
+                wb_chemicaltank.close()
+                print("✅ CHEMICALTANK updated for Process 9.1")
+                
+                if progress_callback:
+                    progress_callback(91, "Process 9.2: CHEMICALTANK calculation and data return...")
+                
+                # PROSES 9.2: SBT_CHEMICALTANK -> SBT_ANAPAK (Force Calculating + Multiple Data Transfer)
+                print("\n📥 PROSES 9.2: CHEMICALTANK → ANAPAK (Force Calc + Multiple Data Transfer)")
+                print("-" * 50)
+                
+                # Force calculation pada CHEMICALTANK
+                print("🧮 Force calculating SBT_CHEMICALTANK...")
+                try:
+                    self.force_excel_calculation(sbt_chemicaltank_path,
+                        lambda pct, msg: progress_callback(91 + (pct * 0.01), f"CHEMICALTANK Calc: {msg}") if progress_callback else None)
+                    print("✅ SBT_CHEMICALTANK calculation completed")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_CHEMICALTANK calculation: {str(e)}")
+                
+                # Read calculated values from CHEMICALTANK DATA PROPOSAL
+                wb_chemicaltank_read = load_workbook(sbt_chemicaltank_path, data_only=True)
+                
+                # Cari sheet 'DATA PROPOSAL'
+                chemicaltank_proposal_sheet_name = "DATA PROPOSAL"
+                found_chemicaltank_proposal = False
+                
+                for sheet_name in wb_chemicaltank_read.sheetnames:
+                    if sheet_name.upper() == chemicaltank_proposal_sheet_name.upper():
+                        chemicaltank_proposal_sheet_name = sheet_name
+                        found_chemicaltank_proposal = True
+                        print(f"✅ Found CHEMICALTANK PROPOSAL sheet: {sheet_name}")
+                        break
+                
+                if not found_chemicaltank_proposal:
+                    print(f"❌ Sheet 'DATA PROPOSAL' not found in SBT_CHEMICALTANK!")
+                    print(f"📋 Available sheets: {wb_chemicaltank_read.sheetnames}")
+                    raise Exception("Sheet 'DATA PROPOSAL' not found in SBT_CHEMICALTANK")
+                
+                sheet_chemicaltank_proposal = wb_chemicaltank_read[chemicaltank_proposal_sheet_name]
+                
+                # Read values from DATA PROPOSAL
+                chemicaltank_b7_value = sheet_chemicaltank_proposal['B7'].value
+                chemicaltank_b8_value = sheet_chemicaltank_proposal['B8'].value
+                chemicaltank_b5_value = sheet_chemicaltank_proposal['B5'].value
+                
+                print(f"📊 Retrieved from CHEMICALTANK DATA_PROPOSAL:")
+                print(f"   B7: {chemicaltank_b7_value}")
+                print(f"   B8: {chemicaltank_b8_value}")
+                print(f"   B5: {chemicaltank_b5_value}")
+                
+                wb_chemicaltank_read.close()
+                
+                # Write to ANAPAK CHEMICAL DOSAGE CALC and DATA_OUTPUT
+                wb_anapak = load_workbook(sbt_anapak_path)
+                sheet_chemical_dosage_write = wb_anapak[chemical_dosage_sheet_name]
+                sheet_anapak_output = wb_anapak["DATA_OUTPUT"]
+                
+                # Update CHEMICAL DOSAGE CALC_ANAPAK (Process 9.2)
+                old_g20 = sheet_chemical_dosage_write['G20'].value
+                old_h20 = sheet_chemical_dosage_write['H20'].value
+                old_i20 = sheet_chemical_dosage_write['I20'].value
+                
+                sheet_chemical_dosage_write['G20'] = chemicaltank_b7_value   # B7 -> G20
+                sheet_chemical_dosage_write['H20'] = chemicaltank_b8_value   # B8 -> H20
+                sheet_chemical_dosage_write['I20'] = chemicaltank_b5_value   # B5 -> I20
+                
+                print(f"📊 Updated ANAPAK CHEMICAL_DOSAGE (Process 9.2):")
+                print(f"   G20: {old_g20} → {chemicaltank_b7_value}")
+                print(f"   H20: {old_h20} → {chemicaltank_b8_value}")
+                print(f"   I20: {old_i20} → {chemicaltank_b5_value}")
+                
+                # Update DATA_OUTPUT (Process 9.2)
+                old_c55 = sheet_anapak_output['C55'].value
+                old_c57 = sheet_anapak_output['C57'].value
+                old_c58 = sheet_anapak_output['C58'].value
+                
+                sheet_anapak_output['C55'] = chemicaltank_b7_value   # B7 -> C55
+                sheet_anapak_output['C57'] = chemicaltank_b8_value   # B8 -> C57
+                sheet_anapak_output['C58'] = chemicaltank_b5_value   # B5 -> C58
+                
+                print(f"📊 Updated ANAPAK DATA_OUTPUT (Process 9.2):")
+                print(f"   C55: {old_c55} → {chemicaltank_b7_value}")
+                print(f"   C57: {old_c57} → {chemicaltank_b8_value}")
+                print(f"   C58: {old_c58} → {chemicaltank_b5_value}")
+                
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                print("✅ ANAPAK updated for Process 9.2")
+                
+                if progress_callback:
+                    progress_callback(92, "Process 9.3: ANAPAK → CHEMICALTANK (D21 → B4)...")
+                
+                # PROSES 9.3: SBT_ANAPAK -> SBT_CHEMICALTANK (D21 -> B4)
+                print("\n📤 PROSES 9.3: ANAPAK → CHEMICALTANK (D21 → B4)")
+                print("-" * 50)
+                
+                # Force calculation pada ANAPAK sebelum membaca D21
+                print("🧮 Force calculating SBT_ANAPAK before reading D21...")
+                try:
+                    self.force_excel_calculation(sbt_anapak_path,
+                        lambda pct, msg: progress_callback(92 + (pct * 0.01), f"ANAPAK Pre-D21 Calc: {msg}") if progress_callback else None)
+                    print("✅ SBT_ANAPAK calculation completed before D21 read")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_ANAPAK calculation: {str(e)}")
+                
+                # Read from ANAPAK CHEMICAL DOSAGE CALC_ANAPAK.D21
+                wb_anapak_read = load_workbook(sbt_anapak_path, data_only=True)
+                sheet_chemical_dosage_read = wb_anapak_read[chemical_dosage_sheet_name]
+                anapak_d21_value = sheet_chemical_dosage_read['D21'].value
+                
+                print(f"📊 Retrieved from ANAPAK CHEMICAL_DOSAGE.D21: {anapak_d21_value}")
+                wb_anapak_read.close()
+                
+                # Write to CHEMICALTANK DATA INPUT.B4
+                wb_chemicaltank = load_workbook(sbt_chemicaltank_path, keep_vba=True)
+                sheet_chemicaltank_input = wb_chemicaltank[chemicaltank_input_sheet_name]
+                
+                old_chemicaltank_b4_2 = sheet_chemicaltank_input['B4'].value
+                sheet_chemicaltank_input['B4'] = anapak_d21_value
+                
+                print(f"📊 Updated CHEMICALTANK DATA_INPUT.B4: {old_chemicaltank_b4_2} → {anapak_d21_value}")
+                
+                wb_chemicaltank.save(sbt_chemicaltank_path)
+                wb_chemicaltank.close()
+                print("✅ CHEMICALTANK updated for Process 9.3")
+                
+                if progress_callback:
+                    progress_callback(93, "Process 9.4: CHEMICALTANK calculation and data return...")
+                
+                # PROSES 9.4: SBT_CHEMICALTANK -> SBT_ANAPAK (Force Calculating + Multiple Data Transfer)
+                print("\n📥 PROSES 9.4: CHEMICALTANK → ANAPAK (Force Calc + Multiple Data Transfer)")
+                print("-" * 50)
+                
+                # Force calculation pada CHEMICALTANK
+                print("🧮 Force calculating SBT_CHEMICALTANK (round 2)...")
+                try:
+                    self.force_excel_calculation(sbt_chemicaltank_path,
+                        lambda pct, msg: progress_callback(93 + (pct * 0.01), f"CHEMICALTANK Calc 2: {msg}") if progress_callback else None)
+                    print("✅ SBT_CHEMICALTANK calculation completed (round 2)")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_CHEMICALTANK calculation (round 2): {str(e)}")
+                
+                # Read calculated values from CHEMICALTANK DATA PROPOSAL (round 2)
+                wb_chemicaltank_read = load_workbook(sbt_chemicaltank_path, data_only=True)
+                sheet_chemicaltank_proposal = wb_chemicaltank_read[chemicaltank_proposal_sheet_name]
+                
+                # Read values from DATA PROPOSAL (round 2)
+                chemicaltank_b7_value_2 = sheet_chemicaltank_proposal['B7'].value
+                chemicaltank_b8_value_2 = sheet_chemicaltank_proposal['B8'].value
+                chemicaltank_b5_value_2 = sheet_chemicaltank_proposal['B5'].value
+                
+                print(f"📊 Retrieved from CHEMICALTANK DATA_PROPOSAL (round 2):")
+                print(f"   B7: {chemicaltank_b7_value_2}")
+                print(f"   B8: {chemicaltank_b8_value_2}")
+                print(f"   B5: {chemicaltank_b5_value_2}")
+                
+                wb_chemicaltank_read.close()
+                
+                # Write to ANAPAK CHEMICAL DOSAGE CALC and DATA_OUTPUT (round 2)
+                wb_anapak = load_workbook(sbt_anapak_path)
+                sheet_chemical_dosage_write = wb_anapak[chemical_dosage_sheet_name]
+                sheet_anapak_output = wb_anapak["DATA_OUTPUT"]
+                
+                # Update CHEMICAL DOSAGE CALC_ANAPAK (Process 9.4)
+                old_g21 = sheet_chemical_dosage_write['G21'].value
+                old_h21 = sheet_chemical_dosage_write['H21'].value
+                old_i21 = sheet_chemical_dosage_write['I21'].value
+                
+                sheet_chemical_dosage_write['G21'] = chemicaltank_b7_value_2   # B7 -> G21
+                sheet_chemical_dosage_write['H21'] = chemicaltank_b8_value_2   # B8 -> H21
+                sheet_chemical_dosage_write['I21'] = chemicaltank_b5_value_2   # B5 -> I21
+                
+                print(f"📊 Updated ANAPAK CHEMICAL_DOSAGE (Process 9.4):")
+                print(f"   G21: {old_g21} → {chemicaltank_b7_value_2}")
+                print(f"   H21: {old_h21} → {chemicaltank_b8_value_2}")
+                print(f"   I21: {old_i21} → {chemicaltank_b5_value_2}")
+                
+                # Update DATA_OUTPUT (Process 9.4)
+                old_c61 = sheet_anapak_output['C61'].value
+                old_c63 = sheet_anapak_output['C63'].value
+                old_c64 = sheet_anapak_output['C64'].value
+                
+                sheet_anapak_output['C61'] = chemicaltank_b7_value_2   # B7 -> C61
+                sheet_anapak_output['C63'] = chemicaltank_b8_value_2   # B8 -> C63
+                sheet_anapak_output['C64'] = chemicaltank_b5_value_2   # B5 -> C64
+                
+                print(f"📊 Updated ANAPAK DATA_OUTPUT (Process 9.4):")
+                print(f"   C61: {old_c61} → {chemicaltank_b7_value_2}")
+                print(f"   C63: {old_c63} → {chemicaltank_b8_value_2}")
+                print(f"   C64: {old_c64} → {chemicaltank_b5_value_2}")
+                
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                print("✅ ANAPAK updated for Process 9.4")
+                
+                if progress_callback:
+                    progress_callback(94, "Process 9.5: ANAPAK → CHEMICALTANK (D22 → B4)...")
+                
+                # PROSES 9.5: SBT_ANAPAK -> SBT_CHEMICALTANK (D22 -> B4)
+                print("\n📤 PROSES 9.5: ANAPAK → CHEMICALTANK (D22 → B4)")
+                print("-" * 50)
+                
+                # Force calculation pada ANAPAK sebelum membaca D22
+                print("🧮 Force calculating SBT_ANAPAK before reading D22...")
+                try:
+                    self.force_excel_calculation(sbt_anapak_path,
+                        lambda pct, msg: progress_callback(94 + (pct * 0.01), f"ANAPAK Pre-D22 Calc: {msg}") if progress_callback else None)
+                    print("✅ SBT_ANAPAK calculation completed before D22 read")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_ANAPAK calculation: {str(e)}")
+                
+                # Read from ANAPAK CHEMICAL DOSAGE CALC_ANAPAK.D22
+                wb_anapak_read = load_workbook(sbt_anapak_path, data_only=True)
+                sheet_chemical_dosage_read = wb_anapak_read[chemical_dosage_sheet_name]
+                anapak_d22_value = sheet_chemical_dosage_read['D22'].value
+                
+                print(f"📊 Retrieved from ANAPAK CHEMICAL_DOSAGE.D22: {anapak_d22_value}")
+                wb_anapak_read.close()
+                
+                # Write to CHEMICALTANK DATA INPUT.B4
+                wb_chemicaltank = load_workbook(sbt_chemicaltank_path, keep_vba=True)
+                sheet_chemicaltank_input = wb_chemicaltank[chemicaltank_input_sheet_name]
+                
+                old_chemicaltank_b4_3 = sheet_chemicaltank_input['B4'].value
+                sheet_chemicaltank_input['B4'] = anapak_d22_value
+                
+                print(f"📊 Updated CHEMICALTANK DATA_INPUT.B4: {old_chemicaltank_b4_3} → {anapak_d22_value}")
+                
+                wb_chemicaltank.save(sbt_chemicaltank_path)
+                wb_chemicaltank.close()
+                print("✅ CHEMICALTANK updated for Process 9.5")
+                
+                if progress_callback:
+                    progress_callback(95, "Process 9.6: Final CHEMICALTANK calculation and data return...")
+                
+                # PROSES 9.6: SBT_CHEMICALTANK -> SBT_ANAPAK (Final Force Calculating + Multiple Data Transfer)
+                print("\n📥 PROSES 9.6: CHEMICALTANK → ANAPAK (Final Force Calc + Multiple Data Transfer)")
+                print("-" * 50)
+                
+                # Force calculation pada CHEMICALTANK (final)
+                print("🧮 Force calculating SBT_CHEMICALTANK (final round)...")
+                try:
+                    self.force_excel_calculation(sbt_chemicaltank_path,
+                        lambda pct, msg: progress_callback(95 + (pct * 0.01), f"CHEMICALTANK Final Calc: {msg}") if progress_callback else None)
+                    print("✅ SBT_CHEMICALTANK calculation completed (final round)")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Warning during SBT_CHEMICALTANK calculation (final round): {str(e)}")
+                
+                # Read calculated values from CHEMICALTANK DATA PROPOSAL (final)
+                wb_chemicaltank_read = load_workbook(sbt_chemicaltank_path, data_only=True)
+                sheet_chemicaltank_proposal = wb_chemicaltank_read[chemicaltank_proposal_sheet_name]
+                
+                # Read values from DATA PROPOSAL (final)
+                chemicaltank_b7_value_final = sheet_chemicaltank_proposal['B7'].value
+                chemicaltank_b8_value_final = sheet_chemicaltank_proposal['B8'].value
+                chemicaltank_b5_value_final = sheet_chemicaltank_proposal['B5'].value
+                
+                print(f"📊 Retrieved from CHEMICALTANK DATA_PROPOSAL (final):")
+                print(f"   B7: {chemicaltank_b7_value_final}")
+                print(f"   B8: {chemicaltank_b8_value_final}")
+                print(f"   B5: {chemicaltank_b5_value_final}")
+                
+                wb_chemicaltank_read.close()
+                
+                # Write to ANAPAK CHEMICAL DOSAGE CALC and DATA_OUTPUT (final)
+                wb_anapak = load_workbook(sbt_anapak_path)
+                sheet_chemical_dosage_write = wb_anapak[chemical_dosage_sheet_name]
+                sheet_anapak_output = wb_anapak["DATA_OUTPUT"]
+                
+                # Update CHEMICAL DOSAGE CALC_ANAPAK (Process 9.6)
+                old_g22 = sheet_chemical_dosage_write['G22'].value
+                old_h22 = sheet_chemical_dosage_write['H22'].value
+                old_i22 = sheet_chemical_dosage_write['I22'].value
+                
+                sheet_chemical_dosage_write['G22'] = chemicaltank_b7_value_final   # B7 -> G22
+                sheet_chemical_dosage_write['H22'] = chemicaltank_b8_value_final   # B8 -> H22
+                sheet_chemical_dosage_write['I22'] = chemicaltank_b5_value_final   # B5 -> I22
+                
+                print(f"📊 Updated ANAPAK CHEMICAL_DOSAGE (Process 9.6 - Final):")
+                print(f"   G22: {old_g22} → {chemicaltank_b7_value_final}")
+                print(f"   H22: {old_h22} → {chemicaltank_b8_value_final}")
+                print(f"   I22: {old_i22} → {chemicaltank_b5_value_final}")
+                
+                # Update DATA_OUTPUT (Process 9.6)
+                old_c67 = sheet_anapak_output['C67'].value
+                old_c69 = sheet_anapak_output['C69'].value
+                old_c70 = sheet_anapak_output['C70'].value
+                
+                sheet_anapak_output['C67'] = chemicaltank_b7_value_final   # B7 -> C67
+                sheet_anapak_output['C69'] = chemicaltank_b8_value_final   # B8 -> C69
+                sheet_anapak_output['C70'] = chemicaltank_b5_value_final   # B5 -> C70
+                
+                print(f"📊 Updated ANAPAK DATA_OUTPUT (Process 9.6 - Final):")
+                print(f"   C67: {old_c67} → {chemicaltank_b7_value_final}")
+                print(f"   C69: {old_c69} → {chemicaltank_b8_value_final}")
+                print(f"   C70: {old_c70} → {chemicaltank_b5_value_final}")
+                
+                wb_anapak.save(sbt_anapak_path)
+                wb_anapak.close()
+                print("✅ ANAPAK updated for Process 9.6 (Final)")
+                
+                if progress_callback:
+                    progress_callback(96, "Performing final calculations and cleanup...")
                 
                 print("\n🏁 FINAL CALCULATIONS AND CLEANUP")
                 print("-" * 50)
@@ -2915,14 +3326,14 @@ class BDUGroupView(QMainWindow):
                 print("🧮 Final force calculation on SBT_ANAPAK...")
                 try:
                     self.force_excel_calculation(sbt_anapak_path,
-                        lambda pct, msg: progress_callback(98 + (pct * 0.015), f"Final ANAPAK Calc: {msg}") if progress_callback else None)
+                        lambda pct, msg: progress_callback(96 + (pct * 0.02), f"Final ANAPAK Calc: {msg}") if progress_callback else None)
                     print("✅ Final SBT_ANAPAK calculation completed")
                     time.sleep(3)
                 except Exception as e:
                     print(f"⚠️ Warning during final SBT_ANAPAK calculation: {str(e)}")
                 
                 if progress_callback:
-                    progress_callback(99, "Validating all data transfers...")
+                    progress_callback(98, "Validating all data transfers...")
                 
                 print("\n📋 COMPREHENSIVE VALIDATION SUMMARY")
                 print("-" * 50)
@@ -2952,6 +3363,16 @@ class BDUGroupView(QMainWindow):
                     'C48': sheet_anapak_output_final['C48'].value,  # From Process 7.6
                     'C49': sheet_anapak_output_final['C49'].value,  # From Process 7.6
                     'C51': sheet_anapak_output_final['C51'].value,  # From Process 7.6
+                    # Process 9 results (CHEMICALTANK)
+                    'C55': sheet_anapak_output_final['C55'].value,  # From Process 9.2
+                    'C57': sheet_anapak_output_final['C57'].value,  # From Process 9.2
+                    'C58': sheet_anapak_output_final['C58'].value,  # From Process 9.2
+                    'C61': sheet_anapak_output_final['C61'].value,  # From Process 9.4
+                    'C63': sheet_anapak_output_final['C63'].value,  # From Process 9.4
+                    'C64': sheet_anapak_output_final['C64'].value,  # From Process 9.4
+                    'C67': sheet_anapak_output_final['C67'].value,  # From Process 9.6
+                    'C69': sheet_anapak_output_final['C69'].value,  # From Process 9.6
+                    'C70': sheet_anapak_output_final['C70'].value,  # From Process 9.6
                 }
                 
                 print("📊 Final ANAPAK DATA_OUTPUT values:")
@@ -2975,19 +3396,29 @@ class BDUGroupView(QMainWindow):
                 print(f"     C48: {final_values['C48']}")
                 print(f"     C49: {final_values['C49']}")
                 print(f"     C51: {final_values['C51']}")
+                print("   🧪 Process 9 (CHEMICALTANK) results:")
+                print(f"     C55: {final_values['C55']}")
+                print(f"     C57: {final_values['C57']}")
+                print(f"     C58: {final_values['C58']}")
+                print(f"     C61: {final_values['C61']}")
+                print(f"     C63: {final_values['C63']}")
+                print(f"     C64: {final_values['C64']}")
+                print(f"     C67: {final_values['C67']}")
+                print(f"     C69: {final_values['C69']}")
+                print(f"     C70: {final_values['C70']}")
                 
                 wb_anapak_final.close()
                 
                 if progress_callback:
-                    progress_callback(100, "Complete projection process with all 7 processes finished successfully!")
+                    progress_callback(100, "Complete projection process with all 9 processes finished successfully!")
                 
                 print("\n" + "=" * 80)
-                print("🎉 COMPLETE PROJECTION PROCESS WITH ALL 7 PROCESSES FINISHED SUCCESSFULLY!")
+                print("🎉 COMPLETE PROJECTION PROCESS WITH ALL 9 PROCESSES FINISHED SUCCESSFULLY!")
                 print("=" * 80)
-                print("🏆 ALL MODULES PROCESSED: ANAPAK ↔ PUMP ↔ INSTRUMENT ↔ DOSINGPUMP")
+                print("🏆 ALL MODULES PROCESSED: ANAPAK ↔ PUMP ↔ INSTRUMENT ↔ DOSINGPUMP ↔ CHEMICALTANK")
                 print("=" * 80)
                 
-                return "Complete projection process with all 7 main processes has been executed successfully!"
+                return "Complete projection process with all 9 main processes has been executed successfully!"
                 
             except Exception as e:
                 error_msg = f"Error during complete projection: {str(e)}"
@@ -3006,7 +3437,7 @@ class BDUGroupView(QMainWindow):
         loading_screen = LoadingScreen(
             parent=self,
             title="Running Complete Advanced Projection",
-            message="Processing data through ANAPAK, PUMP, and INSTRUMENT modules with all 5 main processes..."
+            message="Processing data through ANAPAK, PUMP, INSTRUMENT, DOSINGPUMP, and CHEMICALTANK modules with all 9 main processes..."
         )
         loading_screen.show()
         loading_screen.start_loading(projection_process)
@@ -3019,7 +3450,7 @@ class BDUGroupView(QMainWindow):
                 QMessageBox.information(
                     self, 
                     "Complete Projection Finished", 
-                    "Complete advanced projection process with all 5 main processes has been completed successfully. All data has been processed through ANAPAK, PUMP, and INSTRUMENT modules."
+                    "Complete advanced projection process with all 9 main processes has been completed successfully. All data has been processed through ANAPAK, PUMP, INSTRUMENT, DOSINGPUMP, and CHEMICALTANK modules."
                 )
                 print("🔄 Refreshing UI display...")
                 # Refresh display
