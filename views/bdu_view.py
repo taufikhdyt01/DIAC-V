@@ -3410,15 +3410,150 @@ class BDUGroupView(QMainWindow):
                 wb_anapak_final.close()
                 
                 if progress_callback:
-                    progress_callback(100, "Complete projection process with all 9 processes finished successfully!")
+                    progress_callback(98, "Starting Process 10: Final data consolidation...")
+                
+                print("\n📋 PROSES 10: FINAL DATA CONSOLIDATION")
+                print("-" * 50)
+                
+                # PROSES 10: SBT_ANAPAK.DATA_OUTPUT -> SET_BDU.DATA_OUTPUT_SBT_ANAPAK
+                print("📤 Copying DATA_OUTPUT from SBT_ANAPAK to SET_BDU...")
+                
+                try:
+                    # Open source workbook (SBT_ANAPAK) to copy DATA_OUTPUT sheet
+                    print(f"🔓 Opening source: {sbt_anapak_path}")
+                    wb_source = load_workbook(sbt_anapak_path, data_only=True)  # data_only=True to get calculated values
+                    
+                    if "DATA_OUTPUT" not in wb_source.sheetnames:
+                        print(f"❌ Sheet 'DATA_OUTPUT' not found in SBT_ANAPAK!")
+                        print(f"📋 Available sheets: {wb_source.sheetnames}")
+                        raise Exception("Sheet 'DATA_OUTPUT' not found in SBT_ANAPAK")
+                    
+                    source_sheet = wb_source["DATA_OUTPUT"]
+                    print("✅ Found DATA_OUTPUT sheet in SBT_ANAPAK")
+                    
+                    # Open destination workbook (SET_BDU)
+                    print(f"🔓 Opening destination: {set_bdu_path}")
+                    wb_dest = load_workbook(set_bdu_path)
+                    
+                    # Check if target sheet already exists, if so, remove it
+                    target_sheet_name = "DATA_OUTPUT_SBT_ANAPAK"
+                    if target_sheet_name in wb_dest.sheetnames:
+                        print(f"🗑️ Removing existing sheet: {target_sheet_name}")
+                        wb_dest.remove(wb_dest[target_sheet_name])
+                    
+                    # Create new sheet in destination workbook
+                    print(f"📄 Creating new sheet: {target_sheet_name}")
+                    dest_sheet = wb_dest.create_sheet(target_sheet_name)
+                    
+                    if progress_callback:
+                        progress_callback(99, "Copying calculated values and formatting...")
+                    
+                    # Copy only calculated values (no formulas) and formatting
+                    print("📊 Copying calculated values and formatting (no formulas)...")
+                    
+                    # Get the dimensions of the source sheet
+                    max_row = source_sheet.max_row
+                    max_col = source_sheet.max_column
+                    
+                    print(f"📐 Sheet dimensions: {max_row} rows × {max_col} columns")
+                    
+                    # Copy cell by cell - only values and formatting (no formulas)
+                    for row in range(1, max_row + 1):
+                        for col in range(1, max_col + 1):
+                            source_cell = source_sheet.cell(row=row, column=col)
+                            dest_cell = dest_sheet.cell(row=row, column=col)
+                            
+                            # Copy only the calculated value (not formula)
+                            # Since we opened with data_only=True, source_cell.value contains calculated values
+                            dest_cell.value = source_cell.value
+                            
+                            # Copy basic formatting
+                            try:
+                                if source_cell.font:
+                                    dest_cell.font = source_cell.font.copy()
+                            except:
+                                pass  # Skip if font copying fails
+                                
+                            try:
+                                if source_cell.border:
+                                    dest_cell.border = source_cell.border.copy()
+                            except:
+                                pass  # Skip if border copying fails
+                                
+                            try:
+                                if source_cell.fill:
+                                    dest_cell.fill = source_cell.fill.copy()
+                            except:
+                                pass  # Skip if fill copying fails
+                                
+                            try:
+                                if source_cell.number_format:
+                                    dest_cell.number_format = source_cell.number_format
+                            except:
+                                pass  # Skip if number format copying fails
+                                
+                            try:
+                                if source_cell.alignment:
+                                    dest_cell.alignment = source_cell.alignment.copy()
+                            except:
+                                pass  # Skip if alignment copying fails
+                    
+                    # Copy column widths
+                    print("📏 Copying column widths...")
+                    try:
+                        for col_letter in source_sheet.column_dimensions:
+                            if source_sheet.column_dimensions[col_letter].width:
+                                dest_sheet.column_dimensions[col_letter].width = source_sheet.column_dimensions[col_letter].width
+                    except Exception as e:
+                        print(f"⚠️ Warning: Could not copy column widths: {str(e)}")
+                    
+                    # Copy row heights
+                    print("📐 Copying row heights...")
+                    try:
+                        for row_num in source_sheet.row_dimensions:
+                            if source_sheet.row_dimensions[row_num].height:
+                                dest_sheet.row_dimensions[row_num].height = source_sheet.row_dimensions[row_num].height
+                    except Exception as e:
+                        print(f"⚠️ Warning: Could not copy row heights: {str(e)}")
+                    
+                    # Copy merged cells
+                    print("🔗 Copying merged cells...")
+                    try:
+                        for merged_range in source_sheet.merged_cells.ranges:
+                            dest_sheet.merge_cells(str(merged_range))
+                    except Exception as e:
+                        print(f"⚠️ Warning: Could not copy merged cells: {str(e)}")
+                    
+                    print(f"✅ Successfully copied {max_row} rows and {max_col} columns (values only, no formulas)")
+                    
+                    # Close source workbook
+                    wb_source.close()
+                    print("✅ Source workbook closed")
+                    
+                    # Save destination workbook
+                    print("💾 Saving SET_BDU with new DATA_OUTPUT_SBT_ANAPAK sheet...")
+                    wb_dest.save(set_bdu_path)
+                    wb_dest.close()
+                    print("✅ SET_BDU saved and closed")
+                    
+                    print(f"✅ Process 10 completed: Calculated values (no formulas) copied to {target_sheet_name}")
+                    
+                except Exception as e:
+                    error_msg = f"Error in Process 10 (sheet copying): {str(e)}"
+                    print(f"❌ {error_msg}")
+                    raise Exception(error_msg)
+                
+                if progress_callback:
+                    progress_callback(100, "Complete projection process with all 10 processes finished successfully!")
                 
                 print("\n" + "=" * 80)
-                print("🎉 COMPLETE PROJECTION PROCESS WITH ALL 9 PROCESSES FINISHED SUCCESSFULLY!")
+                print("🎉 COMPLETE PROJECTION PROCESS WITH ALL 10 PROCESSES FINISHED SUCCESSFULLY!")
                 print("=" * 80)
                 print("🏆 ALL MODULES PROCESSED: ANAPAK ↔ PUMP ↔ INSTRUMENT ↔ DOSINGPUMP ↔ CHEMICALTANK")
+                print("📋 FINAL CONSOLIDATION: DATA_OUTPUT_SBT_ANAPAK sheet created in SET_BDU")
                 print("=" * 80)
                 
-                return "Complete projection process with all 9 main processes has been executed successfully!"
+                return "Complete projection process with all 10 main processes has been executed successfully! Final results have been consolidated in DATA_OUTPUT_SBT_ANAPAK sheet."
                 
             except Exception as e:
                 error_msg = f"Error during complete projection: {str(e)}"
@@ -3436,7 +3571,7 @@ class BDUGroupView(QMainWindow):
         # Show loading screen
         loading_screen = LoadingScreen(
             parent=self,
-            title="Running Complete Advanced Projection",
+            title="Running Projection",
             message="Processing data through ANAPAK, PUMP, INSTRUMENT, DOSINGPUMP, and CHEMICALTANK modules with all 9 main processes..."
         )
         loading_screen.show()
@@ -3450,7 +3585,7 @@ class BDUGroupView(QMainWindow):
                 QMessageBox.information(
                     self, 
                     "Complete Projection Finished", 
-                    "Complete advanced projection process with all 9 main processes has been completed successfully. All data has been processed through ANAPAK, PUMP, INSTRUMENT, DOSINGPUMP, and CHEMICALTANK modules."
+                    "Complete advanced projection process with all 10 main processes has been completed successfully. All data has been processed through ANAPAK, PUMP, INSTRUMENT, DOSINGPUMP, and CHEMICALTANK modules. Final results have been consolidated in DATA_OUTPUT_SBT_ANAPAK sheet."
                 )
                 print("🔄 Refreshing UI display...")
                 # Refresh display
